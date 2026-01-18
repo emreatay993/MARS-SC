@@ -538,6 +538,88 @@ class DPFAnalysisReader:
         except Exception as e:
             raise ValueError(f"Failed to get nodal scoping from named selection '{ns_name}': {e}")
     
+    def check_named_selection_has_beam_elements(self, ns_name: str) -> bool:
+        """
+        Check if a named selection contains any beam elements.
+        
+        Beam elements do not support stress tensor output, so this check is used
+        to prevent users from selecting stress outputs for beam-only selections.
+        
+        Args:
+            ns_name: Name of the named selection.
+            
+        Returns:
+            True if the named selection contains any beam elements, False otherwise.
+        """
+        try:
+            # Get the named selection scoping
+            ns_scoping = self.model.metadata.named_selection(ns_name)
+            
+            # If it's a nodal scoping, we need to find associated elements
+            if ns_scoping.location == dpf.locations.nodal:
+                # For nodal named selections, we need to find elements that use these nodes
+                # This is more complex - try to get elemental scoping using transpose
+                try:
+                    transpose_op = dpf.operators.scoping.transpose()
+                    transpose_op.inputs.mesh_scoping.connect(ns_scoping)
+                    transpose_op.inputs.meshed_region.connect(self.mesh)
+                    transpose_op.inputs.inclusive.connect(0)  # Elements fully contained
+                    
+                    if hasattr(transpose_op.outputs, 'mesh_scoping'):
+                        elem_scoping = transpose_op.outputs.mesh_scoping()
+                    elif hasattr(transpose_op.outputs, 'mesh_scoping_as_scoping'):
+                        elem_scoping = transpose_op.outputs.mesh_scoping_as_scoping()
+                    else:
+                        result = transpose_op.eval()
+                        if isinstance(result, dpf.Scoping):
+                            elem_scoping = result
+                        else:
+                            # Cannot determine elements, assume no beams
+                            return False
+                    
+                    element_ids = list(elem_scoping.ids)
+                except Exception:
+                    # If we can't get element scoping from nodal, assume no beams
+                    return False
+            else:
+                # Elemental scoping - directly get element IDs
+                element_ids = list(ns_scoping.ids)
+            
+            if not element_ids:
+                return False
+            
+            # Check element types for beam elements
+            mesh = self.mesh
+            for elem_id in element_ids:
+                try:
+                    elem_idx = mesh.elements.scoping.index(elem_id)
+                    element = mesh.elements.element_by_index(elem_idx)
+                    
+                    # Check if element is a beam using the shape property
+                    if hasattr(element, 'shape'):
+                        if element.shape == "beam":
+                            return True
+                    
+                    # Alternative: check element type descriptor
+                    if hasattr(element, 'type'):
+                        elem_type = element.type
+                        # Check if element type descriptor indicates beam
+                        if hasattr(elem_type, 'shape') and elem_type.shape == "beam":
+                            return True
+                        # Some DPF versions use different attribute
+                        if hasattr(elem_type, 'name'):
+                            type_name = str(elem_type.name).lower()
+                            if 'beam' in type_name or 'line' in type_name:
+                                return True
+                except Exception:
+                    continue
+            
+            return False
+            
+        except Exception:
+            # If we can't determine, assume no beams (fail open for usability)
+            return False
+    
     def get_all_nodes_scoping(self) -> 'dpf.Scoping':
         """
         Get a scoping containing all nodes in the mesh.

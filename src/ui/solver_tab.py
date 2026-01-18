@@ -796,6 +796,35 @@ class SolverTab(QWidget):
                 )
                 return False
         
+        # Validate stress outputs are not selected for beam element named selections
+        stress_outputs_selected = any([
+            self.von_mises_checkbox.isChecked(),
+            self.max_principal_stress_checkbox.isChecked(),
+            self.min_principal_stress_checkbox.isChecked()
+        ])
+        
+        if stress_outputs_selected:
+            ns_name = self.get_selected_named_selection()
+            if ns_name and self.file_handler.base_reader is not None:
+                try:
+                    has_beams = self.file_handler.base_reader.check_named_selection_has_beam_elements(ns_name)
+                    if has_beams:
+                        QMessageBox.warning(
+                            self, "Stress Output Not Supported",
+                            f"The selected Named Selection '{ns_name}' contains beam elements.\n\n"
+                            "Stress tensor output (Von Mises, Max Principal, Min Principal) is not "
+                            "supported for beam elements.\n\n"
+                            "Please either:\n"
+                            "  • Select a Named Selection that contains only solid/shell elements, or\n"
+                            "  • Use 'Nodal Forces' output instead (if available)"
+                        )
+                        return False
+                except Exception as e:
+                    # Log the error but don't block - let the engine handle it
+                    self.console_textbox.append(
+                        f"[Warning] Could not verify element types for named selection: {e}"
+                    )
+        
         if self.combination_history_checkbox.isChecked():
             node_text = self.node_line_edit.text().strip()
             

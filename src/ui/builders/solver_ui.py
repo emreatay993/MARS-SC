@@ -147,7 +147,7 @@ class SolverTabUIBuilder:
         # Use collapsible group box instead of QGroupBox
         file_group = CollapsibleGroupBoxStyled("Input Files", initially_expanded=True)
         file_group.setContentLayout(file_layout)
-        file_group.setContentMargins(8, 4, 8, 8)
+        file_group.setContentMargins(8, 4, 8, 4)
         
         # Store components for external access
         self.components['base_rst_button'] = base_rst_button
@@ -235,7 +235,7 @@ class SolverTabUIBuilder:
         # Use collapsible group box instead of QGroupBox
         table_group = CollapsibleGroupBoxStyled("Combination Coefficients Table", initially_expanded=True)
         table_group.setContentLayout(table_layout)
-        table_group.setContentMargins(8, 4, 8, 8)
+        table_group.setContentMargins(8, 4, 8, 4)
         
         # Store components
         self.components['combo_table'] = combo_table
@@ -252,7 +252,7 @@ class SolverTabUIBuilder:
         Build the output selection section with checkboxes.
         
         Returns:
-            QGroupBox: Group box containing output selection checkboxes.
+            CollapsibleGroupBoxStyled: Collapsible group box containing output selection checkboxes.
         """
         # Create checkboxes for combination analysis outputs
         combination_history_checkbox = QCheckBox('Enable Combination History Mode (Single Node)')
@@ -303,9 +303,10 @@ class SolverTabUIBuilder:
         output_layout.addWidget(combination_history_checkbox)
         output_layout.addWidget(plasticity_correction_checkbox)
         
-        output_group = QGroupBox("Output Options")
-        output_group.setStyleSheet(GROUP_BOX_STYLE)
-        output_group.setLayout(output_layout)
+        # Use collapsible group box instead of QGroupBox
+        output_group = CollapsibleGroupBoxStyled("Output Options", initially_expanded=True)
+        output_group.setContentLayout(output_layout)
+        output_group.setContentMargins(8, 4, 8, 4)
         
         # Store components
         self.components['combination_history_checkbox'] = combination_history_checkbox
@@ -315,6 +316,7 @@ class SolverTabUIBuilder:
         self.components['nodal_forces_checkbox'] = nodal_forces_checkbox
         self.components['nodal_forces_csys_combo'] = nodal_forces_csys_combo
         self.components['plasticity_correction_checkbox'] = plasticity_correction_checkbox
+        self.components['output_options_group'] = output_group
         
         # Initially disable checkboxes until files are loaded
         for key in ['von_mises_checkbox', 'max_principal_stress_checkbox',
