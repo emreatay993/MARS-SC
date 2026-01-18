@@ -1,0 +1,1028 @@
+"""
+Solver tab implementation for MARS-SC (Solution Combination).
+
+Provides the main solver interface for combining stress results from two
+static analysis RST files using linear combination coefficients.
+"""
+
+import os
+import sys
+from typing import Optional, List
+
+import numpy as np
+from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot
+from PyQt5.QtGui import QPalette, QColor, QDoubleValidator
+from PyQt5.QtWidgets import (
+    QMessageBox, QWidget, QDialog, QVBoxLayout,
+    QTableWidgetItem, QFileDialog, QStyledItemDelegate, QLineEdit
+)
+
+
+class NumericDelegate(QStyledItemDelegate):
+    """
+    Custom delegate that enforces numeric (float/integer) input for table cells.
+    
+    This delegate is applied to coefficient columns in the combination table
+    to ensure only valid numeric values can be entered.
+    """
+    
+    def createEditor(self, parent, option, index):
+        """Create a line edit with numeric validation."""
+        editor = QLineEdit(parent)
+        validator = QDoubleValidator()
+        validator.setNotation(QDoubleValidator.StandardNotation)
+        editor.setValidator(validator)
+        return editor
+    
+    def setEditorData(self, editor, index):
+        """Set the editor's initial value from the model."""
+        value = index.model().data(index, Qt.EditRole)
+        if value:
+            editor.setText(str(value))
+        else:
+            editor.setText("0.0")
+    
+    def setModelData(self, editor, model, index):
+        """Validate and set the model data from the editor."""
+        text = editor.text()
+        try:
+            # Try to parse as float
+            value = float(text) if text else 0.0
+            model.setData(index, str(value), Qt.EditRole)
+        except ValueError:
+            # If invalid, set to 0.0
+            model.setData(index, "0.0", Qt.EditRole)
+
+
+class ReadOnlyDelegate(QStyledItemDelegate):
+    """
+    Custom delegate that makes table cells read-only.
+    
+    This delegate is applied to the Type column since only "Linear" is supported.
+    """
+    
+    def createEditor(self, parent, option, index):
+        """Return None to prevent editing."""
+        return None
+
+# Import builders and managers
+from ui.builders.solver_ui import SolverTabUIBuilder
+from ui.handlers.file_handler import SolverFileHandler
+from ui.handlers.ui_state_handler import SolverUIHandler
+from ui.handlers.analysis_handler import SolverAnalysisHandler
+from ui.handlers.log_handler import SolverLogHandler
+from ui.dialogs.material_profile_dialog import MaterialProfileDialog
+from ui.widgets.console import Logger
+from ui.widgets.plotting import MatplotlibWidget
+from core.data_models import (
+    AnalysisData, CombinationTableData, CombinationResult, NodalForcesResult,
+    TemperatureFieldData, MaterialProfileData, SolverConfig
+)
+
+
+class SolverTab(QWidget):
+    """
+    Solver tab for MARS-SC solution combination analysis.
+
+    Manages RST file loading, combination table configuration, and analysis
+    execution for combining stress results from two static analyses.
+
+    Signals:
+        initial_data_loaded: Emitted when initial RST data is loaded
+        combination_result_ready: Emitted when combination results are ready
+    """
+    
+    # Signals
+    initial_data_loaded = pyqtSignal(object)
+    combination_result_ready = pyqtSignal(object, str, float, float)
+    
+    def __init__(self, parent=None):
+        """Initialize the Solver Tab."""
+        super().__init__(parent)
+        
+        # Initialize state
+        self.project_directory = None
+        
+        # RST file data
+        self.analysis1_data: Optional[AnalysisData] = None  # Base analysis
+        self.analysis2_data: Optional[AnalysisData] = None  # Analysis to combine
+        
+        # Combination data
+        self.combination_table: Optional[CombinationTableData] = None
+        self.combination_result: Optional[CombinationResult] = None
+        self.nodal_forces_result: Optional[NodalForcesResult] = None
+        
+        # Temperature and material data (for plasticity)
+        self.temperature_field_data: Optional[TemperatureFieldData] = None
+        self.material_profile_data: MaterialProfileData = MaterialProfileData.empty()
+        
+        # Handlers
+        self.file_handler = SolverFileHandler(self)
+        self.ui_handler = SolverUIHandler(self)
+        self.analysis_handler = SolverAnalysisHandler(self)
+        self.log_handler = SolverLogHandler(self)
+        
+        # Flags for loaded data
+        self.base_rst_loaded = False
+        self.combine_rst_loaded = False
+
+        # For plotting
+        self.plot_dialog = None
+        
+        # Build UI
+        self._build_ui()
+        
+        # Setup logger
+        self.logger = Logger(self.console_textbox)
+        sys.stdout = self.logger
+        
+        # Enable drag and drop
+        self.setAcceptDrops(True)
+        
+        # Initial state
+        self._update_solve_button_state()
+    
+    def _build_ui(self):
+        """Build the UI using the UI builder."""
+        builder = SolverTabUIBuilder()
+        
+        # Set window palette
+        builder.set_window_palette(self)
+        
+        # Build layout and get components
+        layout, self.components = builder.build_complete_layout()
+        self.setLayout(layout)
+        
+        # Store commonly used components as direct attributes
+        self._setup_component_references()
+        
+        # Connect signals
+        self._connect_signals()
+    
+    def _setup_component_references(self):
+        """Create direct references to frequently used components."""
+        # RST File controls
+        self.base_rst_button = self.components['base_rst_button']
+        self.base_rst_path = self.components['base_rst_path']
+        self.base_info_label = self.components['base_info_label']
+        self.combine_rst_button = self.components['combine_rst_button']
+        self.combine_rst_path = self.components['combine_rst_path']
+        self.combine_info_label = self.components['combine_info_label']
+        self.named_selection_combo = self.components['named_selection_combo']
+        self.refresh_ns_button = self.components['refresh_ns_button']
+        
+        # Combination table
+        self.combo_table = self.components['combo_table']
+        self.import_csv_btn = self.components['import_csv_btn']
+        self.export_csv_btn = self.components['export_csv_btn']
+        self.add_row_btn = self.components['add_row_btn']
+        self.delete_row_btn = self.components['delete_row_btn']
+        
+        # Collapsible group boxes (for programmatic collapse/expand)
+        self.file_input_group = self.components.get('file_input_group')
+        self.combo_table_group = self.components.get('combo_table_group')
+        
+        # Setup table delegates for validation
+        self._setup_table_delegates()
+        
+        # Output checkboxes
+        self.combination_history_checkbox = self.components['combination_history_checkbox']
+        self.von_mises_checkbox = self.components['von_mises_checkbox']
+        self.max_principal_stress_checkbox = self.components['max_principal_stress_checkbox']
+        self.min_principal_stress_checkbox = self.components['min_principal_stress_checkbox']
+        self.nodal_forces_checkbox = self.components['nodal_forces_checkbox']
+        self.plasticity_correction_checkbox = self.components['plasticity_correction_checkbox']
+        
+        # Single node controls
+        self.node_line_edit = self.components['node_line_edit']
+        self.single_node_group = self.components['single_node_group']
+        
+        # Plasticity options
+        self.plasticity_options_group = self.components['plasticity_options_group']
+        self.material_profile_button = self.components['material_profile_button']
+        self.temperature_field_button = self.components['temperature_field_button']
+        self.temperature_field_file_path = self.components['temperature_field_path']
+        self.plasticity_method_combo = self.components['plasticity_method_combo']
+        self.plasticity_max_iter_input = self.components['plasticity_max_iter_input']
+        self.plasticity_tolerance_input = self.components['plasticity_tolerance_input']
+        self.plasticity_warning_label = self.components['plasticity_warning_label']
+        self.plasticity_extrapolation_combo = self.components['plasticity_extrapolation_combo']
+        
+        # Export controls
+        self.single_combo_dropdown = self.components['single_combo_dropdown']
+        self.export_single_btn = self.components['export_single_btn']
+        self.export_group = self.components['export_group']
+        
+        # Console and plots
+        self.console_textbox = self.components['console_textbox']
+        self.show_output_tab_widget = self.components['show_output_tab_widget']
+        self.plot_combo_history_tab = self.components['plot_combo_history_tab']
+        self.plot_max_combo_tab = self.components['plot_max_combo_tab']
+        self.plot_min_combo_tab = self.components['plot_min_combo_tab']
+        
+        # Progress and solve
+        self.progress_bar = self.components['progress_bar']
+        self.solve_button = self.components['solve_button']
+    
+    def _connect_signals(self):
+        """Connect UI signals to their handlers."""
+        # RST File loading
+        self.base_rst_button.clicked.connect(self.file_handler.select_base_rst_file)
+        self.combine_rst_button.clicked.connect(self.file_handler.select_combine_rst_file)
+        self.refresh_ns_button.clicked.connect(self.file_handler.refresh_named_selections)
+        
+        # Combination table controls
+        self.import_csv_btn.clicked.connect(self.file_handler.import_combination_table)
+        self.export_csv_btn.clicked.connect(self.file_handler.export_combination_table)
+        self.add_row_btn.clicked.connect(self._add_table_row)
+        self.delete_row_btn.clicked.connect(self._delete_table_row)
+        
+        # Output checkboxes
+        self.combination_history_checkbox.toggled.connect(self._toggle_combination_history_mode)
+        self.plasticity_correction_checkbox.toggled.connect(self._toggle_plasticity_options)
+        
+        # Plasticity options
+        self.material_profile_button.clicked.connect(self.open_material_profile_dialog)
+        self.temperature_field_button.clicked.connect(self.file_handler.select_temperature_field_file)
+        
+        # Node entry
+        self.node_line_edit.returnPressed.connect(self._on_node_entered)
+        
+        # Solve button
+        self.solve_button.clicked.connect(self._on_solve_clicked)
+        
+        # Export
+        self.export_single_btn.clicked.connect(self._export_single_combination)
+    
+    # ========== RST File Loading Callbacks ==========
+    
+    def on_base_rst_loaded(self, analysis_data: AnalysisData, filename: str):
+        """Handle UI updates after base RST file is loaded."""
+        self.analysis1_data = analysis_data
+        self.base_rst_loaded = True
+        
+        # Update UI
+        self.base_rst_path.setText(filename)
+        self.base_info_label.setText(f"Load steps: {analysis_data.num_load_steps}")
+        
+        # Format time values for display
+        time_info = ""
+        if analysis_data.time_values:
+            time_strs = [f"{t:.4g}s" for t in analysis_data.time_values]
+            num_points = len(time_strs)
+            if num_points >= 20:
+                # Show first 5, dots, last 5, and count
+                first_five = ', '.join(time_strs[:5])
+                last_five = ', '.join(time_strs[-5:])
+                time_info = f"  Time Points: {first_five} ......... {last_five}   ({num_points} Time Points)\n"
+            elif num_points > 10:
+                # Show first 3, dots, last 3
+                time_info = f"  Time Points: {', '.join(time_strs[:3])} ... {', '.join(time_strs[-3:])}\n"
+            else:
+                # Show all
+                time_info = f"  Time Points: {', '.join(time_strs)}\n"
+        
+        # Nodal forces availability
+        nodal_forces_status = "Available" if analysis_data.nodal_forces_available else "Not Available"
+        
+        # Log with unit and time information
+        self.console_textbox.append(
+            f"\n{'='*60}\n"
+            f"Loaded Base Analysis RST: {os.path.basename(filename)}\n"
+            f"  Load Steps: {analysis_data.num_load_steps}\n"
+            f"{time_info}"
+            f"  Named Selections: {len(analysis_data.named_selections)}\n"
+            f"  Unit System: {analysis_data.unit_system}\n"
+            f"  Stress Unit: {analysis_data.stress_unit} (converting to MPa)\n"
+            f"  Nodal Forces: {nodal_forces_status}\n"
+            f"{'='*60}"
+        )
+        
+        # Update named selections dropdown
+        self._update_named_selections()
+        
+        # Update combination table columns
+        self._update_combination_table_columns()
+        
+        # Enable controls
+        self._update_solve_button_state()
+        self._enable_output_checkboxes()
+    
+    def on_combine_rst_loaded(self, analysis_data: AnalysisData, filename: str):
+        """Handle UI updates after combine RST file is loaded."""
+        self.analysis2_data = analysis_data
+        self.combine_rst_loaded = True
+        
+        # Update UI
+        self.combine_rst_path.setText(filename)
+        self.combine_info_label.setText(f"Load steps: {analysis_data.num_load_steps}")
+        
+        # Format time values for display
+        time_info = ""
+        if analysis_data.time_values:
+            time_strs = [f"{t:.4g}s" for t in analysis_data.time_values]
+            num_points = len(time_strs)
+            if num_points >= 20:
+                # Show first 5, dots, last 5, and count
+                first_five = ', '.join(time_strs[:5])
+                last_five = ', '.join(time_strs[-5:])
+                time_info = f"  Time Points: {first_five} ......... {last_five}   ({num_points} Time Points)\n"
+            elif num_points > 10:
+                # Show first 3, dots, last 3
+                time_info = f"  Time Points: {', '.join(time_strs[:3])} ... {', '.join(time_strs[-3:])}\n"
+            else:
+                # Show all
+                time_info = f"  Time Points: {', '.join(time_strs)}\n"
+        
+        # Nodal forces availability
+        nodal_forces_status = "Available" if analysis_data.nodal_forces_available else "Not Available"
+        
+        # Log with unit and time information
+        self.console_textbox.append(
+            f"\n{'='*60}\n"
+            f"Loaded Analysis to Combine RST: {os.path.basename(filename)}\n"
+            f"  Load Steps: {analysis_data.num_load_steps}\n"
+            f"{time_info}"
+            f"  Named Selections: {len(analysis_data.named_selections)}\n"
+            f"  Unit System: {analysis_data.unit_system}\n"
+            f"  Stress Unit: {analysis_data.stress_unit} (converting to MPa)\n"
+            f"  Nodal Forces: {nodal_forces_status}\n"
+            f"{'='*60}"
+        )
+        
+        # Update named selections dropdown
+        self._update_named_selections()
+        
+        # Update combination table columns
+        self._update_combination_table_columns()
+        
+        # Enable controls
+        self._update_solve_button_state()
+        self._enable_output_checkboxes()
+    
+    def _update_named_selections(self):
+        """Update the named selections dropdown with common selections."""
+        self.named_selection_combo.clear()
+        
+        if self.analysis1_data and self.analysis2_data:
+            # Find common named selections
+            ns1 = set(self.analysis1_data.named_selections)
+            ns2 = set(self.analysis2_data.named_selections)
+            common_ns = sorted(ns1.intersection(ns2))
+            
+            if common_ns:
+                self.named_selection_combo.addItems(common_ns)
+                self.named_selection_combo.setEnabled(True)
+                self.refresh_ns_button.setEnabled(True)
+            else:
+                self.named_selection_combo.addItem("(No common named selections)")
+                self.named_selection_combo.setEnabled(False)
+        elif self.analysis1_data:
+            # Only base loaded
+            if self.analysis1_data.named_selections:
+                self.named_selection_combo.addItems(self.analysis1_data.named_selections)
+            else:
+                self.named_selection_combo.addItem("(No named selections)")
+            self.named_selection_combo.setEnabled(False)
+        else:
+            self.named_selection_combo.addItem("(Load RST files first)")
+            self.named_selection_combo.setEnabled(False)
+    
+    def _update_combination_table_columns(self):
+        """Update the combination table columns based on loaded RST files."""
+        # Build column headers
+        columns = ["Combination Name", "Type"]
+        
+        # Add Analysis 1 columns with time values
+        if self.analysis1_data:
+            for step_id in self.analysis1_data.load_step_ids:
+                # Use time-based label if available
+                label = self.analysis1_data.format_time_label(step_id, prefix="A1")
+                columns.append(label)
+        
+        # Add Analysis 2 columns with time values
+        if self.analysis2_data:
+            for step_id in self.analysis2_data.load_step_ids:
+                # Use time-based label if available
+                label = self.analysis2_data.format_time_label(step_id, prefix="A2")
+                columns.append(label)
+        
+        # Update table
+        current_rows = self.combo_table.rowCount()
+        self.combo_table.setColumnCount(len(columns))
+        self.combo_table.setHorizontalHeaderLabels(columns)
+        
+        # Initialize cells with default values
+        for row in range(current_rows):
+            # Make Type column read-only
+            type_item = self.combo_table.item(row, 1)
+            if type_item:
+                type_item.setFlags(type_item.flags() & ~Qt.ItemIsEditable)
+                type_item.setToolTip("Only 'Linear' combination type is currently supported")
+            
+            for col in range(2, len(columns)):
+                if self.combo_table.item(row, col) is None:
+                    self.combo_table.setItem(row, col, QTableWidgetItem("0.0"))
+        
+        # Reapply numeric delegate to new columns
+        self._apply_numeric_delegate_to_columns()
+    
+    def _enable_output_checkboxes(self):
+        """Enable output checkboxes when both RST files are loaded."""
+        enabled = self.base_rst_loaded and self.combine_rst_loaded
+        
+        self.von_mises_checkbox.setEnabled(enabled)
+        self.max_principal_stress_checkbox.setEnabled(enabled)
+        self.min_principal_stress_checkbox.setEnabled(enabled)
+        self.combination_history_checkbox.setEnabled(enabled)
+        self.plasticity_correction_checkbox.setEnabled(enabled)
+        
+        # Enable nodal forces checkbox only if both files have nodal forces
+        nodal_forces_available = False
+        if enabled and self.analysis1_data and self.analysis2_data:
+            nodal_forces_available = (
+                self.analysis1_data.nodal_forces_available and 
+                self.analysis2_data.nodal_forces_available
+            )
+        
+        self.nodal_forces_checkbox.setEnabled(nodal_forces_available)
+        if not nodal_forces_available and enabled:
+            self.nodal_forces_checkbox.setToolTip(
+                "Nodal forces not available.\n"
+                "At least one RST file does not contain nodal forces.\n"
+                "Ensure 'Write element nodal forces' is enabled in ANSYS Output Controls."
+            )
+        else:
+            self.nodal_forces_checkbox.setToolTip(
+                "Combine nodal forces from both analyses.\n"
+                "Requires 'Write element nodal forces' to be enabled in ANSYS Output Controls."
+            )
+    
+    # ========== Combination Table Methods ==========
+    
+    def _setup_table_delegates(self):
+        """
+        Setup delegates for the combination table.
+        
+        - Column 0 (Name): Default delegate (editable text)
+        - Column 1 (Type): ReadOnlyDelegate (non-editable, "Linear" only)
+        - Columns 2+: NumericDelegate (only allow float/integer values)
+        """
+        # Make Type column (column 1) read-only
+        self._readonly_delegate = ReadOnlyDelegate(self.combo_table)
+        self.combo_table.setItemDelegateForColumn(1, self._readonly_delegate)
+        
+        # Apply numeric delegate to coefficient columns (will be updated when columns change)
+        self._numeric_delegate = NumericDelegate(self.combo_table)
+        self._apply_numeric_delegate_to_columns()
+        
+        # Connect to column count changes
+        self.combo_table.model().columnsInserted.connect(self._apply_numeric_delegate_to_columns)
+    
+    def _apply_numeric_delegate_to_columns(self):
+        """Apply numeric delegate to all coefficient columns (column 2 onwards)."""
+        for col in range(2, self.combo_table.columnCount()):
+            self.combo_table.setItemDelegateForColumn(col, self._numeric_delegate)
+    
+    def _add_table_row(self):
+        """Add a new row to the combination table."""
+        row_count = self.combo_table.rowCount()
+        self.combo_table.insertRow(row_count)
+        
+        # Set default values
+        self.combo_table.setItem(row_count, 0, QTableWidgetItem(f"Combination {row_count + 1}"))
+        
+        # Type column is read-only (only "Linear" supported)
+        type_item = QTableWidgetItem("Linear")
+        type_item.setFlags(type_item.flags() & ~Qt.ItemIsEditable)  # Make non-editable
+        type_item.setToolTip("Only 'Linear' combination type is currently supported")
+        self.combo_table.setItem(row_count, 1, type_item)
+        
+        for col in range(2, self.combo_table.columnCount()):
+            self.combo_table.setItem(row_count, col, QTableWidgetItem("0.0"))
+    
+    def _delete_table_row(self):
+        """Delete the selected row from the combination table."""
+        selected_rows = self.combo_table.selectionModel().selectedRows()
+        if selected_rows:
+            self.combo_table.removeRow(selected_rows[0].row())
+        elif self.combo_table.rowCount() > 1:
+            self.combo_table.removeRow(self.combo_table.rowCount() - 1)
+    
+    def get_combination_table_data(self) -> Optional[CombinationTableData]:
+        """
+        Extract combination table data from the UI table widget.
+        
+        Returns:
+            CombinationTableData or None if invalid.
+        """
+        if not self.analysis1_data or not self.analysis2_data:
+            return None
+        
+        row_count = self.combo_table.rowCount()
+        if row_count == 0:
+            return None
+        
+        names = []
+        types = []
+        a1_coeffs = []
+        a2_coeffs = []
+        
+        n_a1 = len(self.analysis1_data.load_step_ids)
+        n_a2 = len(self.analysis2_data.load_step_ids)
+        
+        for row in range(row_count):
+            # Get name and type
+            name_item = self.combo_table.item(row, 0)
+            type_item = self.combo_table.item(row, 1)
+            
+            names.append(name_item.text() if name_item else f"Combination {row+1}")
+            types.append(type_item.text() if type_item else "Linear")
+            
+            # Get A1 coefficients (columns 2 to 2+n_a1)
+            a1_row = []
+            for col in range(2, 2 + n_a1):
+                item = self.combo_table.item(row, col)
+                try:
+                    a1_row.append(float(item.text()) if item else 0.0)
+                except ValueError:
+                    a1_row.append(0.0)
+            a1_coeffs.append(a1_row)
+            
+            # Get A2 coefficients (columns 2+n_a1 onwards)
+            a2_row = []
+            for col in range(2 + n_a1, 2 + n_a1 + n_a2):
+                item = self.combo_table.item(row, col)
+                try:
+                    a2_row.append(float(item.text()) if item else 0.0)
+                except ValueError:
+                    a2_row.append(0.0)
+            a2_coeffs.append(a2_row)
+        
+        return CombinationTableData(
+            combination_names=names,
+            combination_types=types,
+            analysis1_coeffs=np.array(a1_coeffs),
+            analysis2_coeffs=np.array(a2_coeffs),
+            analysis1_step_ids=list(self.analysis1_data.load_step_ids),
+            analysis2_step_ids=list(self.analysis2_data.load_step_ids),
+        )
+    
+    def set_combination_table_data(self, data: CombinationTableData):
+        """
+        Populate the UI table widget from CombinationTableData.
+        
+        Args:
+            data: CombinationTableData to display.
+        """
+        self.combination_table = data
+        
+        # Update columns first
+        self._update_combination_table_columns()
+        
+        # Set row count
+        self.combo_table.setRowCount(data.num_combinations)
+        
+        # Populate data
+        for row in range(data.num_combinations):
+            self.combo_table.setItem(row, 0, QTableWidgetItem(data.combination_names[row]))
+            
+            # Type column is read-only
+            type_item = QTableWidgetItem(data.combination_types[row])
+            type_item.setFlags(type_item.flags() & ~Qt.ItemIsEditable)
+            type_item.setToolTip("Only 'Linear' combination type is currently supported")
+            self.combo_table.setItem(row, 1, type_item)
+            
+            # A1 coefficients
+            for i, coeff in enumerate(data.analysis1_coeffs[row]):
+                self.combo_table.setItem(row, 2 + i, QTableWidgetItem(str(coeff)))
+            
+            # A2 coefficients
+            offset = 2 + data.num_analysis1_steps
+            for i, coeff in enumerate(data.analysis2_coeffs[row]):
+                self.combo_table.setItem(row, offset + i, QTableWidgetItem(str(coeff)))
+    
+    # ========== UI State Methods ==========
+    
+    def _update_solve_button_state(self):
+        """Update solve button enabled state."""
+        can_solve = (
+            self.base_rst_loaded and 
+            self.combine_rst_loaded and
+            self.combo_table.rowCount() > 0 and
+            any([
+                self.von_mises_checkbox.isChecked(),
+                self.max_principal_stress_checkbox.isChecked(),
+                self.min_principal_stress_checkbox.isChecked(),
+                self.nodal_forces_checkbox.isChecked()
+            ])
+        )
+        self.solve_button.setEnabled(can_solve)
+    
+    def _toggle_combination_history_mode(self, checked: bool):
+        """Toggle combination history mode (single node analysis)."""
+        self.single_node_group.setVisible(checked)
+        self._update_solve_button_state()
+    
+    def _toggle_plasticity_options(self, checked: bool):
+        """Toggle plasticity correction options visibility."""
+        self.plasticity_options_group.setVisible(checked)
+    
+    # ========== Analysis Methods ==========
+    
+    def _on_solve_clicked(self):
+        """Handle solve button click."""
+        # Validate inputs
+        if not self._validate_inputs():
+            return
+        
+        # Get combination table data
+        self.combination_table = self.get_combination_table_data()
+        if not self.combination_table:
+            QMessageBox.warning(self, "Invalid Table", "Please enter at least one combination.")
+            return
+        
+        # Build solver config
+        config = self._build_solver_config()
+        
+        # Run analysis
+        self.analysis_handler.solve(config)
+    
+    def _validate_inputs(self) -> bool:
+        """Validate inputs before solving."""
+        if not self.base_rst_loaded:
+            QMessageBox.warning(self, "Missing Input", "Please load a Base Analysis RST file.")
+            return False
+        
+        if not self.combine_rst_loaded:
+            QMessageBox.warning(self, "Missing Input", "Please load an Analysis to Combine RST file.")
+            return False
+        
+        if self.named_selection_combo.currentText().startswith("("):
+            QMessageBox.warning(self, "Missing Input", "Please select a valid Named Selection.")
+            return False
+        
+        if not any([
+            self.von_mises_checkbox.isChecked(),
+            self.max_principal_stress_checkbox.isChecked(),
+            self.min_principal_stress_checkbox.isChecked(),
+            self.nodal_forces_checkbox.isChecked()
+        ]):
+            QMessageBox.warning(self, "Missing Input", "Please select at least one output type.")
+            return False
+        
+        # Validate nodal forces availability if selected
+        if self.nodal_forces_checkbox.isChecked():
+            if not (self.analysis1_data.nodal_forces_available and 
+                    self.analysis2_data.nodal_forces_available):
+                QMessageBox.warning(
+                    self, "Nodal Forces Not Available",
+                    "Nodal forces are not available in one or both RST files.\n\n"
+                    "To enable nodal forces output, ensure 'Write element nodal forces' "
+                    "is enabled in ANSYS Output Controls before running the analysis."
+                )
+                return False
+        
+        if self.combination_history_checkbox.isChecked():
+            node_text = self.node_line_edit.text().strip()
+            
+            # Check for empty input
+            if not node_text:
+                QMessageBox.warning(
+                    self, "Missing Node ID",
+                    "Please enter a Node ID for combination history mode."
+                )
+                return False
+            
+            # Check for valid positive integer
+            try:
+                node_id = int(node_text)
+                if node_id <= 0:
+                    raise ValueError("Node ID must be positive")
+            except ValueError:
+                QMessageBox.warning(
+                    self, "Invalid Node ID",
+                    f"'{node_text}' is not a valid Node ID.\n\n"
+                    "Please enter a positive integer."
+                )
+                return False
+            
+            # Check if node exists in current scoping (early validation)
+            if self.file_handler.base_reader is not None:
+                ns_name = self.get_selected_named_selection()
+                if ns_name:
+                    try:
+                        scoping = self.file_handler.base_reader.get_nodal_scoping_from_named_selection(ns_name)
+                        scoping_ids = list(scoping.ids)
+                        if node_id not in scoping_ids:
+                            QMessageBox.warning(
+                                self, "Node Not Found",
+                                f"Node ID {node_id} was not found in Named Selection '{ns_name}'.\n\n"
+                                f"The selected Named Selection contains {len(scoping_ids):,} nodes.\n"
+                                f"Please enter a valid Node ID from this selection."
+                            )
+                            return False
+                    except Exception as e:
+                        # Log but don't block - let the engine handle validation
+                        self.console_textbox.append(
+                            f"[Warning] Could not validate node ID: {e}"
+                        )
+        
+        return True
+    
+    def _build_solver_config(self) -> SolverConfig:
+        """Build solver configuration from UI state."""
+        config = SolverConfig(
+            calculate_von_mises=self.von_mises_checkbox.isChecked(),
+            calculate_max_principal_stress=self.max_principal_stress_checkbox.isChecked(),
+            calculate_min_principal_stress=self.min_principal_stress_checkbox.isChecked(),
+            calculate_nodal_forces=self.nodal_forces_checkbox.isChecked(),
+            combination_history_mode=self.combination_history_checkbox.isChecked(),
+            output_directory=self.project_directory,
+        )
+        
+        if config.combination_history_mode:
+            config.selected_node_id = int(self.node_line_edit.text())
+        
+        # Plasticity config
+        if self.plasticity_correction_checkbox.isChecked():
+            from core.data_models import PlasticityConfig
+            config.plasticity = PlasticityConfig(
+                enabled=True,
+                method=self.plasticity_method_combo.currentText().lower().replace(" ", "_"),
+                max_iterations=int(self.plasticity_max_iter_input.text() or 60),
+                tolerance=float(self.plasticity_tolerance_input.text() or 1e-10),
+                material_profile=self.material_profile_data,
+                temperature_field=self.temperature_field_data,
+                extrapolation_mode=self.plasticity_extrapolation_combo.currentText().lower(),
+            )
+        
+        return config
+    
+    def get_selected_named_selection(self) -> Optional[str]:
+        """Get the currently selected named selection."""
+        text = self.named_selection_combo.currentText()
+        if text.startswith("("):
+            return None
+        return text
+    
+    # ========== Result Handling ==========
+    
+    def on_analysis_complete(self, result: CombinationResult):
+        """Handle stress analysis completion."""
+        self.combination_result = result
+        
+        # Update export controls
+        self.single_combo_dropdown.clear()
+        if result.all_combo_results is not None:
+            for name in self.combination_table.combination_names:
+                self.single_combo_dropdown.addItem(name)
+            self.single_combo_dropdown.setEnabled(True)
+            self.export_single_btn.setEnabled(True)
+            self.export_group.setVisible(True)
+        
+        # Create a PyVista mesh for display tab
+        mesh = self._create_mesh_from_result(result)
+        
+        # Determine scalar bar title based on result type (stresses are in MPa)
+        scalar_bar_titles = {
+            'von_mises': 'Von Mises Stress [MPa]',
+            'max_principal': 'Max Principal Stress (S1) [MPa]',
+            'min_principal': 'Min Principal Stress (S3) [MPa]'
+        }
+        scalar_bar_title = scalar_bar_titles.get(result.result_type, 'Stress [MPa]')
+        
+        # Get data range from max envelope
+        data_min = float(np.min(result.max_over_combo)) if result.max_over_combo is not None else 0.0
+        data_max = float(np.max(result.max_over_combo)) if result.max_over_combo is not None else 0.0
+        
+        # Emit signal for display tab with mesh
+        self.combination_result_ready.emit(mesh, scalar_bar_title, data_min, data_max)
+    
+    def on_forces_analysis_complete(self, result: NodalForcesResult):
+        """Handle nodal forces analysis completion."""
+        self.nodal_forces_result = result
+        
+        # Create a PyVista mesh for display tab with force magnitude
+        mesh = self._create_mesh_from_forces_result(result)
+        
+        # Determine scalar bar title
+        scalar_bar_title = f'Force Magnitude [{result.force_unit}]'
+        
+        # Get data range from max envelope
+        data_min = float(np.min(result.max_magnitude_over_combo)) if result.max_magnitude_over_combo is not None else 0.0
+        data_max = float(np.max(result.max_magnitude_over_combo)) if result.max_magnitude_over_combo is not None else 0.0
+        
+        # Emit signal for display tab with mesh
+        self.combination_result_ready.emit(mesh, scalar_bar_title, data_min, data_max)
+    
+    def _create_mesh_from_forces_result(self, result: NodalForcesResult):
+        """
+        Create a PyVista mesh from NodalForcesResult for visualization.
+        
+        Args:
+            result: NodalForcesResult with node coordinates and force values.
+            
+        Returns:
+            PyVista PolyData mesh with force magnitude as scalars.
+        """
+        import pyvista as pv
+        
+        # Create point cloud mesh from node coordinates
+        mesh = pv.PolyData(result.node_coords)
+        
+        # Add node IDs (must be 'NodeID' for hover functionality to work)
+        mesh['NodeID'] = result.node_ids
+        
+        # Add max force magnitude as the primary scalar
+        if result.max_magnitude_over_combo is not None:
+            mesh['Max_Force_Magnitude'] = result.max_magnitude_over_combo
+            mesh.set_active_scalars('Max_Force_Magnitude')
+        
+        # Add min force magnitude
+        if result.min_magnitude_over_combo is not None:
+            mesh['Min_Force_Magnitude'] = result.min_magnitude_over_combo
+        
+        # Add combination indices
+        if result.combo_of_max is not None:
+            mesh['Combo_of_Max'] = result.combo_of_max
+        if result.combo_of_min is not None:
+            mesh['Combo_of_Min'] = result.combo_of_min
+        
+        return mesh
+    
+    def _create_mesh_from_result(self, result: CombinationResult):
+        """
+        Create a PyVista mesh from CombinationResult for visualization.
+        
+        Args:
+            result: CombinationResult with node coordinates and stress values.
+            
+        Returns:
+            PyVista PolyData mesh with stress values as scalars.
+        """
+        import pyvista as pv
+        
+        # Create point cloud mesh from node coordinates
+        mesh = pv.PolyData(result.node_coords)
+        
+        # Add node IDs (must be 'NodeID' for hover functionality to work)
+        mesh['NodeID'] = result.node_ids
+        
+        # Add max stress values as the primary scalar
+        if result.max_over_combo is not None:
+            mesh['Max_Stress'] = result.max_over_combo
+            mesh.set_active_scalars('Max_Stress')
+        
+        # Add min stress values
+        if result.min_over_combo is not None:
+            mesh['Min_Stress'] = result.min_over_combo
+        
+        # Add combination indices
+        if result.combo_of_max is not None:
+            mesh['Combo_of_Max'] = result.combo_of_max
+        if result.combo_of_min is not None:
+            mesh['Combo_of_Min'] = result.combo_of_min
+        
+        # Store result type as field data (metadata) for display tab
+        mesh.field_data['result_type'] = [result.result_type]
+        
+        return mesh
+    
+    def _on_node_entered(self):
+        """Handle Enter key press in node ID field."""
+        node_text = self.node_line_edit.text()
+        if node_text.isdigit():
+            self.console_textbox.append(f"Node ID entered: {node_text}")
+    
+    def plot_combination_history_for_node(self, node_id: int):
+        """
+        Trigger combination history analysis for a specific node.
+        
+        This method is called when a node is picked from the Display tab's
+        right-click context menu "Plot Combination History for Selected Node".
+        It validates inputs and triggers the combination history solve.
+        
+        Args:
+            node_id: The node ID to compute combination history for.
+        """
+        # Validate that data is loaded
+        if not self.base_rst_loaded or not self.combine_rst_loaded:
+            QMessageBox.warning(
+                self, "Missing Data",
+                "Please load both RST files before plotting combination history."
+            )
+            return
+        
+        # Validate that at least one stress output is selected
+        has_output = any([
+            self.von_mises_checkbox.isChecked(),
+            self.max_principal_stress_checkbox.isChecked(),
+            self.min_principal_stress_checkbox.isChecked()
+        ])
+        
+        if not has_output:
+            # Default to Von Mises if nothing selected
+            self.von_mises_checkbox.setChecked(True)
+            self.console_textbox.append("Defaulting to Von Mises stress output.")
+        
+        # Validate combination table
+        if self.combo_table.rowCount() == 0:
+            QMessageBox.warning(
+                self, "Missing Combinations",
+                "Please define at least one combination in the table."
+            )
+            return
+        
+        # Update node ID in the UI
+        self.node_line_edit.setText(str(node_id))
+        
+        # Enable combination history mode
+        if not self.combination_history_checkbox.isChecked():
+            self.combination_history_checkbox.setChecked(True)
+        
+        # Log and trigger solve
+        self.console_textbox.append(
+            f"\n{'='*60}\n"
+            f"Computing Combination History for Node {node_id}\n"
+            f"{'='*60}"
+        )
+        
+        # Trigger the solve (this calls _on_solve_clicked internally)
+        self._on_solve_clicked()
+    
+    def _export_single_combination(self):
+        """Export a single combination result to CSV."""
+        if self.combination_result is None:
+            QMessageBox.warning(self, "No Results", "Run analysis first before exporting.")
+            return
+        
+        combo_idx = self.single_combo_dropdown.currentIndex()
+        combo_name = self.single_combo_dropdown.currentText()
+        
+        # Get save path
+        filename, _ = QFileDialog.getSaveFileName(
+            self, f"Export {combo_name}",
+            f"{combo_name.replace(' ', '_')}.csv",
+            "CSV Files (*.csv)"
+        )
+        
+        if filename:
+            self.file_handler.export_single_combination_result(
+                self.combination_result, combo_idx, filename
+            )
+            self.console_textbox.append(f"Exported {combo_name} to {filename}")
+    
+    # ========== Plasticity Dialog ==========
+    
+    def open_material_profile_dialog(self):
+        """Launch the material profile editor dialog."""
+        dialog = MaterialProfileDialog(self, self.material_profile_data)
+        if dialog.exec_() == QDialog.Accepted:
+            self.material_profile_data = dialog.get_data()
+            self.console_textbox.append("Material profile updated.")
+    
+    def on_temperature_field_loaded(self, temperature_data, filename):
+        """Handle UI updates after temperature field file is loaded."""
+        self.temperature_field_data = temperature_data
+        self.console_textbox.append(f"Loaded temperature field: {os.path.basename(filename)}")
+    
+    # ========== Progress Updates ==========
+    
+    @pyqtSlot(int)
+    def update_progress_bar(self, value):
+        """Update progress bar value."""
+        self.progress_bar.setValue(value)
+        self.progress_bar.setFormat(f"Progress: {value}%")
+    
+    # ========== Drag and Drop Support ==========
+
+    def dragEnterEvent(self, event):
+        """Handle drag enter event."""
+        if event.mimeData().hasUrls():
+            event.accept()
+        else:
+            event.ignore()
+    
+    def dropEvent(self, event):
+        """Handle drop event."""
+        files = [u.toLocalFile() for u in event.mimeData().urls()]
+        if files:
+            file_path = files[0]
+            # Determine file type by extension
+            if file_path.lower().endswith('.rst'):
+                # Ask user which analysis
+                from PyQt5.QtWidgets import QInputDialog
+                choice, ok = QInputDialog.getItem(
+                    self, "Select Analysis",
+                    "Load RST file as:",
+                    ["Base Analysis (Analysis 1)", "Analysis to Combine (Analysis 2)"],
+                    0, False
+                )
+                if ok:
+                    if "Base" in choice:
+                        self.file_handler._load_rst_file(file_path, is_base=True)
+                    else:
+                        self.file_handler._load_rst_file(file_path, is_base=False)
+            elif file_path.lower().endswith('.csv'):
+                self.file_handler._load_combination_csv(file_path)
