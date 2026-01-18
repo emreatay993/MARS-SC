@@ -190,6 +190,35 @@ class CombinationTableData:
             )
         
         return True, ""
+    
+    def get_active_step_ids(self) -> Tuple[List[int], List[int]]:
+        """
+        Get step IDs that have at least one non-zero coefficient across all combinations.
+        
+        This method identifies which load steps are actually used in the combination
+        calculations, allowing callers to skip loading data for steps where all
+        coefficients are zero. This can dramatically reduce I/O and memory usage
+        when only a subset of available steps are used.
+        
+        Returns:
+            Tuple of (active_a1_step_ids, active_a2_step_ids) where each list
+            contains only the step IDs that have at least one non-zero coefficient.
+        
+        Example:
+            If analysis1_step_ids = [1, 2, 3, 4, 5] and the coefficient matrix has
+            non-zero values only in columns 0 and 2, this returns ([1, 3], ...).
+        """
+        # For Analysis 1: find columns (steps) where any row (combination) has non-zero
+        a1_active_mask = np.any(self.analysis1_coeffs != 0.0, axis=0)
+        active_a1 = [step_id for i, step_id in enumerate(self.analysis1_step_ids) 
+                     if a1_active_mask[i]]
+        
+        # For Analysis 2: same logic
+        a2_active_mask = np.any(self.analysis2_coeffs != 0.0, axis=0)
+        active_a2 = [step_id for i, step_id in enumerate(self.analysis2_step_ids) 
+                     if a2_active_mask[i]]
+        
+        return (active_a1, active_a2)
 
 
 @dataclass

@@ -70,7 +70,7 @@ class NodalForcesCombinationEngine:
         # Each tuple is (node_ids, fx, fy, fz)
         self._force_cache: Dict[Tuple[int, int], Tuple] = {}
         
-        # DPF field cache for native DPF operations
+        # DPF field cache for native DPF operations (not populated by default to save memory)
         self._field_cache: Dict[Tuple[int, int], 'dpf.Field'] = {}
         
         # Node information (populated during preload)
@@ -107,40 +107,45 @@ class NodalForcesCombinationEngine:
     def validate_nodal_forces_availability(self) -> Tuple[bool, str]:
         """
         Validate that nodal forces are available in both RST files
-        for all load steps defined in the combination table.
+        for all active load steps (those with non-zero coefficients).
         
         Returns:
             Tuple of (is_valid, error_message). If valid, error_message is empty.
         """
         errors = []
         
-        # Check Analysis 1
-        if not self.reader1.check_nodal_forces_available():
-            errors.append(
-                "Analysis 1 RST file does not contain nodal forces.\n"
-                "Ensure 'Write element nodal forces' is enabled in ANSYS Output Controls."
-            )
-        else:
-            # Check each load step
-            for step_id in self.table.analysis1_step_ids:
-                try:
-                    self.reader1.read_nodal_forces_for_loadstep(step_id, self.scoping)
-                except NodalForcesNotAvailableError as e:
-                    errors.append(f"Analysis 1, Load Step {step_id}: {str(e)}")
+        # Get only active steps (those with non-zero coefficients)
+        active_a1_steps, active_a2_steps = self.table.get_active_step_ids()
         
-        # Check Analysis 2
-        if not self.reader2.check_nodal_forces_available():
-            errors.append(
-                "Analysis 2 RST file does not contain nodal forces.\n"
-                "Ensure 'Write element nodal forces' is enabled in ANSYS Output Controls."
-            )
-        else:
-            # Check each load step
-            for step_id in self.table.analysis2_step_ids:
-                try:
-                    self.reader2.read_nodal_forces_for_loadstep(step_id, self.scoping)
-                except NodalForcesNotAvailableError as e:
-                    errors.append(f"Analysis 2, Load Step {step_id}: {str(e)}")
+        # Check Analysis 1 (only if it has active steps)
+        if active_a1_steps:
+            if not self.reader1.check_nodal_forces_available():
+                errors.append(
+                    "Analysis 1 RST file does not contain nodal forces.\n"
+                    "Ensure 'Write element nodal forces' is enabled in ANSYS Output Controls."
+                )
+            else:
+                # Check only active load steps
+                for step_id in active_a1_steps:
+                    try:
+                        self.reader1.read_nodal_forces_for_loadstep(step_id, self.scoping)
+                    except NodalForcesNotAvailableError as e:
+                        errors.append(f"Analysis 1, Load Step {step_id}: {str(e)}")
+        
+        # Check Analysis 2 (only if it has active steps)
+        if active_a2_steps:
+            if not self.reader2.check_nodal_forces_available():
+                errors.append(
+                    "Analysis 2 RST file does not contain nodal forces.\n"
+                    "Ensure 'Write element nodal forces' is enabled in ANSYS Output Controls."
+                )
+            else:
+                # Check only active load steps
+                for step_id in active_a2_steps:
+                    try:
+                        self.reader2.read_nodal_forces_for_loadstep(step_id, self.scoping)
+                    except NodalForcesNotAvailableError as e:
+                        errors.append(f"Analysis 2, Load Step {step_id}: {str(e)}")
         
         if errors:
             return False, "\n\n".join(errors)
@@ -148,10 +153,14 @@ class NodalForcesCombinationEngine:
     
     def preload_force_data(self, progress_callback: Optional[Callable[[int, int, str], None]] = None):
         """
-        Cache nodal forces for all referenced load steps.
+        Cache nodal forces for load steps with non-zero coefficients.
         
-        This method reads all force data upfront to avoid repeated file I/O
-        during combination calculations.
+        This method reads force data upfront to avoid repeated file I/O
+        during combination calculations. Only steps that have at least one
+        non-zero coefficient across all combinations are loaded, which can
+        dramatically reduce I/O time when only a subset of steps are used.
+        
+        Note: Only numpy arrays are cached (not DPF fields) to minimize memory usage.
         
         Args:
             progress_callback: Optional callback(current, total, message) for progress updates.
@@ -159,41 +168,33 @@ class NodalForcesCombinationEngine:
         Raises:
             NodalForcesNotAvailableError: If nodal forces are not available.
         """
-        # Determine total steps to load
-        a1_steps = self.table.analysis1_step_ids
-        a2_steps = self.table.analysis2_step_ids
+        # Get only active steps (those with non-zero coefficients)
+        a1_steps, a2_steps = self.table.get_active_step_ids()
         total_steps = len(a1_steps) + len(a2_steps)
         current = 0
+        
+        if total_steps == 0:
+            raise ValueError("No active load steps found. All coefficients are zero.")
         
         # Get force unit from first file
         self._force_unit = self.reader1.get_force_unit()
         
-        # Load Analysis 1 force data
+        # Load Analysis 1 force data (only active steps, numpy arrays only)
         for step_id in a1_steps:
             if progress_callback:
                 progress_callback(current, total_steps, f"Loading A1 Forces Step {step_id}...")
             
             result = self.reader1.read_nodal_forces_for_loadstep(step_id, self.scoping)
             self._force_cache[(1, step_id)] = result
-            
-            # Also cache the DPF field for native operations
-            field = self.reader1.read_nodal_forces_field_for_loadstep(step_id, self.scoping)
-            self._field_cache[(1, step_id)] = field
-            
             current += 1
         
-        # Load Analysis 2 force data
+        # Load Analysis 2 force data (only active steps, numpy arrays only)
         for step_id in a2_steps:
             if progress_callback:
                 progress_callback(current, total_steps, f"Loading A2 Forces Step {step_id}...")
             
             result = self.reader2.read_nodal_forces_for_loadstep(step_id, self.scoping)
             self._force_cache[(2, step_id)] = result
-            
-            # Also cache the DPF field
-            field = self.reader2.read_nodal_forces_field_for_loadstep(step_id, self.scoping)
-            self._field_cache[(2, step_id)] = field
-            
             current += 1
         
         if progress_callback:
@@ -230,19 +231,19 @@ class NodalForcesCombinationEngine:
         fy = np.zeros(num_nodes)
         fz = np.zeros(num_nodes)
         
-        # Add contributions from Analysis 1
+        # Add contributions from Analysis 1 (check cache membership for active-only loading)
         for i, step_id in enumerate(self.table.analysis1_step_ids):
             coeff = a1_coeffs[i]
-            if coeff != 0.0:
+            if coeff != 0.0 and (1, step_id) in self._force_cache:
                 _, s_fx, s_fy, s_fz = self._force_cache[(1, step_id)]
                 fx += coeff * s_fx
                 fy += coeff * s_fy
                 fz += coeff * s_fz
         
-        # Add contributions from Analysis 2
+        # Add contributions from Analysis 2 (check cache membership for active-only loading)
         for i, step_id in enumerate(self.table.analysis2_step_ids):
             coeff = a2_coeffs[i]
-            if coeff != 0.0:
+            if coeff != 0.0 and (2, step_id) in self._force_cache:
                 _, s_fx, s_fy, s_fz = self._force_cache[(2, step_id)]
                 fx += coeff * s_fx
                 fy += coeff * s_fy
@@ -264,10 +265,10 @@ class NodalForcesCombinationEngine:
         
         combined_field = None
         
-        # Add contributions from Analysis 1
+        # Add contributions from Analysis 1 (check cache membership for active-only loading)
         for i, step_id in enumerate(self.table.analysis1_step_ids):
             coeff = a1_coeffs[i]
-            if coeff != 0.0:
+            if coeff != 0.0 and (1, step_id) in self._field_cache:
                 field = self._field_cache[(1, step_id)]
                 scaled = scale_force_field(field, coeff)
                 
@@ -276,10 +277,10 @@ class NodalForcesCombinationEngine:
                 else:
                     combined_field = add_force_fields(combined_field, scaled)
         
-        # Add contributions from Analysis 2
+        # Add contributions from Analysis 2 (check cache membership for active-only loading)
         for i, step_id in enumerate(self.table.analysis2_step_ids):
             coeff = a2_coeffs[i]
-            if coeff != 0.0:
+            if coeff != 0.0 and (2, step_id) in self._field_cache:
                 field = self._field_cache[(2, step_id)]
                 scaled = scale_force_field(field, coeff)
                 
@@ -375,13 +376,16 @@ class NodalForcesCombinationEngine:
     
     def compute_full_analysis(
         self,
-        progress_callback: Optional[Callable[[int, int, str], None]] = None
+        progress_callback: Optional[Callable[[int, int, str], None]] = None,
+        auto_cleanup: bool = True
     ) -> NodalForcesResult:
         """
         Compute complete force envelope analysis and return NodalForcesResult.
         
         Args:
             progress_callback: Optional callback for progress updates.
+            auto_cleanup: If True, clear cached force data after computation to
+                          free memory. Default is True for memory efficiency.
             
         Returns:
             NodalForcesResult with all envelope data.
@@ -395,7 +399,7 @@ class NodalForcesCombinationEngine:
         max_values, combo_of_max = self.compute_envelope(magnitude_all, "max")
         min_values, combo_of_min = self.compute_envelope(magnitude_all, "min")
         
-        return NodalForcesResult(
+        result = NodalForcesResult(
             node_ids=self.node_ids.copy(),
             node_coords=self.node_coords.copy(),
             max_magnitude_over_combo=max_values,
@@ -407,6 +411,13 @@ class NodalForcesCombinationEngine:
             all_combo_fz=fz_all,
             force_unit=self.force_unit,
         )
+        
+        # Auto-cleanup cached data to free memory
+        if auto_cleanup:
+            self.clear_cache()
+            gc.collect()
+        
+        return result
     
     def compute_single_node_history(
         self,

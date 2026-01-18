@@ -237,7 +237,17 @@ class SolverTab(QWidget):
         self.add_row_btn.clicked.connect(self._add_table_row)
         self.delete_row_btn.clicked.connect(self._delete_table_row)
         
-        # Output checkboxes
+        # Output checkboxes - mutual exclusivity for output types
+        self.von_mises_checkbox.toggled.connect(
+            lambda checked: self._on_output_checkbox_toggled(self.von_mises_checkbox, checked))
+        self.max_principal_stress_checkbox.toggled.connect(
+            lambda checked: self._on_output_checkbox_toggled(self.max_principal_stress_checkbox, checked))
+        self.min_principal_stress_checkbox.toggled.connect(
+            lambda checked: self._on_output_checkbox_toggled(self.min_principal_stress_checkbox, checked))
+        self.nodal_forces_checkbox.toggled.connect(
+            lambda checked: self._on_output_checkbox_toggled(self.nodal_forces_checkbox, checked))
+        
+        # Mode toggles (not mutually exclusive with output types)
         self.combination_history_checkbox.toggled.connect(self._toggle_combination_history_mode)
         self.plasticity_correction_checkbox.toggled.connect(self._toggle_plasticity_options)
         
@@ -627,6 +637,50 @@ class SolverTab(QWidget):
     def _toggle_plasticity_options(self, checked: bool):
         """Toggle plasticity correction options visibility."""
         self.plasticity_options_group.setVisible(checked)
+    
+    def _on_output_checkbox_toggled(self, source_checkbox, checked: bool):
+        """
+        Handle output type checkbox toggle with mutual exclusivity.
+        
+        Only one output type (von_mises, max_principal, min_principal, nodal_forces)
+        can be selected at a time. When a checkbox is checked, all other output
+        type checkboxes are automatically unchecked.
+        
+        Note: combination_history_checkbox and plasticity_correction_checkbox are
+        NOT mutually exclusive - they can be combined with any output type.
+        
+        Args:
+            source_checkbox: The checkbox that was toggled.
+            checked: Whether the checkbox was checked or unchecked.
+        """
+        if not checked:
+            # Allow unchecking without side effects
+            self._update_solve_button_state()
+            return
+        
+        # List of mutually exclusive output type checkboxes
+        output_checkboxes = [
+            self.von_mises_checkbox,
+            self.max_principal_stress_checkbox,
+            self.min_principal_stress_checkbox,
+            self.nodal_forces_checkbox,
+        ]
+        
+        # Block signals to prevent recursive calls
+        for checkbox in output_checkboxes:
+            checkbox.blockSignals(True)
+        
+        try:
+            # Uncheck all other output type checkboxes
+            for checkbox in output_checkboxes:
+                if checkbox is not source_checkbox:
+                    checkbox.setChecked(False)
+        finally:
+            # Re-enable signals
+            for checkbox in output_checkboxes:
+                checkbox.blockSignals(False)
+        
+        self._update_solve_button_state()
     
     # ========== Analysis Methods ==========
     

@@ -86,7 +86,8 @@ class CombinationEngine:
         # Each tuple is (node_ids, sx, sy, sz, sxy, syz, sxz)
         self._stress_cache: Dict[Tuple[int, int], Tuple] = {}
         
-        # DPF field cache for native DPF operations
+        # DPF field cache for native DPF operations (not populated by default to save memory)
+        # Use preload_stress_fields() explicitly if DPF operations are needed
         self._field_cache: Dict[Tuple[int, int], 'dpf.Field'] = {}
         
         # Node information (populated during preload)
@@ -114,46 +115,42 @@ class CombinationEngine:
     
     def preload_stress_data(self, progress_callback: Optional[Callable[[int, int, str], None]] = None):
         """
-        Cache stress tensors for all referenced load steps.
+        Cache stress tensors for load steps with non-zero coefficients.
         
-        This method reads all stress data upfront to avoid repeated file I/O
-        during combination calculations.
+        This method reads stress data upfront to avoid repeated file I/O
+        during combination calculations. Only steps that have at least one
+        non-zero coefficient across all combinations are loaded, which can
+        dramatically reduce I/O time when only a subset of steps are used.
+        
+        Note: Only numpy arrays are cached (not DPF fields) to minimize memory usage.
         
         Args:
             progress_callback: Optional callback(current, total, message) for progress updates.
         """
-        # Determine total steps to load
-        a1_steps = self.table.analysis1_step_ids
-        a2_steps = self.table.analysis2_step_ids
+        # Get only active steps (those with non-zero coefficients)
+        a1_steps, a2_steps = self.table.get_active_step_ids()
         total_steps = len(a1_steps) + len(a2_steps)
         current = 0
         
-        # Load Analysis 1 stress data
+        if total_steps == 0:
+            raise ValueError("No active load steps found. All coefficients are zero.")
+        
+        # Load Analysis 1 stress data (only active steps, numpy arrays only)
         for step_id in a1_steps:
             if progress_callback:
                 progress_callback(current, total_steps, f"Loading A1 Step {step_id}...")
             
             result = self.reader1.read_stress_tensor_for_loadstep(step_id, self.scoping)
             self._stress_cache[(1, step_id)] = result
-            
-            # Also cache the DPF field for native operations
-            field = self.reader1.read_stress_field_for_loadstep(step_id, self.scoping)
-            self._field_cache[(1, step_id)] = field
-            
             current += 1
         
-        # Load Analysis 2 stress data
+        # Load Analysis 2 stress data (only active steps, numpy arrays only)
         for step_id in a2_steps:
             if progress_callback:
                 progress_callback(current, total_steps, f"Loading A2 Step {step_id}...")
             
             result = self.reader2.read_stress_tensor_for_loadstep(step_id, self.scoping)
             self._stress_cache[(2, step_id)] = result
-            
-            # Also cache the DPF field
-            field = self.reader2.read_stress_field_for_loadstep(step_id, self.scoping)
-            self._field_cache[(2, step_id)] = field
-            
             current += 1
         
         if progress_callback:
@@ -196,10 +193,10 @@ class CombinationEngine:
         syz = np.zeros(num_nodes)
         sxz = np.zeros(num_nodes)
         
-        # Add contributions from Analysis 1
+        # Add contributions from Analysis 1 (check cache membership for active-only loading)
         for i, step_id in enumerate(self.table.analysis1_step_ids):
             coeff = a1_coeffs[i]
-            if coeff != 0.0:
+            if coeff != 0.0 and (1, step_id) in self._stress_cache:
                 _, s_sx, s_sy, s_sz, s_sxy, s_syz, s_sxz = self._stress_cache[(1, step_id)]
                 sx += coeff * s_sx
                 sy += coeff * s_sy
@@ -208,10 +205,10 @@ class CombinationEngine:
                 syz += coeff * s_syz
                 sxz += coeff * s_sxz
         
-        # Add contributions from Analysis 2
+        # Add contributions from Analysis 2 (check cache membership for active-only loading)
         for i, step_id in enumerate(self.table.analysis2_step_ids):
             coeff = a2_coeffs[i]
-            if coeff != 0.0:
+            if coeff != 0.0 and (2, step_id) in self._stress_cache:
                 _, s_sx, s_sy, s_sz, s_sxy, s_syz, s_sxz = self._stress_cache[(2, step_id)]
                 sx += coeff * s_sx
                 sy += coeff * s_sy
@@ -245,10 +242,10 @@ class CombinationEngine:
         
         combined_field = None
         
-        # Add contributions from Analysis 1
+        # Add contributions from Analysis 1 (check cache membership for active-only loading)
         for i, step_id in enumerate(self.table.analysis1_step_ids):
             coeff = a1_coeffs[i]
-            if coeff != 0.0:
+            if coeff != 0.0 and (1, step_id) in self._field_cache:
                 field = self._field_cache[(1, step_id)]
                 scaled = scale_stress_field(field, coeff)
                 
@@ -257,10 +254,10 @@ class CombinationEngine:
                 else:
                     combined_field = add_stress_fields(combined_field, scaled)
         
-        # Add contributions from Analysis 2
+        # Add contributions from Analysis 2 (check cache membership for active-only loading)
         for i, step_id in enumerate(self.table.analysis2_step_ids):
             coeff = a2_coeffs[i]
-            if coeff != 0.0:
+            if coeff != 0.0 and (2, step_id) in self._field_cache:
                 field = self._field_cache[(2, step_id)]
                 scaled = scale_stress_field(field, coeff)
                 
@@ -343,7 +340,7 @@ class CombinationEngine:
         self,
         stress_type: str = "von_mises",
         progress_callback: Optional[Callable[[int, int, str], None]] = None,
-        use_dpf: bool = True
+        use_dpf: bool = False
     ) -> np.ndarray:
         """
         Compute requested stress for ALL combinations.
@@ -351,7 +348,8 @@ class CombinationEngine:
         Args:
             stress_type: One of "von_mises", "max_principal", "min_principal".
             progress_callback: Optional callback(current, total, message) for progress.
-            use_dpf: If True, use DPF operators when possible.
+            use_dpf: If True, use DPF operators (requires _field_cache to be populated).
+                     Default is False to use memory-efficient numpy-based computation.
             
         Returns:
             Array of shape (num_combinations, num_nodes).
@@ -434,7 +432,8 @@ class CombinationEngine:
     def compute_full_analysis(
         self,
         stress_type: str = "von_mises",
-        progress_callback: Optional[Callable[[int, int, str], None]] = None
+        progress_callback: Optional[Callable[[int, int, str], None]] = None,
+        auto_cleanup: bool = True
     ) -> CombinationResult:
         """
         Compute complete envelope analysis and return CombinationResult.
@@ -445,6 +444,8 @@ class CombinationEngine:
         Args:
             stress_type: One of "von_mises", "max_principal", "min_principal".
             progress_callback: Optional callback for progress updates.
+            auto_cleanup: If True, clear cached stress data after computation to
+                          free memory. Default is True for memory efficiency.
             
         Returns:
             CombinationResult with all envelope data.
@@ -459,7 +460,7 @@ class CombinationEngine:
         max_values, combo_of_max = self.compute_envelope(all_results, "max")
         min_values, combo_of_min = self.compute_envelope(all_results, "min")
         
-        return CombinationResult(
+        result = CombinationResult(
             node_ids=self.node_ids.copy(),
             node_coords=self.node_coords.copy(),
             max_over_combo=max_values,
@@ -469,6 +470,13 @@ class CombinationEngine:
             result_type=stress_type,
             all_combo_results=all_results,
         )
+        
+        # Auto-cleanup cached data to free memory
+        if auto_cleanup:
+            self.clear_cache()
+            gc.collect()
+        
+        return result
     
     def compute_single_node_history(
         self,
@@ -518,6 +526,9 @@ class CombinationEngine:
         avoiding the overhead of processing all nodes. Much faster than
         compute_single_node_history() for large models.
         
+        Only load steps with non-zero coefficients are read from the RST files,
+        which can dramatically reduce I/O time when only a subset of steps are used.
+        
         Args:
             node_id: Node ID to analyze.
             stress_type: One of "von_mises", "max_principal", "min_principal".
@@ -536,15 +547,17 @@ class CombinationEngine:
             progress_callback(0, 100, f"Loading stress data for node {node_id}...")
         
         # Load stress data for this single node only from both analyses
+        # Only load active steps (those with non-zero coefficients)
         single_stress_cache: Dict[Tuple[int, int], Tuple] = {}
         
-        a1_steps = self.table.analysis1_step_ids
-        a2_steps = self.table.analysis2_step_ids
-        total_steps = len(a1_steps) + len(a2_steps)
+        active_a1_steps, active_a2_steps = self.table.get_active_step_ids()
+        active_a1_set = set(active_a1_steps)
+        active_a2_set = set(active_a2_steps)
+        total_steps = len(active_a1_steps) + len(active_a2_steps)
         current_step = 0
         
-        # Load Analysis 1 stress data for single node
-        for step_id in a1_steps:
+        # Load Analysis 1 stress data for single node (only active steps)
+        for step_id in active_a1_steps:
             result = self.reader1.read_stress_tensor_for_loadstep(step_id, single_node_scoping)
             single_stress_cache[(1, step_id)] = result
             current_step += 1
@@ -552,8 +565,8 @@ class CombinationEngine:
                 progress = int((current_step / total_steps) * 40)  # 0-40% for loading
                 progress_callback(progress, 100, f"Loading A1 step {step_id}...")
         
-        # Load Analysis 2 stress data for single node
-        for step_id in a2_steps:
+        # Load Analysis 2 stress data for single node (only active steps)
+        for step_id in active_a2_steps:
             result = self.reader2.read_stress_tensor_for_loadstep(step_id, single_node_scoping)
             single_stress_cache[(2, step_id)] = result
             current_step += 1
@@ -568,6 +581,10 @@ class CombinationEngine:
         num_combos = self.table.num_combinations
         stress_values = np.zeros(num_combos)
         
+        # Keep full step ID lists for correct coefficient indexing
+        all_a1_steps = self.table.analysis1_step_ids
+        all_a2_steps = self.table.analysis2_step_ids
+        
         for combo_idx in range(num_combos):
             a1_coeffs, a2_coeffs = self.table.get_coeffs_for_combination(combo_idx)
             
@@ -575,10 +592,10 @@ class CombinationEngine:
             sx, sy, sz = 0.0, 0.0, 0.0
             sxy, syz, sxz = 0.0, 0.0, 0.0
             
-            # Add contributions from Analysis 1
-            for i, step_id in enumerate(a1_steps):
+            # Add contributions from Analysis 1 (iterate over all for correct indexing)
+            for i, step_id in enumerate(all_a1_steps):
                 coeff = a1_coeffs[i]
-                if coeff != 0.0:
+                if coeff != 0.0 and step_id in active_a1_set:
                     _, s_sx, s_sy, s_sz, s_sxy, s_syz, s_sxz = single_stress_cache[(1, step_id)]
                     sx += coeff * s_sx[0]
                     sy += coeff * s_sy[0]
@@ -587,10 +604,10 @@ class CombinationEngine:
                     syz += coeff * s_syz[0]
                     sxz += coeff * s_sxz[0]
             
-            # Add contributions from Analysis 2
-            for i, step_id in enumerate(a2_steps):
+            # Add contributions from Analysis 2 (iterate over all for correct indexing)
+            for i, step_id in enumerate(all_a2_steps):
                 coeff = a2_coeffs[i]
-                if coeff != 0.0:
+                if coeff != 0.0 and step_id in active_a2_set:
                     _, s_sx, s_sy, s_sz, s_sxy, s_syz, s_sxz = single_stress_cache[(2, step_id)]
                     sx += coeff * s_sx[0]
                     sy += coeff * s_sy[0]
@@ -655,7 +672,8 @@ class CombinationEngine:
         Estimate memory requirements for the full analysis.
         
         Calculates memory needed for stress caching and result arrays based on
-        the number of nodes, load steps, and combinations.
+        the number of nodes, active load steps (those with non-zero coefficients),
+        and combinations.
         
         Args:
             num_nodes: Number of nodes. If None, uses scoping size.
@@ -671,14 +689,16 @@ class CombinationEngine:
         if num_nodes is None:
             num_nodes = len(self.scoping.ids)
         
-        num_a1_steps = len(self.table.analysis1_step_ids)
-        num_a2_steps = len(self.table.analysis2_step_ids)
+        # Use active step count (only steps with non-zero coefficients)
+        active_a1_steps, active_a2_steps = self.table.get_active_step_ids()
+        num_a1_steps = len(active_a1_steps)
+        num_a2_steps = len(active_a2_steps)
         total_steps = num_a1_steps + num_a2_steps
         num_combos = self.table.num_combinations
         
         bytes_per_float = 8  # float64
         
-        # Stress cache: 6 components × nodes × steps × 2 analyses
+        # Stress cache: 6 components × nodes × active_steps (numpy arrays only, no DPF fields)
         # Plus node IDs array per step
         stress_cache_bytes = (6 * num_nodes * total_steps * bytes_per_float +
                              total_steps * num_nodes * bytes_per_float)  # node IDs
@@ -693,7 +713,7 @@ class CombinationEngine:
         total_bytes = stress_cache_bytes + results_array_bytes + envelope_bytes
         
         # Minimum for chunked processing (envelope only, single chunk of stress data)
-        # Memory per node per chunk: 6 × total_steps × 8 (stress) + num_combos × 8 (results)
+        # Memory per node per chunk: 6 × active_steps × 8 (stress) + num_combos × 8 (results)
         memory_per_node = 6 * total_steps * bytes_per_float + num_combos * bytes_per_float
         minimum_chunk_memory = MIN_CHUNK_SIZE * memory_per_node + envelope_bytes
         
@@ -707,6 +727,8 @@ class CombinationEngine:
             'num_nodes': num_nodes,
             'num_combinations': num_combos,
             'num_load_steps': total_steps,
+            'num_active_a1_steps': num_a1_steps,
+            'num_active_a2_steps': num_a2_steps,
         }
     
     def _get_available_memory(self) -> int:
@@ -802,7 +824,8 @@ class CombinationEngine:
         Load stress data for a specific node range only.
         
         Creates a temporary scoping for just the requested nodes,
-        then reads stress tensors from both RST files.
+        then reads stress tensors from both RST files. Only load steps
+        that have non-zero coefficients to minimize I/O.
         
         Args:
             start_idx: Start index (0-based, inclusive).
@@ -817,13 +840,16 @@ class CombinationEngine:
         chunk_scoping = self.reader1.create_sub_scoping(self.scoping, start_idx, end_idx)
         chunk_cache = {}
         
-        # Load Analysis 1 stress data for chunk
-        for step_id in self.table.analysis1_step_ids:
+        # Get only active steps (those with non-zero coefficients)
+        active_a1_steps, active_a2_steps = self.table.get_active_step_ids()
+        
+        # Load Analysis 1 stress data for chunk (only active steps)
+        for step_id in active_a1_steps:
             result = self.reader1.read_stress_tensor_for_loadstep(step_id, chunk_scoping)
             chunk_cache[(1, step_id)] = result
         
-        # Load Analysis 2 stress data for chunk
-        for step_id in self.table.analysis2_step_ids:
+        # Load Analysis 2 stress data for chunk (only active steps)
+        for step_id in active_a2_steps:
             result = self.reader2.read_stress_tensor_for_loadstep(step_id, chunk_scoping)
             chunk_cache[(2, step_id)] = result
         
@@ -839,7 +865,7 @@ class CombinationEngine:
         Compute all combinations for a chunk of nodes.
         
         Args:
-            chunk_cache: Stress cache for this chunk only.
+            chunk_cache: Stress cache for this chunk only (contains only active steps).
             chunk_size: Number of nodes in this chunk.
             stress_type: One of "von_mises", "max_principal", "min_principal".
             
@@ -860,10 +886,10 @@ class CombinationEngine:
             syz = np.zeros(chunk_size)
             sxz = np.zeros(chunk_size)
             
-            # Add contributions from Analysis 1
+            # Add contributions from Analysis 1 (check cache membership for active-only loading)
             for i, step_id in enumerate(self.table.analysis1_step_ids):
                 coeff = a1_coeffs[i]
-                if coeff != 0.0:
+                if coeff != 0.0 and (1, step_id) in chunk_cache:
                     _, s_sx, s_sy, s_sz, s_sxy, s_syz, s_sxz = chunk_cache[(1, step_id)]
                     sx += coeff * s_sx
                     sy += coeff * s_sy
@@ -872,10 +898,10 @@ class CombinationEngine:
                     syz += coeff * s_syz
                     sxz += coeff * s_sxz
             
-            # Add contributions from Analysis 2
+            # Add contributions from Analysis 2 (check cache membership for active-only loading)
             for i, step_id in enumerate(self.table.analysis2_step_ids):
                 coeff = a2_coeffs[i]
-                if coeff != 0.0:
+                if coeff != 0.0 and (2, step_id) in chunk_cache:
                     _, s_sx, s_sy, s_sz, s_sxy, s_syz, s_sxz = chunk_cache[(2, step_id)]
                     sx += coeff * s_sx
                     sy += coeff * s_sy
@@ -1044,7 +1070,8 @@ class CombinationEngine:
         self,
         stress_type: str = "von_mises",
         progress_callback: Optional[Callable[[int, int, str], None]] = None,
-        memory_threshold_gb: float = 2.0
+        memory_threshold_gb: float = 2.0,
+        auto_cleanup: bool = True
     ) -> CombinationResult:
         """
         Automatically choose between standard and chunked processing.
@@ -1055,6 +1082,7 @@ class CombinationEngine:
             stress_type: One of "von_mises", "max_principal", "min_principal".
             progress_callback: Optional callback for progress updates.
             memory_threshold_gb: Memory threshold in GB to switch to chunked.
+            auto_cleanup: If True, clear cached data after computation to free memory.
             
         Returns:
             CombinationResult with envelope data.
@@ -1065,7 +1093,7 @@ class CombinationEngine:
         threshold_bytes = memory_threshold_gb * 1024 * 1024 * 1024
         
         if estimates['total_bytes'] > threshold_bytes:
-            # Use chunked processing for large models
+            # Use chunked processing for large models (inherently memory-efficient)
             if progress_callback:
                 progress_callback(
                     0, 1, 
@@ -1080,5 +1108,6 @@ class CombinationEngine:
             self.preload_stress_data(progress_callback=progress_callback)
             return self.compute_full_analysis(
                 stress_type=stress_type,
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
+                auto_cleanup=auto_cleanup
             )
