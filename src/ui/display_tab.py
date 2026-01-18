@@ -84,6 +84,8 @@ class DisplayTab(QWidget):
         # Combination results metadata (for scalar display and hover annotations)
         self.combination_names = []  # List of combination names
         self.current_result_type = None  # "von_mises", "max_principal", or "min_principal"
+        self.all_combo_results = None  # Full results array, shape (num_combinations, num_nodes)
+        self.nodal_forces_result = None  # NodalForcesResult for force-based visualization
         self.anim_timer = None
         self.time_text_actor = None
         self.current_anim_time = 0.0
@@ -157,6 +159,10 @@ class DisplayTab(QWidget):
         self.deformation_scale_edit = self.components['deformation_scale_edit']
         self.absolute_deformation_checkbox = self.components['absolute_deformation_checkbox']
         
+        # View specific combination controls
+        self.view_combination_label = self.components['view_combination_label']
+        self.view_combination_combo = self.components['view_combination_combo']
+        
         # Combination/Time point controls (MARS-SC: uses combination_combo)
         self.combination_combo = self.components.get('combination_combo')
         self.time_point_spinbox = self.components['time_point_spinbox']
@@ -208,6 +214,9 @@ class DisplayTab(QWidget):
         self.scalar_display_combo.currentIndexChanged.connect(
             self._on_scalar_display_changed
         )
+        self.view_combination_combo.currentIndexChanged.connect(
+            self._on_view_combination_changed
+        )
         self.deformation_scale_edit.editingFinished.connect(
             self._validate_deformation_scale
         )
@@ -237,6 +246,46 @@ class DisplayTab(QWidget):
         # Context menu
         self.plotter.customContextMenuRequested.connect(self.show_context_menu)
     
+    def _get_stress_type_label(self, result_type: str = None) -> str:
+        """
+        Get a descriptive label for the current stress result type.
+        
+        Args:
+            result_type: Optional result type override. If None, uses self.current_result_type.
+        
+        Returns:
+            Descriptive label like "S_vm", "S1", "S3", or "Force".
+        """
+        rt = result_type or self.current_result_type
+        
+        stress_type_labels = {
+            "von_mises": "S_vm",
+            "max_principal": "S1",
+            "min_principal": "S3",
+        }
+        
+        return stress_type_labels.get(rt, "Stress")
+    
+    def _get_descriptive_legend_title(self, base_name: str, result_type: str = None) -> str:
+        """
+        Generate a descriptive legend title that includes the stress type.
+        
+        Args:
+            base_name: Base name like "Max", "Min", "Combo_0", etc.
+            result_type: Optional result type override. If None, uses self.current_result_type.
+        
+        Returns:
+            Descriptive title like "Max_S_vm [MPa]", "Combo_1_S1 [MPa]".
+        """
+        rt = result_type or self.current_result_type
+        stress_label = self._get_stress_type_label(rt)
+        
+        # Check if we're dealing with force results
+        if self.nodal_forces_result is not None and self.all_combo_results is None:
+            return f"{base_name}_Force [N]"
+        
+        return f"{base_name}_{stress_label} [MPa]"
+    
     @pyqtSlot(int)
     def _on_combination_changed(self, index):
         """
@@ -256,6 +305,7 @@ class DisplayTab(QWidget):
         
         Switches the active scalar field displayed on the mesh based on user selection.
         Options are: Max Value, Min Value (min principal only), Combo # of Max, Combo # of Min.
+        Supports both stress results and force results.
         
         Args:
             index: Index of the selected item in the scalar display combo box.
@@ -265,7 +315,7 @@ class DisplayTab(QWidget):
         
         selected_text = self.scalar_display_combo.currentText()
         
-        # Map display text to mesh array names
+        # Map display text to mesh array names - stress results
         scalar_map = {
             "Max Value": "Max_Stress",
             "Min Value": "Min_Stress",
@@ -273,12 +323,45 @@ class DisplayTab(QWidget):
             "Combo # of Min": "Combo_of_Min",
         }
         
+        # Map display text to mesh array names - force results (fallback)
+        force_scalar_map = {
+            "Max Value": "Max_Force_Magnitude",
+            "Min Value": "Min_Force_Magnitude",
+            "Combo # of Max": "Combo_of_Max",
+            "Combo # of Min": "Combo_of_Min",
+        }
+        
+        # Try stress array first, then force array
         array_name = scalar_map.get(selected_text)
+        is_force_result = False
+        if array_name not in self.current_mesh.array_names:
+            array_name = force_scalar_map.get(selected_text)
+            is_force_result = True
+        
         if array_name and array_name in self.current_mesh.array_names:
             # Update active scalars
             self.current_mesh.set_active_scalars(array_name)
-            self.data_column = array_name
-            self.state.data_column = array_name
+            
+            # Generate descriptive legend title
+            if "Combo_of_Max" in array_name or "Combo_of_Min" in array_name:
+                # For combination index display, use simple name without units
+                legend_title = array_name
+            elif is_force_result:
+                # Force results
+                if "Max" in array_name:
+                    legend_title = "Max_Force [N]"
+                else:
+                    legend_title = "Min_Force [N]"
+            else:
+                # Stress results - use descriptive title
+                stress_label = self._get_stress_type_label()
+                if "Max" in array_name:
+                    legend_title = f"Max_{stress_label} [MPa]"
+                else:
+                    legend_title = f"Min_{stress_label} [MPa]"
+            
+            self.data_column = legend_title
+            self.state.data_column = legend_title
             
             # Update scalar range based on new data
             data = self.current_mesh[array_name]
@@ -298,7 +381,148 @@ class DisplayTab(QWidget):
             # Refresh visualization
             self.update_visualization()
             
-            print(f"DisplayTab: Scalar display changed to '{selected_text}' ({array_name})")
+            print(f"DisplayTab: Scalar display changed to '{selected_text}' (legend: {legend_title})")
+    
+    @pyqtSlot(int)
+    def _on_view_combination_changed(self, index):
+        """
+        Handle view combination selection change.
+        
+        When a specific combination is selected, updates the mesh with that
+        combination's results. When "(Envelope View)" is selected, reverts to
+        showing the envelope data (Max/Min across all combinations).
+        
+        Args:
+            index: Index of the selected item (0 = Envelope View, 1+ = specific combination).
+        """
+        if self.current_mesh is None:
+            return
+        
+        if index == 0:
+            # Envelope View - show the Max/Min envelope data
+            self._show_envelope_view()
+            # Re-enable the scalar display combo for envelope options
+            self.scalar_display_combo.setEnabled(True)
+            self.scalar_display_label.setEnabled(True)
+        else:
+            # Specific combination selected
+            combo_idx = index - 1  # Account for "(Envelope View)" being at index 0
+            self._show_specific_combination(combo_idx)
+            # Disable the scalar display combo since we're showing specific combination
+            self.scalar_display_combo.setEnabled(False)
+            self.scalar_display_label.setEnabled(False)
+    
+    def _show_envelope_view(self):
+        """
+        Switch visualization back to envelope view (Max/Min across combinations).
+        
+        Restores the display to show envelope data based on current scalar_display_combo selection.
+        """
+        if self.current_mesh is None:
+            return
+        
+        # Trigger the scalar display handler to refresh the view
+        self._on_scalar_display_changed(self.scalar_display_combo.currentIndex())
+        print("DisplayTab: Switched to Envelope View")
+    
+    def _show_specific_combination(self, combo_idx: int):
+        """
+        Update visualization to show results for a specific combination.
+        
+        Handles both stress results (from all_combo_results) and force results
+        (from nodal_forces_result).
+        
+        Args:
+            combo_idx: Index of the combination to display (0-based).
+        """
+        if self.current_mesh is None:
+            print(f"DisplayTab: Cannot show combination {combo_idx} - no mesh available")
+            return
+        
+        combo_name = self.combination_names[combo_idx] if combo_idx < len(self.combination_names) else f"Combination {combo_idx + 1}"
+        is_force_result = False
+        
+        # Try stress results first
+        if self.all_combo_results is not None:
+            if combo_idx < 0 or combo_idx >= self.all_combo_results.shape[0]:
+                print(f"DisplayTab: Invalid combination index {combo_idx}")
+                return
+            
+            # Get the stress values for this specific combination
+            # all_combo_results shape is (num_combinations, num_nodes)
+            combo_values = self.all_combo_results[combo_idx, :]
+            array_name = f"Combo_{combo_idx}_Stress"
+            
+        # Try force results
+        elif self.nodal_forces_result is not None:
+            try:
+                # Get force magnitude for this combination
+                combo_values = self.nodal_forces_result.get_force_magnitude(combo_idx)
+                array_name = f"Combo_{combo_idx}_Force"
+                is_force_result = True
+            except (ValueError, IndexError) as e:
+                print(f"DisplayTab: Cannot get force magnitude for combination {combo_idx}: {e}")
+                return
+        else:
+            print(f"DisplayTab: Cannot show combination {combo_idx} - no data available")
+            return
+        
+        # Add this data to the mesh
+        self.current_mesh[array_name] = combo_values
+        self.current_mesh.set_active_scalars(array_name)
+        
+        # Generate descriptive legend title
+        if is_force_result:
+            legend_title = f"Combo_{combo_idx + 1}_Force [N]"
+        else:
+            stress_label = self._get_stress_type_label()
+            legend_title = f"Combo_{combo_idx + 1}_{stress_label} [MPa]"
+        
+        self.data_column = legend_title
+        self.state.data_column = legend_title
+        
+        # Update scalar range based on this combination's data
+        data_min = float(np.min(combo_values))
+        data_max = float(np.max(combo_values))
+        
+        # Update spinboxes
+        self.scalar_min_spin.blockSignals(True)
+        self.scalar_max_spin.blockSignals(True)
+        self.scalar_min_spin.setRange(data_min, data_max)
+        self.scalar_max_spin.setRange(data_min, 1e30)
+        self.scalar_min_spin.setValue(data_min)
+        self.scalar_max_spin.setValue(data_max)
+        self.scalar_min_spin.blockSignals(False)
+        self.scalar_max_spin.blockSignals(False)
+        
+        # Refresh visualization
+        self.update_visualization()
+        
+        print(f"DisplayTab: Showing results for '{combo_name}' (index {combo_idx})")
+    
+    def populate_view_combination_options(self, combination_names: list):
+        """
+        Populate the view combination dropdown with available combinations.
+        
+        Args:
+            combination_names: List of combination names from the combination table.
+        """
+        self.view_combination_combo.blockSignals(True)
+        self.view_combination_combo.clear()
+        
+        # First item is always the envelope view option
+        self.view_combination_combo.addItem("(Envelope View)")
+        
+        # Add each combination as an option
+        for i, name in enumerate(combination_names):
+            self.view_combination_combo.addItem(f"{i + 1}: {name}")
+        
+        self.view_combination_combo.setCurrentIndex(0)  # Default to envelope view
+        self.view_combination_combo.blockSignals(False)
+        
+        # Show the view combination controls
+        self.view_combination_label.setVisible(True)
+        self.view_combination_combo.setVisible(True)
     
     def populate_scalar_display_options(self, result_type: str, has_min_data: bool = False):
         """
@@ -326,12 +550,16 @@ class DisplayTab(QWidget):
         self.scalar_display_combo.setCurrentIndex(0)  # Default to Max Value
         self.scalar_display_combo.blockSignals(False)
         
-        # Store result type for hover annotation
+        # Store result type for hover annotation and legend title generation
         self.current_result_type = result_type
         
         # Show the scalar display controls
         self.scalar_display_label.setVisible(True)
         self.scalar_display_combo.setVisible(True)
+        
+        # Update the legend title to match the default selection with descriptive format
+        # This ensures the legend shows "Max_S_vm [MPa]" instead of generic title
+        self._on_scalar_display_changed(0)
     
     @pyqtSlot(object)
     def _setup_initial_view(self, initial_data):
@@ -594,6 +822,8 @@ class DisplayTab(QWidget):
         # Update current mesh and track state
         self.current_mesh = mesh
         self.state.current_mesh = mesh
+        
+        # Use the passed scalar_bar_title initially (will be updated when scalar display changes)
         self.data_column = scalar_bar_title
         self.state.data_column = scalar_bar_title
         
@@ -613,24 +843,71 @@ class DisplayTab(QWidget):
             result_type = mesh.field_data['result_type'][0]
             self.current_result_type = result_type
         
-        # Get combination names from solver tab if available
+        # Get combination names and all_combo_results from solver tab if available
         try:
             solver_tab = self.window().solver_tab
             if solver_tab and solver_tab.combination_table:
                 self.combination_names = solver_tab.combination_table.combination_names
             else:
                 self.combination_names = []
+            
+            # Get all_combo_results for viewing individual combinations (stress results)
+            if solver_tab and solver_tab.combination_result:
+                self.all_combo_results = solver_tab.combination_result.all_combo_results
+            else:
+                self.all_combo_results = None
+            
+            # Get nodal forces result for viewing individual force combinations
+            if solver_tab and solver_tab.nodal_forces_result:
+                self.nodal_forces_result = solver_tab.nodal_forces_result
+            else:
+                self.nodal_forces_result = None
         except (AttributeError, RuntimeError):
             self.combination_names = []
+            self.all_combo_results = None
+            self.nodal_forces_result = None
         
         # Populate scalar display options if this is batch solve result
         has_min_data = "Min_Stress" in mesh.array_names
+        has_force_data = "Max_Force_Magnitude" in mesh.array_names
+        
         if "Max_Stress" in mesh.array_names or has_min_data:
+            # Stress results
             self.populate_scalar_display_options(result_type or "von_mises", has_min_data)
+            
+            # Populate view combination dropdown if we have combination names and all results
+            if self.combination_names and self.all_combo_results is not None:
+                self.populate_view_combination_options(self.combination_names)
+            else:
+                # Hide view combination controls if no individual results available
+                self.view_combination_label.setVisible(False)
+                self.view_combination_combo.setVisible(False)
+        elif has_force_data:
+            # Force results - use simplified options
+            self.scalar_display_combo.blockSignals(True)
+            self.scalar_display_combo.clear()
+            self.scalar_display_combo.addItem("Max Value")
+            self.scalar_display_combo.addItem("Combo # of Max")
+            if "Min_Force_Magnitude" in mesh.array_names:
+                self.scalar_display_combo.addItem("Min Value")
+                self.scalar_display_combo.addItem("Combo # of Min")
+            self.scalar_display_combo.setCurrentIndex(0)
+            self.scalar_display_combo.blockSignals(False)
+            self.scalar_display_label.setVisible(True)
+            self.scalar_display_combo.setVisible(True)
+            
+            # Populate view combination dropdown for forces
+            if self.combination_names and self.nodal_forces_result is not None:
+                self.populate_view_combination_options(self.combination_names)
+            else:
+                self.view_combination_label.setVisible(False)
+                self.view_combination_combo.setVisible(False)
         else:
             # Hide scalar display controls for non-batch results
             self.scalar_display_label.setVisible(False)
             self.scalar_display_combo.setVisible(False)
+            self.view_combination_label.setVisible(False)
+            self.view_combination_combo.setVisible(False)
         
         # Update the visualization
         self.update_visualization()
@@ -805,6 +1082,23 @@ class DisplayTab(QWidget):
         self.scalar_min_spin.clear()
         self.scalar_max_spin.clear()
         self.file_path.clear()
+        
+        # Clear combination data
+        self.all_combo_results = None
+        self.nodal_forces_result = None
+        self.combination_names = []
+        
+        # Reset and hide view combination controls
+        self.view_combination_combo.blockSignals(True)
+        self.view_combination_combo.clear()
+        self.view_combination_combo.addItem("(Envelope View)")
+        self.view_combination_combo.blockSignals(False)
+        self.view_combination_label.setVisible(False)
+        self.view_combination_combo.setVisible(False)
+        
+        # Re-enable scalar display controls
+        self.scalar_display_combo.setEnabled(True)
+        self.scalar_display_label.setEnabled(True)
     
     def showEvent(self, event):
         """Handle tab becoming visible - fix camera widget sizing."""

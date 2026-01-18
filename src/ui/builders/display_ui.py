@@ -123,6 +123,18 @@ class DisplayTabUIBuilder:
         scalar_display_label.setVisible(False)  # Hidden until batch results are loaded
         scalar_display_combo.setVisible(False)
         
+        # View specific combination controls (for batch solve results)
+        view_combination_label = QLabel("View Combination:")
+        view_combination_combo = QComboBox()
+        view_combination_combo.setMinimumWidth(200)
+        view_combination_combo.setToolTip(
+            "Select a specific combination to visualize its results.\n"
+            "Choose '(Envelope View)' to see Max/Min across all combinations."
+        )
+        view_combination_combo.addItem("(Envelope View)")  # Default option
+        view_combination_label.setVisible(False)  # Hidden until batch results are loaded
+        view_combination_combo.setVisible(False)
+        
         # Layout
         graphics_control_layout = QHBoxLayout()
         graphics_control_layout.addWidget(QLabel("Node Point Size:"))
@@ -132,6 +144,8 @@ class DisplayTabUIBuilder:
         graphics_control_layout.addWidget(scalar_max_spin)
         graphics_control_layout.addWidget(scalar_display_label)
         graphics_control_layout.addWidget(scalar_display_combo)
+        graphics_control_layout.addWidget(view_combination_label)
+        graphics_control_layout.addWidget(view_combination_combo)
         graphics_control_layout.addWidget(deformation_scale_label)
         graphics_control_layout.addWidget(deformation_scale_edit)
         graphics_control_layout.addWidget(absolute_deformation_checkbox)
@@ -147,6 +161,8 @@ class DisplayTabUIBuilder:
         self.components['scalar_max_spin'] = scalar_max_spin
         self.components['scalar_display_label'] = scalar_display_label
         self.components['scalar_display_combo'] = scalar_display_combo
+        self.components['view_combination_label'] = view_combination_label
+        self.components['view_combination_combo'] = view_combination_combo
         self.components['deformation_scale_label'] = deformation_scale_label
         self.components['deformation_scale_edit'] = deformation_scale_edit
         self.components['absolute_deformation_checkbox'] = absolute_deformation_checkbox
