@@ -191,6 +191,7 @@ class SolverTab(QWidget):
         self.max_principal_stress_checkbox = self.components['max_principal_stress_checkbox']
         self.min_principal_stress_checkbox = self.components['min_principal_stress_checkbox']
         self.nodal_forces_checkbox = self.components['nodal_forces_checkbox']
+        self.nodal_forces_csys_combo = self.components['nodal_forces_csys_combo']
         self.plasticity_correction_checkbox = self.components['plasticity_correction_checkbox']
         
         # Single node controls
@@ -246,6 +247,7 @@ class SolverTab(QWidget):
             lambda checked: self._on_output_checkbox_toggled(self.min_principal_stress_checkbox, checked))
         self.nodal_forces_checkbox.toggled.connect(
             lambda checked: self._on_output_checkbox_toggled(self.nodal_forces_checkbox, checked))
+        self.nodal_forces_checkbox.toggled.connect(self._toggle_nodal_forces_csys_combo)
         
         # Mode toggles (not mutually exclusive with output types)
         self.combination_history_checkbox.toggled.connect(self._toggle_combination_history_mode)
@@ -638,6 +640,10 @@ class SolverTab(QWidget):
         """Toggle plasticity correction options visibility."""
         self.plasticity_options_group.setVisible(checked)
     
+    def _toggle_nodal_forces_csys_combo(self, checked: bool):
+        """Toggle nodal forces coordinate system combo visibility."""
+        self.nodal_forces_csys_combo.setVisible(checked)
+    
     def _on_output_checkbox_toggled(self, source_checkbox, checked: bool):
         """
         Handle output type checkbox toggle with mutual exclusivity.
@@ -786,11 +792,17 @@ class SolverTab(QWidget):
     
     def _build_solver_config(self) -> SolverConfig:
         """Build solver configuration from UI state."""
+        # Determine if nodal forces should be in global coordinates
+        # "Global" = index 0 = rotate_to_global=True
+        # "Local (Element)" = index 1 = rotate_to_global=False
+        nodal_forces_rotate_to_global = self.nodal_forces_csys_combo.currentIndex() == 0
+        
         config = SolverConfig(
             calculate_von_mises=self.von_mises_checkbox.isChecked(),
             calculate_max_principal_stress=self.max_principal_stress_checkbox.isChecked(),
             calculate_min_principal_stress=self.min_principal_stress_checkbox.isChecked(),
             calculate_nodal_forces=self.nodal_forces_checkbox.isChecked(),
+            nodal_forces_rotate_to_global=nodal_forces_rotate_to_global,
             combination_history_mode=self.combination_history_checkbox.isChecked(),
             output_directory=self.project_directory,
         )

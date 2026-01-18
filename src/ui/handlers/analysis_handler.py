@@ -331,12 +331,13 @@ class SolverAnalysisHandler:
             # Get combination table
             combo_table = self.tab.get_combination_table_data()
             
-            # Create engine
+            # Create engine with coordinate system option
             engine = NodalForcesCombinationEngine(
                 reader1=reader1,
                 reader2=reader2,
                 nodal_scoping=nodal_scoping,
-                combination_table=combo_table
+                combination_table=combo_table,
+                rotate_to_global=config.nodal_forces_rotate_to_global
             )
             
             return engine
@@ -855,7 +856,8 @@ class SolverAnalysisHandler:
         if config.calculate_min_principal_stress:
             output_types.append("Min Principal")
         if config.calculate_nodal_forces:
-            output_types.append("Nodal Forces")
+            csys = "Global" if config.nodal_forces_rotate_to_global else "Local (Element)"
+            output_types.append(f"Nodal Forces ({csys})")
         
         mode = "Combination History" if config.combination_history_mode else "Envelope"
         

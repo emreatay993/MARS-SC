@@ -50,7 +50,8 @@ class NodalForcesCombinationEngine:
         reader1: DPFAnalysisReader,
         reader2: DPFAnalysisReader,
         nodal_scoping,  # dpf.Scoping
-        combination_table: CombinationTableData
+        combination_table: CombinationTableData,
+        rotate_to_global: bool = True
     ):
         """
         Initialize the nodal forces combination engine.
@@ -60,11 +61,15 @@ class NodalForcesCombinationEngine:
             reader2: DPFAnalysisReader for Analysis 2 (to combine).
             nodal_scoping: DPF Scoping with node IDs to process.
             combination_table: CombinationTableData with coefficients.
+            rotate_to_global: If True (default), rotate forces to global coordinate
+                             system. If False, keep forces in element (local) 
+                             coordinate system.
         """
         self.reader1 = reader1
         self.reader2 = reader2
         self.scoping = nodal_scoping
         self.table = combination_table
+        self.rotate_to_global = rotate_to_global
         
         # Force cache: maps (analysis_idx, step_id) -> force components tuple
         # Each tuple is (node_ids, fx, fy, fz)
@@ -184,7 +189,9 @@ class NodalForcesCombinationEngine:
             if progress_callback:
                 progress_callback(current, total_steps, f"Loading A1 Forces Step {step_id}...")
             
-            result = self.reader1.read_nodal_forces_for_loadstep(step_id, self.scoping)
+            result = self.reader1.read_nodal_forces_for_loadstep(
+                step_id, self.scoping, rotate_to_global=self.rotate_to_global
+            )
             self._force_cache[(1, step_id)] = result
             current += 1
         
@@ -193,7 +200,9 @@ class NodalForcesCombinationEngine:
             if progress_callback:
                 progress_callback(current, total_steps, f"Loading A2 Forces Step {step_id}...")
             
-            result = self.reader2.read_nodal_forces_for_loadstep(step_id, self.scoping)
+            result = self.reader2.read_nodal_forces_for_loadstep(
+                step_id, self.scoping, rotate_to_global=self.rotate_to_global
+            )
             self._force_cache[(2, step_id)] = result
             current += 1
         

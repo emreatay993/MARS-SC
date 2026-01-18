@@ -612,7 +612,8 @@ class DPFAnalysisReader:
     def read_nodal_forces_for_loadstep(
         self, 
         load_step: int, 
-        nodal_scoping: Optional['dpf.Scoping'] = None
+        nodal_scoping: Optional['dpf.Scoping'] = None,
+        rotate_to_global: bool = True
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Read nodal forces (element nodal forces summed at nodes) for a load step.
@@ -624,6 +625,10 @@ class DPFAnalysisReader:
             load_step: Load step/set ID (1-based).
             nodal_scoping: Optional DPF Scoping to filter nodes. If None, 
                           returns results for all nodes.
+            rotate_to_global: If True (default), rotate forces to global coordinate
+                             system. If False, keep forces in element (local) 
+                             coordinate system. Note: Beam/pipe element forces are 
+                             always in local coordinates regardless of this setting.
             
         Returns:
             Tuple of (node_ids, fx, fy, fz) arrays.
@@ -640,6 +645,9 @@ class DPFAnalysisReader:
             time_scoping = dpf.Scoping()
             time_scoping.ids = [load_step]
             nforce_op.inputs.time_scoping.connect(time_scoping)
+            
+            # Set coordinate system rotation option
+            nforce_op.inputs.bool_rotate_to_global.connect(rotate_to_global)
             
             # Request nodal location (sums element nodal forces at shared nodes)
             nforce_op.inputs.requested_location.connect(dpf.locations.nodal)
@@ -682,7 +690,8 @@ class DPFAnalysisReader:
     def read_nodal_forces_field_for_loadstep(
         self, 
         load_step: int, 
-        nodal_scoping: Optional['dpf.Scoping'] = None
+        nodal_scoping: Optional['dpf.Scoping'] = None,
+        rotate_to_global: bool = True
     ) -> 'dpf.Field':
         """
         Read nodal forces field for a load step (returns DPF Field object).
@@ -693,6 +702,9 @@ class DPFAnalysisReader:
         Args:
             load_step: Load step/set ID (1-based).
             nodal_scoping: Optional DPF Scoping to filter nodes.
+            rotate_to_global: If True (default), rotate forces to global coordinate
+                             system. If False, keep forces in element (local) 
+                             coordinate system.
             
         Returns:
             DPF Field object containing the nodal forces vector.
@@ -708,6 +720,9 @@ class DPFAnalysisReader:
             time_scoping = dpf.Scoping()
             time_scoping.ids = [load_step]
             nforce_op.inputs.time_scoping.connect(time_scoping)
+            
+            # Set coordinate system rotation option
+            nforce_op.inputs.bool_rotate_to_global.connect(rotate_to_global)
             
             # Request nodal location
             nforce_op.inputs.requested_location.connect(dpf.locations.nodal)

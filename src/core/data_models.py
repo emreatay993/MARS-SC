@@ -358,6 +358,8 @@ class SolverConfig:
         calculate_max_principal_stress: Whether to calculate max principal stress.
         calculate_min_principal_stress: Whether to calculate min principal stress.
         calculate_nodal_forces: Whether to calculate combined nodal forces.
+        nodal_forces_rotate_to_global: If True, rotate nodal forces to global coordinate 
+            system. If False, keep forces in element (local) coordinate system.
         combination_history_mode: Whether in combination history mode (single node).
         selected_node_id: Node ID for combination history mode.
         selected_combination_index: Combination index for single combination export.
@@ -368,6 +370,7 @@ class SolverConfig:
     calculate_max_principal_stress: bool = False
     calculate_min_principal_stress: bool = False
     calculate_nodal_forces: bool = False
+    nodal_forces_rotate_to_global: bool = True
     combination_history_mode: bool = False
     selected_node_id: Optional[int] = None
     selected_combination_index: Optional[int] = None

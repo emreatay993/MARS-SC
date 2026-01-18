@@ -17,6 +17,12 @@ from PyQt5.QtWidgets import (
 from utils.constants import (
     WINDOW_BACKGROUND_COLOR
 )
+from utils.tooltips import (
+    TOOLTIP_VON_MISES, TOOLTIP_MAX_PRINCIPAL, TOOLTIP_MIN_PRINCIPAL,
+    TOOLTIP_NODAL_FORCES, TOOLTIP_NODAL_FORCES_CSYS, TOOLTIP_COMBINATION_HISTORY,
+    TOOLTIP_PLASTICITY_CORRECTION, TOOLTIP_PLASTICITY_METHOD, TOOLTIP_MAX_ITERATIONS,
+    TOOLTIP_TOLERANCE, TOOLTIP_EXTRAPOLATION, TOOLTIP_IMPORT_CSV, TOOLTIP_EXPORT_CSV
+)
 from ui.styles.style_constants import (
     BUTTON_STYLE, GROUP_BOX_STYLE, TAB_STYLE, READONLY_INPUT_STYLE,
     CHECKBOX_STYLE, CONSOLE_STYLE, PROGRESS_BAR_STYLE
@@ -155,10 +161,12 @@ class SolverTabUIBuilder:
         import_csv_btn = QPushButton("Import CSV")
         import_csv_btn.setStyleSheet(BUTTON_STYLE)
         import_csv_btn.setFont(QFont('Arial', 8))
+        import_csv_btn.setToolTip(TOOLTIP_IMPORT_CSV)
         
         export_csv_btn = QPushButton("Export CSV")
         export_csv_btn.setStyleSheet(BUTTON_STYLE)
         export_csv_btn.setFont(QFont('Arial', 8))
+        export_csv_btn.setToolTip(TOOLTIP_EXPORT_CSV)
         
         add_row_btn = QPushButton("Add Row")
         add_row_btn.setStyleSheet(BUTTON_STYLE)
@@ -206,36 +214,49 @@ class SolverTabUIBuilder:
         # Create checkboxes for combination analysis outputs
         combination_history_checkbox = QCheckBox('Enable Combination History Mode (Single Node)')
         combination_history_checkbox.setStyleSheet(CHECKBOX_STYLE)
-        combination_history_checkbox.setToolTip(
-            "When enabled, compute stress history for a single node across all combinations"
-        )
+        combination_history_checkbox.setToolTip(TOOLTIP_COMBINATION_HISTORY)
         
         von_mises_checkbox = QCheckBox('Von-Mises Stress')
         von_mises_checkbox.setStyleSheet(CHECKBOX_STYLE)
         von_mises_checkbox.setChecked(True)  # Default selection
+        von_mises_checkbox.setToolTip(TOOLTIP_VON_MISES)
         
         max_principal_stress_checkbox = QCheckBox('Max Principal Stress (S1)')
         max_principal_stress_checkbox.setStyleSheet(CHECKBOX_STYLE)
+        max_principal_stress_checkbox.setToolTip(TOOLTIP_MAX_PRINCIPAL)
         
         min_principal_stress_checkbox = QCheckBox('Min Principal Stress (S3)')
         min_principal_stress_checkbox.setStyleSheet(CHECKBOX_STYLE)
+        min_principal_stress_checkbox.setToolTip(TOOLTIP_MIN_PRINCIPAL)
         
         nodal_forces_checkbox = QCheckBox('Nodal Forces')
         nodal_forces_checkbox.setStyleSheet(CHECKBOX_STYLE)
-        nodal_forces_checkbox.setToolTip(
-            "Combine nodal forces from both analyses.\n"
-            "Requires 'Write element nodal forces' to be enabled in ANSYS Output Controls."
-        )
+        nodal_forces_checkbox.setToolTip(TOOLTIP_NODAL_FORCES)
+        
+        # Coordinate system selection for nodal forces (hidden by default)
+        nodal_forces_csys_combo = QComboBox()
+        nodal_forces_csys_combo.addItems(["Global", "Local (Element)"])
+        nodal_forces_csys_combo.setToolTip(TOOLTIP_NODAL_FORCES_CSYS)
+        nodal_forces_csys_combo.setMaximumWidth(120)
+        nodal_forces_csys_combo.setVisible(False)  # Hidden until nodal forces is checked
         
         plasticity_correction_checkbox = QCheckBox('Enable Plasticity Correction')
         plasticity_correction_checkbox.setStyleSheet(CHECKBOX_STYLE)
+        plasticity_correction_checkbox.setToolTip(TOOLTIP_PLASTICITY_CORRECTION)
         
         # Layout
         output_layout = QVBoxLayout()
         output_layout.addWidget(von_mises_checkbox)
         output_layout.addWidget(max_principal_stress_checkbox)
         output_layout.addWidget(min_principal_stress_checkbox)
-        output_layout.addWidget(nodal_forces_checkbox)
+        
+        # Nodal forces row with checkbox and coordinate system dropdown
+        nodal_forces_row = QHBoxLayout()
+        nodal_forces_row.addWidget(nodal_forces_checkbox)
+        nodal_forces_row.addWidget(nodal_forces_csys_combo)
+        nodal_forces_row.addStretch()
+        output_layout.addLayout(nodal_forces_row)
+        
         output_layout.addWidget(combination_history_checkbox)
         output_layout.addWidget(plasticity_correction_checkbox)
         
@@ -249,6 +270,7 @@ class SolverTabUIBuilder:
         self.components['max_principal_stress_checkbox'] = max_principal_stress_checkbox
         self.components['min_principal_stress_checkbox'] = min_principal_stress_checkbox
         self.components['nodal_forces_checkbox'] = nodal_forces_checkbox
+        self.components['nodal_forces_csys_combo'] = nodal_forces_csys_combo
         self.components['plasticity_correction_checkbox'] = plasticity_correction_checkbox
         
         # Initially disable checkboxes until files are loaded
@@ -325,6 +347,7 @@ class SolverTabUIBuilder:
         method_label = QLabel("Select Method:")
         method_combo = QComboBox()
         method_combo.addItems(["Neuber", "Glinka", "Incremental Buczynski-Glinka (IBG)"])
+        method_combo.setToolTip(TOOLTIP_PLASTICITY_METHOD)
         
         # Disable IBG option
         model = method_combo.model()
@@ -344,6 +367,7 @@ class SolverTabUIBuilder:
         max_iter_input.setMaximumWidth(70)
         max_iter_validator = QIntValidator(1, 10000, max_iter_input)
         max_iter_input.setValidator(max_iter_validator)
+        max_iter_input.setToolTip(TOOLTIP_MAX_ITERATIONS)
         tolerance_label = QLabel("Tolerance")
         tolerance_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         tolerance_input = QLineEdit("1e-10")
@@ -351,6 +375,7 @@ class SolverTabUIBuilder:
         tolerance_validator = QDoubleValidator(0.0, 1.0, 12, tolerance_input)
         tolerance_validator.setNotation(QDoubleValidator.ScientificNotation)
         tolerance_input.setValidator(tolerance_validator)
+        tolerance_input.setToolTip(TOOLTIP_TOLERANCE)
         iteration_row.addWidget(iteration_label)
         iteration_row.addWidget(max_iter_label)
         iteration_row.addWidget(max_iter_input)
@@ -367,6 +392,7 @@ class SolverTabUIBuilder:
         extrap_label = QLabel("Extrapolation:")
         extrap_combo = QComboBox()
         extrap_combo.addItems(["Linear", "Plateau"])
+        extrap_combo.setToolTip(TOOLTIP_EXTRAPOLATION)
         extrap_row.addWidget(extrap_label)
         extrap_row.addWidget(extrap_combo)
         extrap_row.addStretch()
