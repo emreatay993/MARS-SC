@@ -647,6 +647,11 @@ class DPFAnalysisReader:
         Stress values are converted to MPa (N/mm²) by default for consistent
         reporting in MARS-SC millimeter-Newton standard units.
         
+        IMPORTANT: When nodal_scoping is provided, the returned arrays are 
+        guaranteed to be ordered according to nodal_scoping.ids, NOT the order
+        that DPF returns them. This ensures consistent alignment with coordinates
+        obtained via get_node_coordinates().
+        
         Args:
             load_step: Load step/set ID (1-based).
             nodal_scoping: Optional DPF Scoping to filter nodes. If None, 
@@ -657,10 +662,17 @@ class DPFAnalysisReader:
             Tuple of (node_ids, sx, sy, sz, sxy, syz, sxz) arrays.
             Each stress component array has shape (num_nodes,).
             Stress values are in MPa if convert_to_mpa=True.
+            Node IDs and stress arrays are ordered to match input scoping.
             
         Note:
             Uses elemental nodal stress averaged to nodes.
         """
+        # Store input scoping order for later reordering
+        # DPF may return results in a different order than the input scoping
+        input_node_ids_order = None
+        if nodal_scoping is not None:
+            input_node_ids_order = np.array(nodal_scoping.ids)
+        
         # Create stress operator
         stress_op = self.model.results.stress()
         
@@ -680,14 +692,14 @@ class DPFAnalysisReader:
         fields_container = stress_op.outputs.fields_container()
         stress_field = fields_container[0]
         
-        # Get node IDs from the field scoping
-        node_ids = np.array(stress_field.scoping.ids)
+        # Get node IDs from the field scoping (DPF's returned order)
+        dpf_node_ids = np.array(stress_field.scoping.ids)
         
         # Get stress data - DPF returns tensor components
         # Stress tensor has 6 components: SX, SY, SZ, SXY, SYZ, SXZ
         stress_data = stress_field.data
         
-        # Extract individual components
+        # Extract individual components (in DPF returned order)
         # DPF stress tensor component order: XX, YY, ZZ, XY, YZ, XZ
         sx = stress_data[:, 0].copy()
         sy = stress_data[:, 1].copy()
@@ -695,6 +707,55 @@ class DPFAnalysisReader:
         sxy = stress_data[:, 3].copy()
         syz = stress_data[:, 4].copy()
         sxz = stress_data[:, 5].copy()
+        
+        # CRITICAL FIX: Reorder/align arrays to match input scoping order
+        # DPF may return results in a different order than the input scoping,
+        # and may also return fewer nodes (if some nodes have no stress data).
+        # This ensures scalar values are correctly mapped to node positions.
+        if input_node_ids_order is not None:
+            # Build a lookup: node_id -> index in DPF results
+            dpf_id_to_idx = {nid: idx for idx, nid in enumerate(dpf_node_ids)}
+            
+            # Check if DPF returned exactly the nodes we requested in the same order
+            if len(input_node_ids_order) == len(dpf_node_ids) and np.array_equal(dpf_node_ids, input_node_ids_order):
+                # Perfect match - no reordering needed
+                pass
+            elif len(input_node_ids_order) == len(dpf_node_ids):
+                # Same count but different order - reorder to match input
+                reorder_indices = np.array([dpf_id_to_idx[nid] for nid in input_node_ids_order])
+                sx = sx[reorder_indices]
+                sy = sy[reorder_indices]
+                sz = sz[reorder_indices]
+                sxy = sxy[reorder_indices]
+                syz = syz[reorder_indices]
+                sxz = sxz[reorder_indices]
+                dpf_node_ids = input_node_ids_order
+            else:
+                # DPF returned different node count than requested (some nodes may lack data)
+                # Create full-size arrays aligned to input scoping, with zeros for missing nodes
+                # (zeros represent no stress contribution, which is safe for combination)
+                num_requested = len(input_node_ids_order)
+                sx_full = np.zeros(num_requested)
+                sy_full = np.zeros(num_requested)
+                sz_full = np.zeros(num_requested)
+                sxy_full = np.zeros(num_requested)
+                syz_full = np.zeros(num_requested)
+                sxz_full = np.zeros(num_requested)
+                
+                # Fill in values for nodes that have data
+                for req_idx, nid in enumerate(input_node_ids_order):
+                    if nid in dpf_id_to_idx:
+                        dpf_idx = dpf_id_to_idx[nid]
+                        sx_full[req_idx] = sx[dpf_idx]
+                        sy_full[req_idx] = sy[dpf_idx]
+                        sz_full[req_idx] = sz[dpf_idx]
+                        sxy_full[req_idx] = sxy[dpf_idx]
+                        syz_full[req_idx] = syz[dpf_idx]
+                        sxz_full[req_idx] = sxz[dpf_idx]
+                
+                sx, sy, sz = sx_full, sy_full, sz_full
+                sxy, syz, sxz = sxy_full, syz_full, sxz_full
+                dpf_node_ids = input_node_ids_order
         
         # Convert to MPa if requested
         if convert_to_mpa:
@@ -706,7 +767,7 @@ class DPFAnalysisReader:
             syz *= factor
             sxz *= factor
         
-        return (node_ids, sx, sy, sz, sxy, syz, sxz)
+        return (dpf_node_ids, sx, sy, sz, sxy, syz, sxz)
     
     def read_stress_field_for_loadstep(
         self, 
@@ -897,6 +958,11 @@ class DPFAnalysisReader:
         Extracts nodal force components from the RST file for the specified load step.
         Optionally filters to specific nodes via scoping.
         
+        IMPORTANT: When nodal_scoping is provided, the returned arrays are 
+        guaranteed to be ordered according to nodal_scoping.ids, NOT the order
+        that DPF returns them. This ensures consistent alignment with coordinates
+        obtained via get_node_coordinates().
+        
         Args:
             load_step: Load step/set ID (1-based).
             nodal_scoping: Optional DPF Scoping to filter nodes. If None, 
@@ -909,11 +975,18 @@ class DPFAnalysisReader:
         Returns:
             Tuple of (node_ids, fx, fy, fz) arrays.
             Each force component array has shape (num_nodes,).
+            Node IDs and force arrays are ordered to match input scoping.
             
         Raises:
             NodalForcesNotAvailableError: If nodal forces are not available.
         """
         try:
+            # Store input scoping order for later reordering
+            # DPF may return results in a different order than the input scoping
+            input_node_ids_order = None
+            if nodal_scoping is not None:
+                input_node_ids_order = np.array(nodal_scoping.ids)
+            
             # Create element nodal forces operator
             nforce_op = self.model.results.element_nodal_forces()
             
@@ -943,18 +1016,57 @@ class DPFAnalysisReader:
             
             force_field = fields_container[0]
             
-            # Get node IDs from the field scoping
-            node_ids = np.array(force_field.scoping.ids)
+            # Get node IDs from the field scoping (DPF's returned order)
+            dpf_node_ids = np.array(force_field.scoping.ids)
             
             # Get force data - DPF returns 3-component vector (FX, FY, FZ)
             force_data = force_field.data
             
-            # Extract individual components
+            # Extract individual components (in DPF returned order)
             fx = force_data[:, 0].copy()
             fy = force_data[:, 1].copy()
             fz = force_data[:, 2].copy()
             
-            return (node_ids, fx, fy, fz)
+            # CRITICAL FIX: Reorder/align arrays to match input scoping order
+            # DPF may return results in a different order than the input scoping,
+            # and may also return fewer nodes (if some nodes have no force data).
+            # This ensures scalar values are correctly mapped to node positions.
+            if input_node_ids_order is not None:
+                # Build a lookup: node_id -> index in DPF results
+                dpf_id_to_idx = {nid: idx for idx, nid in enumerate(dpf_node_ids)}
+                
+                # Check if DPF returned exactly the nodes we requested in the same order
+                if len(input_node_ids_order) == len(dpf_node_ids) and np.array_equal(dpf_node_ids, input_node_ids_order):
+                    # Perfect match - no reordering needed
+                    pass
+                elif len(input_node_ids_order) == len(dpf_node_ids):
+                    # Same count but different order - reorder to match input
+                    reorder_indices = np.array([dpf_id_to_idx[nid] for nid in input_node_ids_order])
+                    fx = fx[reorder_indices]
+                    fy = fy[reorder_indices]
+                    fz = fz[reorder_indices]
+                    dpf_node_ids = input_node_ids_order
+                else:
+                    # DPF returned different node count than requested (some nodes may lack data)
+                    # Create full-size arrays aligned to input scoping, with zeros for missing nodes
+                    # (zeros represent no force contribution, which is safe for combination)
+                    num_requested = len(input_node_ids_order)
+                    fx_full = np.zeros(num_requested)
+                    fy_full = np.zeros(num_requested)
+                    fz_full = np.zeros(num_requested)
+                    
+                    # Fill in values for nodes that have data
+                    for req_idx, nid in enumerate(input_node_ids_order):
+                        if nid in dpf_id_to_idx:
+                            dpf_idx = dpf_id_to_idx[nid]
+                            fx_full[req_idx] = fx[dpf_idx]
+                            fy_full[req_idx] = fy[dpf_idx]
+                            fz_full[req_idx] = fz[dpf_idx]
+                    
+                    fx, fy, fz = fx_full, fy_full, fz_full
+                    dpf_node_ids = input_node_ids_order
+            
+            return (dpf_node_ids, fx, fy, fz)
             
         except NodalForcesNotAvailableError:
             raise
