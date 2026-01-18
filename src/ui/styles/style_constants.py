@@ -75,6 +75,9 @@ QTabBar::tab:hover {
 # Input field styles
 READONLY_INPUT_STYLE = "background-color: #f0f0f0; color: grey; border: 1px solid #5b9bd5; padding: 5px;"
 
+# Non-zero coefficient cell background color (soft green)
+NONZERO_COEFFICIENT_BG_COLOR = "#d4edda"  # Light green, matches Bootstrap success-light
+
 # Checkbox styles
 CHECKBOX_STYLE = """
 QCheckBox {

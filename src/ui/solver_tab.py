@@ -11,11 +11,13 @@ from typing import Optional, List
 
 import numpy as np
 from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot
-from PyQt5.QtGui import QPalette, QColor, QDoubleValidator
+from PyQt5.QtGui import QPalette, QColor, QDoubleValidator, QBrush
 from PyQt5.QtWidgets import (
     QMessageBox, QWidget, QDialog, QVBoxLayout,
     QTableWidgetItem, QFileDialog, QStyledItemDelegate, QLineEdit
 )
+
+from ui.styles.style_constants import NONZERO_COEFFICIENT_BG_COLOR
 
 
 class NumericDelegate(QStyledItemDelegate):
@@ -170,6 +172,7 @@ class SolverTab(QWidget):
         self.combine_info_label = self.components['combine_info_label']
         self.named_selection_combo = self.components['named_selection_combo']
         self.refresh_ns_button = self.components['refresh_ns_button']
+        self.skip_substeps_checkbox = self.components['skip_substeps_checkbox']
         
         # Combination table
         self.combo_table = self.components['combo_table']
@@ -237,6 +240,9 @@ class SolverTab(QWidget):
         self.export_csv_btn.clicked.connect(self.file_handler.export_combination_table)
         self.add_row_btn.clicked.connect(self._add_table_row)
         self.delete_row_btn.clicked.connect(self._delete_table_row)
+        
+        # Connect cell change signal for coefficient highlighting
+        self.combo_table.cellChanged.connect(self._on_coefficient_cell_changed)
         
         # Output checkboxes - mutual exclusivity for output types
         self.von_mises_checkbox.toggled.connect(
@@ -495,7 +501,50 @@ class SolverTab(QWidget):
         """Apply numeric delegate to all coefficient columns (column 2 onwards)."""
         for col in range(2, self.combo_table.columnCount()):
             self.combo_table.setItemDelegateForColumn(col, self._numeric_delegate)
-    
+
+    def _update_coefficient_cell_highlight(self, item: QTableWidgetItem):
+        """
+        Update the background color of a coefficient cell based on its value.
+        
+        Non-zero values get a light green background to visually distinguish them
+        from zero/empty values.
+        
+        Args:
+            item: The QTableWidgetItem to update.
+        """
+        if item is None:
+            return
+        
+        try:
+            value = float(item.text())
+            is_nonzero = value != 0.0
+        except (ValueError, TypeError):
+            is_nonzero = False
+        
+        if is_nonzero:
+            item.setBackground(QBrush(QColor(NONZERO_COEFFICIENT_BG_COLOR)))
+        else:
+            # Reset to default (no background)
+            item.setBackground(QBrush())
+
+    def _on_coefficient_cell_changed(self, row: int, column: int):
+        """
+        Handle cell changes in the combination table to update highlighting.
+        
+        This is called whenever a user manually edits a cell in the table.
+        Only coefficient columns (column 2 onwards) are highlighted.
+        
+        Args:
+            row: The row index of the changed cell.
+            column: The column index of the changed cell.
+        """
+        # Only apply highlighting to coefficient columns (column 2 onwards)
+        if column < 2:
+            return
+        
+        item = self.combo_table.item(row, column)
+        self._update_coefficient_cell_highlight(item)
+
     def _add_table_row(self):
         """Add a new row to the combination table."""
         row_count = self.combo_table.rowCount()
@@ -607,12 +656,16 @@ class SolverTab(QWidget):
             
             # A1 coefficients
             for i, coeff in enumerate(data.analysis1_coeffs[row]):
-                self.combo_table.setItem(row, 2 + i, QTableWidgetItem(str(coeff)))
+                item = QTableWidgetItem(str(coeff))
+                self._update_coefficient_cell_highlight(item)
+                self.combo_table.setItem(row, 2 + i, item)
             
             # A2 coefficients
             offset = 2 + data.num_analysis1_steps
             for i, coeff in enumerate(data.analysis2_coeffs[row]):
-                self.combo_table.setItem(row, offset + i, QTableWidgetItem(str(coeff)))
+                item = QTableWidgetItem(str(coeff))
+                self._update_coefficient_cell_highlight(item)
+                self.combo_table.setItem(row, offset + i, item)
     
     # ========== UI State Methods ==========
     

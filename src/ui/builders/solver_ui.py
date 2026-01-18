@@ -14,6 +14,28 @@ from PyQt5.QtWidgets import (
     QHeaderView, QAbstractItemView, QSpinBox, QWidget
 )
 
+
+class ClearableSelectionTableWidget(QTableWidget):
+    """
+    A QTableWidget that clears selection when clicking on empty space.
+    
+    This provides better UX by allowing users to deselect rows by clicking
+    on areas of the table that don't contain cells/items.
+    """
+    
+    def mousePressEvent(self, event):
+        """Handle mouse press events to clear selection on empty space click."""
+        # Get the item at the click position
+        item = self.itemAt(event.pos())
+        
+        # If clicked on empty space (no item), clear selection
+        if item is None:
+            self.clearSelection()
+            self.setCurrentItem(None)
+        
+        # Call the parent implementation for normal behavior
+        super().mousePressEvent(event)
+
 from utils.constants import (
     WINDOW_BACKGROUND_COLOR
 )
@@ -91,6 +113,16 @@ class SolverTabUIBuilder:
         refresh_ns_button.setMaximumWidth(80)
         refresh_ns_button.setEnabled(False)
         
+        # Skip substeps checkbox
+        skip_substeps_checkbox = QCheckBox("Skip Substeps (use last substep of each load step only)")
+        skip_substeps_checkbox.setStyleSheet(CHECKBOX_STYLE)
+        skip_substeps_checkbox.setToolTip(
+            "When enabled, only the final substep of each load step will be loaded.\n"
+            "This reduces the number of coefficient columns when RST files contain\n"
+            "many substeps (e.g., from nonlinear analysis with auto time stepping).\n\n"
+            "Note: This option must be set BEFORE loading RST files."
+        )
+        
         # Layout
         file_layout = QGridLayout()
         file_layout.addWidget(base_rst_button, 0, 0)
@@ -109,6 +141,9 @@ class SolverTabUIBuilder:
         
         file_layout.addLayout(ns_row, 2, 0, 1, 3)
         
+        # Skip substeps row
+        file_layout.addWidget(skip_substeps_checkbox, 3, 0, 1, 3)
+        
         # Use collapsible group box instead of QGroupBox
         file_group = CollapsibleGroupBoxStyled("Input Files", initially_expanded=True)
         file_group.setContentLayout(file_layout)
@@ -123,6 +158,7 @@ class SolverTabUIBuilder:
         self.components['combine_info_label'] = combine_info_label
         self.components['named_selection_combo'] = named_selection_combo
         self.components['refresh_ns_button'] = refresh_ns_button
+        self.components['skip_substeps_checkbox'] = skip_substeps_checkbox
         self.components['file_input_group'] = file_group
         
         return file_group
@@ -134,14 +170,21 @@ class SolverTabUIBuilder:
         Returns:
             CollapsibleGroupBoxStyled: Collapsible group box containing the combination table.
         """
-        # Table widget
-        combo_table = QTableWidget()
+        # Table widget - use custom class that clears selection on empty space click
+        combo_table = ClearableSelectionTableWidget()
         combo_table.setMinimumHeight(120)
         combo_table.setAlternatingRowColors(True)
         combo_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         combo_table.setSelectionMode(QAbstractItemView.SingleSelection)
-        combo_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         combo_table.verticalHeader().setVisible(False)
+        
+        # Enable horizontal scrolling for tables with many coefficient columns
+        # ResizeToContents auto-sizes columns based on header/content width
+        # stretchLastSection=False ensures scrollbar appears when columns overflow
+        combo_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        combo_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        combo_table.horizontalHeader().setStretchLastSection(False)
+        combo_table.horizontalHeader().setMinimumSectionSize(50)
         
         # Initialize with placeholder columns
         combo_table.setColumnCount(3)

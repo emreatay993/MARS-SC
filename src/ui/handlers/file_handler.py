@@ -24,21 +24,23 @@ class RSTLoaderThread(QThread):
     finished = pyqtSignal(object, str)  # Emits (AnalysisData, filename)
     error = pyqtSignal(str)  # Emits error message
     
-    def __init__(self, rst_path: str):
+    def __init__(self, rst_path: str, skip_substeps: bool = False):
         """
         Initialize the RST loader thread.
         
         Args:
             rst_path: Path to RST file to load.
+            skip_substeps: If True, only load the last substep of each load step.
         """
         super().__init__()
         self.rst_path = rst_path
+        self.skip_substeps = skip_substeps
     
     def run(self):
         """Run the loader in background thread."""
         try:
             reader = DPFAnalysisReader(self.rst_path)
-            analysis_data = reader.get_analysis_data()
+            analysis_data = reader.get_analysis_data(skip_substeps=self.skip_substeps)
             self.finished.emit(analysis_data, self.rst_path)
         except DPFNotAvailableError as e:
             self.error.emit(f"DPF not available: {e}")
@@ -105,10 +107,14 @@ class SolverFileHandler:
         # Disable UI during load
         self.tab.setEnabled(False)
         analysis_name = "Base Analysis" if is_base else "Analysis to Combine"
-        self.tab.console_textbox.append(f"Loading {analysis_name} RST file...\n")
+        
+        # Check if skip substeps is enabled
+        skip_substeps = self.tab.skip_substeps_checkbox.isChecked()
+        skip_info = " (skipping intermediate substeps)" if skip_substeps else ""
+        self.tab.console_textbox.append(f"Loading {analysis_name} RST file{skip_info}...\n")
         
         # Create and start loader thread
-        loader_thread = RSTLoaderThread(filename)
+        loader_thread = RSTLoaderThread(filename, skip_substeps=skip_substeps)
         
         if is_base:
             loader_thread.finished.connect(

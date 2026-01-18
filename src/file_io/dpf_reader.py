@@ -217,48 +217,233 @@ class DPFAnalysisReader:
         except Exception:
             return []
     
-    def get_time_values(self) -> List[float]:
+    def get_last_substep_ids(self) -> List[int]:
+        """
+        Return list of set IDs corresponding to the last substep of each load step.
+        
+        This method identifies load steps and returns only the final substep
+        of each, which is useful for reducing the number of result sets when
+        the RST file contains many intermediate substeps.
+        
+        Uses multiple strategies:
+        1. DPF's get_cumulative_index(step, substep) API
+        2. Time value analysis to detect load step boundaries
+        
+        Returns:
+            List of set IDs representing the last substep of each load step.
+        """
+        try:
+            tf_support = self.time_freq_support
+            n_sets = tf_support.n_sets
+            
+            if n_sets == 0:
+                return []
+            
+            # Strategy 1: Try DPF's step/substep API
+            result = self._get_last_substep_ids_via_dpf_api(tf_support, n_sets)
+            if result is not None:
+                return result
+            
+            # Strategy 2: Analyze time values to detect load step boundaries
+            result = self._get_last_substep_ids_via_time_analysis(n_sets)
+            if result is not None:
+                return result
+            
+            # Fallback: return all sets
+            return list(range(1, n_sets + 1))
+            
+        except Exception:
+            return self.get_load_step_ids()
+    
+    def _get_last_substep_ids_via_dpf_api(self, tf_support, n_sets: int) -> Optional[List[int]]:
+        """
+        Try to find last substep IDs using DPF's get_cumulative_index API.
+        
+        Returns:
+            List of last substep IDs if successful, None if not enough coverage.
+        """
+        step_to_substeps = {}
+        found_indices = set()
+        
+        for step in range(1, n_sets + 10):
+            try:
+                cumulative_idx = tf_support.get_cumulative_index(step=step, substep=1)
+                
+                if cumulative_idx is not None and 0 < cumulative_idx <= n_sets:
+                    step_to_substeps[step] = []
+                    substep = 1
+                    
+                    while True:
+                        try:
+                            idx = tf_support.get_cumulative_index(step=step, substep=substep)
+                            if idx is not None and 0 < idx <= n_sets and idx not in found_indices:
+                                found_indices.add(idx)
+                                step_to_substeps[step].append((substep, idx))
+                                substep += 1
+                            else:
+                                break
+                        except Exception:
+                            break
+                        if substep > 1000:
+                            break
+            except Exception:
+                continue
+            
+            if len(found_indices) >= n_sets:
+                break
+        
+        # Need at least 80% coverage to use this method
+        if len(found_indices) < n_sets * 0.8:
+            return None
+        
+        if step_to_substeps:
+            last_substep_ids = []
+            for load_step in sorted(step_to_substeps.keys()):
+                substeps = step_to_substeps[load_step]
+                if substeps:
+                    last_cumulative_idx = max(substeps, key=lambda x: x[0])[1]
+                    last_substep_ids.append(last_cumulative_idx)
+            
+            if last_substep_ids:
+                return sorted(last_substep_ids)
+        
+        return None
+    
+    def _get_last_substep_ids_via_time_analysis(self, n_sets: int) -> Optional[List[int]]:
+        """
+        Detect load step boundaries by analyzing time values.
+        
+        Looks for patterns like:
+        - Time values that are integer seconds (likely end of load step)
+        - Time resets (next time < current time)
+        
+        Returns:
+            List of last substep IDs if pattern detected, None otherwise.
+        """
+        time_values = self.get_time_values()
+        
+        if not time_values or len(time_values) < 2:
+            return None
+        
+        # Strategy 1: Find integer time values (1.0, 2.0, 3.0, etc.)
+        # These typically indicate end of load step in ANSYS
+        integer_time_indices = []
+        non_integer_count = 0
+        
+        for i, t in enumerate(time_values):
+            set_id = i + 1  # 1-based set ID
+            
+            # Check if time is an integer (or very close to integer)
+            if abs(t - round(t)) < 1e-6 and t > 0:
+                integer_time_indices.append(set_id)
+            else:
+                non_integer_count += 1
+        
+        # If ALL times are integers, there are no substeps to skip
+        # (each set is its own load step)
+        if non_integer_count == 0:
+            return None  # No filtering needed
+        
+        # If we found integer time boundaries and they make sense, use them
+        # Need at least some non-integer times (substeps) for this to make sense
+        if len(integer_time_indices) >= 1 and non_integer_count > 0:
+            # Verify the pattern makes sense
+            # Also ensure the last set is included if it's an integer time
+            last_set_id = n_sets
+            if last_set_id not in integer_time_indices:
+                last_time = time_values[-1]
+                if abs(last_time - round(last_time)) < 1e-6:
+                    integer_time_indices.append(last_set_id)
+            
+            # Sort and return if we have a reasonable number
+            # (fewer than total sets, meaning we're actually filtering)
+            integer_time_indices = sorted(set(integer_time_indices))
+            if len(integer_time_indices) >= 1 and len(integer_time_indices) < n_sets:
+                return integer_time_indices
+        
+        # Strategy 2: Detect time resets (next time <= current time)
+        reset_indices = []
+        for i, t in enumerate(time_values):
+            set_id = i + 1
+            
+            if i == len(time_values) - 1:
+                # Always include the last set
+                reset_indices.append(set_id)
+                continue
+            
+            next_t = time_values[i + 1]
+            if next_t <= t:
+                reset_indices.append(set_id)
+        
+        if len(reset_indices) >= 1 and len(reset_indices) < n_sets:
+            return reset_indices
+        
+        return None
+    
+    def get_time_values(self, set_ids: Optional[List[int]] = None) -> List[float]:
         """
         Return list of time values (in seconds) for each set.
         
         For static/transient analyses, these are the time points at which
         results were stored.
         
+        Args:
+            set_ids: Optional list of specific set IDs to get time values for.
+                    If None, returns time values for all sets.
+        
         Returns:
             List of time values in seconds, one per set.
         """
         try:
             tf_support = self.time_freq_support
+            all_time_values = None
+            
             # Try different methods to get time/frequency values
             # (API varies slightly between DPF versions)
             try:
                 # Primary method: time_frequencies field
                 time_field = tf_support.time_frequencies
                 if time_field is not None:
-                    return list(time_field.data)
+                    all_time_values = list(time_field.data)
             except AttributeError:
                 pass
             
-            try:
-                # Alternative: frequencies field (used for both time and freq)
-                freq_field = tf_support.frequencies
-                if freq_field is not None:
-                    return list(freq_field.data)
-            except AttributeError:
-                pass
+            if all_time_values is None:
+                try:
+                    # Alternative: frequencies field (used for both time and freq)
+                    freq_field = tf_support.frequencies
+                    if freq_field is not None:
+                        all_time_values = list(freq_field.data)
+                except AttributeError:
+                    pass
             
-            # Fallback: return set indices as float
-            n_sets = tf_support.n_sets
-            return [float(i) for i in range(1, n_sets + 1)]
+            if all_time_values is None:
+                # Fallback: return set indices as float
+                n_sets = tf_support.n_sets
+                all_time_values = [float(i) for i in range(1, n_sets + 1)]
+            
+            # Filter by specific set IDs if provided
+            if set_ids is not None:
+                # set_ids are 1-based, array indices are 0-based
+                return [all_time_values[sid - 1] for sid in set_ids if 0 < sid <= len(all_time_values)]
+            
+            return all_time_values
             
         except Exception:
             # Ultimate fallback: return sequential integers
             n_sets = self.get_load_step_count()
+            if set_ids is not None:
+                return [float(sid) for sid in set_ids]
             return [float(i) for i in range(1, n_sets + 1)]
     
-    def get_analysis_data(self) -> AnalysisData:
+    def get_analysis_data(self, skip_substeps: bool = False) -> AnalysisData:
         """
         Create an AnalysisData object with metadata from this RST file.
+        
+        Args:
+            skip_substeps: If True, only include the last substep of each load step.
+                          This reduces the number of result sets when the RST file
+                          contains many intermediate substeps.
         
         Returns:
             AnalysisData object containing file metadata including unit information.
@@ -266,11 +451,20 @@ class DPFAnalysisReader:
         # Check nodal forces availability once (result is cached)
         nodal_forces_available = self.check_nodal_forces_available()
         
+        # Get appropriate set IDs based on skip_substeps option
+        if skip_substeps:
+            load_step_ids = self.get_last_substep_ids()
+        else:
+            load_step_ids = self.get_load_step_ids()
+        
+        # Get time values for the selected sets
+        time_values = self.get_time_values(set_ids=load_step_ids)
+        
         return AnalysisData(
             file_path=self.rst_path,
-            num_load_steps=self.get_load_step_count(),
-            load_step_ids=self.get_load_step_ids(),
-            time_values=self.get_time_values(),
+            num_load_steps=len(load_step_ids),
+            load_step_ids=load_step_ids,
+            time_values=time_values,
             named_selections=self.get_named_selections(),
             unit_system=self.unit_system,
             stress_unit=self.stress_unit,
