@@ -11,15 +11,13 @@ from pathlib import Path
 from PyQt5.QtCore import Qt, QDir, pyqtSlot
 from PyQt5.QtGui import QPalette, QColor, QIcon
 from PyQt5.QtWidgets import (
-    QAction, QDialog, QDockWidget, QFileSystemModel,
+    QAction, QDockWidget, QFileSystemModel,
     QMainWindow, QMenuBar, QMessageBox, QTabWidget, QTreeView
 )
 
 from ui.solver_tab import SolverTab
 from ui.display_tab import DisplayTab
-from ui.widgets.dialogs import AdvancedSettingsDialog
 from ui.handlers.plotting_handler import PlottingHandler
-from ui.handlers.settings_handler import SettingsHandler
 from ui.handlers.navigator_handler import NavigatorHandler
 from ui.styles.style_constants import (
     MENU_BAR_STYLE, NAVIGATOR_TITLE_STYLE, TREE_VIEW_STYLE, TAB_STYLE
@@ -45,7 +43,6 @@ class ApplicationController(QMainWindow):
 
         # Handlers
         self.plotting_handler = PlottingHandler()
-        self.settings_handler = SettingsHandler()
 
         # Window configuration
         self.setWindowTitle('MARS-SC: Solution Combination - v1.0')
@@ -78,7 +75,7 @@ class ApplicationController(QMainWindow):
                 break
     
     def _create_menu_bar(self):
-        """Create the menu bar with File, View, and Settings menus."""
+        """Create the menu bar with File and View menus."""
         self.menu_bar = QMenuBar(self)
         self.setMenuBar(self.menu_bar)
         # Apply menu bar styles (white background, matching legacy)
@@ -97,12 +94,6 @@ class ApplicationController(QMainWindow):
         toggle_navigator_action = self.navigator_dock.toggleViewAction()
         toggle_navigator_action.setText("Navigator")
         view_menu.addAction(toggle_navigator_action)
-        
-        # Settings menu
-        settings_menu = self.menu_bar.addMenu("Settings")
-        advanced_settings_action = QAction("Advanced", self)
-        advanced_settings_action.triggered.connect(self.open_advanced_settings)
-        settings_menu.addAction(advanced_settings_action)
     
     def _create_navigator(self):
         """Create file navigator dock widget."""
@@ -224,19 +215,6 @@ class ApplicationController(QMainWindow):
         except Exception:
             pass
 
-    @pyqtSlot(bool)
-    def open_advanced_settings(self, checked=False):
-        """Open advanced settings dialog."""
-        dialog = AdvancedSettingsDialog(self)
-        if dialog.exec_() == QDialog.Accepted:
-            settings = dialog.get_settings()
-            self.settings_handler.apply_advanced_settings(settings)
-            QMessageBox.information(
-                self, "Settings Applied",
-                "New advanced settings have been applied.\n"
-                "They will be used for the next solve operation."
-            )
-    
     def closeEvent(self, event):
         """Clean up temporary files on application close."""
         self.plotting_handler.cleanup_temp_files()

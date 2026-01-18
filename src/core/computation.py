@@ -7,12 +7,6 @@ transient analysis using PyTorch. It has been deprecated in MARS-SC.
 For MARS-SC (Solution Combination), use:
     - solver.combination_engine.CombinationEngine - Linear combination of stress results
     - solver.plasticity_engine - Plasticity corrections for combination results
-
-The original modal solver code is preserved in:
-    - src/solver/engine.py (reference only, requires torch)
-    - src/utils/torch_setup.py (reference only, torch setup)
-
-These files are kept for reference but are not imported by active MARS-SC code.
 """
 
 # This module is intentionally empty to avoid importing torch dependencies.

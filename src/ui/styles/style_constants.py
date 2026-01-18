@@ -318,55 +318,6 @@ QFileDialog QComboBox {
     padding: 3px;
     border-radius: 2px;
 }
-
-QDialog#AdvancedSettingsDialog {
-    background-color: #ffffff;
-    border: 2px solid #5b9bd5;
-    border-radius: 8px;
-}
-
-QDialog#AdvancedSettingsDialog QGroupBox {
-    border: 1px solid #5b9bd5;
-    border-radius: 5px;
-    margin: 10px;
-    padding-top: 15px;
-}
-
-QDialog#AdvancedSettingsDialog QGroupBox::title {
-    subcontrol-origin: margin;
-    subcontrol-position: top left;
-    left: 15px;
-    padding: 0 8px;
-    background-color: #e7f0fd;
-    color: #000000;
-    font-weight: bold;
-    font-size: 9pt;
-}
-
-QDialog#AdvancedSettingsDialog QLabel {
-    font-family: Arial;
-    font-size: 8pt;
-    padding: 2px 0;
-}
-
-QDialog#AdvancedSettingsDialog QLineEdit,
-QDialog#AdvancedSettingsDialog QSpinBox,
-QDialog#AdvancedSettingsDialog QDoubleSpinBox,
-QDialog#AdvancedSettingsDialog QComboBox {
-    background-color: #ffffff;
-    border: 1px solid #5b9bd5;
-    padding: 4px;
-    border-radius: 3px;
-    font-family: Arial;
-    font-size: 8pt;
-}
-
-QDialog#AdvancedSettingsDialog QCheckBox {
-    spacing: 8px;
-    font-family: Arial;
-    font-size: 8pt;
-    margin: 3px 0;
-}
 """
 
 # Dialog group box styles (separate for when only group box needs styling)
