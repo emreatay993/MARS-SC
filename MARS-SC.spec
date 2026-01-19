@@ -3,15 +3,20 @@
 PyInstaller spec file for MARS-SC: Solution Combination application.
 
 Build command:
-    pyinstaller MARS-SC.spec
+    pyinstaller MARS-SC.spec --clean
 
 The executable will be created in the dist/MARS-SC folder.
 """
 
+import os
 import sys
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
+
+# Get the absolute path to the project directories
+SPEC_ROOT = os.path.abspath(SPECPATH)
+SRC_DIR = os.path.join(SPEC_ROOT, 'src')
 
 # Collect all submodules for complex packages
 hiddenimports = [
@@ -66,62 +71,61 @@ hiddenimports = [
     'lxml',
     'openpyxl',
     
-    # Application modules
-    'src',
-    'src.core',
-    'src.core.data_models',
-    'src.core.computation',
-    'src.core.plasticity',
-    'src.core.visualization',
-    'src.file_io',
-    'src.file_io.combination_parser',
-    'src.file_io.dpf_reader',
-    'src.file_io.exporters',
-    'src.file_io.fea_utilities',
-    'src.file_io.loaders',
-    'src.file_io.validators',
-    'src.solver',
-    'src.solver.combination_engine',
-    'src.solver.nodal_forces_engine',
-    'src.solver.plasticity_engine',
-    'src.ui',
-    'src.ui.application_controller',
-    'src.ui.display_tab',
-    'src.ui.solver_tab',
-    'src.ui.builders',
-    'src.ui.builders.display_ui',
-    'src.ui.builders.solver_ui',
-    'src.ui.dialogs',
-    'src.ui.dialogs.material_profile_dialog',
-    'src.ui.handlers',
-    'src.ui.handlers.file_handler',
-    'src.ui.handlers.analysis_handler',
-    'src.ui.handlers.display_file_handler',
-    'src.ui.handlers.display_visualization_handler',
-    'src.ui.handlers.display_interaction_handler',
-    'src.ui.handlers.display_animation_handler',
-    'src.ui.handlers.display_export_handler',
-    'src.ui.handlers.display_results_handler',
-    'src.ui.handlers.display_state',
-    'src.ui.handlers.display_base_handler',
-    'src.ui.handlers.plotting_handler',
-    'src.ui.handlers.ui_state_handler',
-    'src.ui.handlers.log_handler',
-    'src.ui.handlers.navigator_handler',
-    'src.ui.styles',
-    'src.ui.styles.style_constants',
-    'src.ui.widgets',
-    'src.ui.widgets.collapsible_group',
-    'src.ui.widgets.console',
-    'src.ui.widgets.dialogs',
-    'src.ui.widgets.editable_table',
-    'src.ui.widgets.plotting',
-    'src.utils',
-    'src.utils.constants',
-    'src.utils.file_utils',
-    'src.utils.node_utils',
-    'src.utils.tooltips',
-    'src.utils.torch_setup',
+    # Application modules (relative to src directory)
+    'core',
+    'core.data_models',
+    'core.computation',
+    'core.plasticity',
+    'core.visualization',
+    'file_io',
+    'file_io.combination_parser',
+    'file_io.dpf_reader',
+    'file_io.exporters',
+    'file_io.fea_utilities',
+    'file_io.loaders',
+    'file_io.validators',
+    'solver',
+    'solver.combination_engine',
+    'solver.nodal_forces_engine',
+    'solver.plasticity_engine',
+    'ui',
+    'ui.application_controller',
+    'ui.display_tab',
+    'ui.solver_tab',
+    'ui.builders',
+    'ui.builders.display_ui',
+    'ui.builders.solver_ui',
+    'ui.dialogs',
+    'ui.dialogs.material_profile_dialog',
+    'ui.handlers',
+    'ui.handlers.file_handler',
+    'ui.handlers.analysis_handler',
+    'ui.handlers.display_file_handler',
+    'ui.handlers.display_visualization_handler',
+    'ui.handlers.display_interaction_handler',
+    'ui.handlers.display_animation_handler',
+    'ui.handlers.display_export_handler',
+    'ui.handlers.display_results_handler',
+    'ui.handlers.display_state',
+    'ui.handlers.display_base_handler',
+    'ui.handlers.plotting_handler',
+    'ui.handlers.ui_state_handler',
+    'ui.handlers.log_handler',
+    'ui.handlers.navigator_handler',
+    'ui.styles',
+    'ui.styles.style_constants',
+    'ui.widgets',
+    'ui.widgets.collapsible_group',
+    'ui.widgets.console',
+    'ui.widgets.dialogs',
+    'ui.widgets.editable_table',
+    'ui.widgets.plotting',
+    'utils',
+    'utils.constants',
+    'utils.file_utils',
+    'utils.node_utils',
+    'utils.tooltips',
+    'utils.torch_setup',
 ]
 
 # Collect additional submodules dynamically
@@ -130,13 +134,18 @@ hiddenimports += collect_submodules('vtkmodules')
 hiddenimports += collect_submodules('matplotlib')
 hiddenimports += collect_submodules('scipy')
 
-# Data files to include
+# Data files to include (non-Python resources)
 datas = [
-    # CSV data files in src
-    ('src/youngs_modulus.csv', 'src'),
-    # CSV files in handlers
-    ('src/ui/handlers/*.csv', 'src/ui/handlers'),
+    # CSV data files
+    (os.path.join(SRC_DIR, 'youngs_modulus.csv'), '.'),
 ]
+
+# Add CSV files from ui/handlers
+handlers_csv_dir = os.path.join(SRC_DIR, 'ui', 'handlers')
+if os.path.exists(handlers_csv_dir):
+    for f in os.listdir(handlers_csv_dir):
+        if f.endswith('.csv'):
+            datas.append((os.path.join(handlers_csv_dir, f), 'ui/handlers'))
 
 # Collect data files from packages
 datas += collect_data_files('pyvista')
@@ -144,8 +153,8 @@ datas += collect_data_files('vtkmodules')
 datas += collect_data_files('matplotlib')
 
 a = Analysis(
-    ['src/main.py'],
-    pathex=['.'],
+    [os.path.join(SPEC_ROOT, 'mars_sc_entry.py')],  # Use the entry point wrapper
+    pathex=[SRC_DIR],  # Add src directory to Python path for module discovery
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
@@ -178,7 +187,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=False,  # Set to True for debugging, False for release
+    console=True,  # Keep True for debugging, set False for release
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
