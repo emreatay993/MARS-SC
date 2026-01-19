@@ -496,7 +496,10 @@ def export_nodal_forces_single_combination(
     fz: np.ndarray,
     combination_index: int,
     combination_name: str = "",
-    force_unit: str = "N"
+    force_unit: str = "N",
+    coordinate_system: str = "Global",
+    node_element_types: Optional[np.ndarray] = None,
+    include_shear: bool = False
 ) -> None:
     """
     Export nodal forces for a single combination to CSV format.
@@ -509,6 +512,9 @@ def export_nodal_forces_single_combination(
         combination_index: Index of the combination being exported.
         combination_name: Name of the combination for metadata.
         force_unit: Force unit string.
+        coordinate_system: Coordinate system used ('Global' or 'Local').
+        node_element_types: Optional array of element types per node ('beam' or 'solid_shell').
+        include_shear: If True, include shear force column (sqrt(FY^2 + FZ^2)).
     """
     df = pd.DataFrame()
     
@@ -530,8 +536,20 @@ def export_nodal_forces_single_combination(
     magnitude = np.sqrt(fx**2 + fy**2 + fz**2)
     df[f'Force Magnitude [{force_unit}]'] = magnitude
     
+    # Add shear force if requested (useful for beam elements)
+    if include_shear:
+        shear = np.sqrt(fy**2 + fz**2)
+        df[f'Shear Force [{force_unit}]'] = shear
+    
+    # Add element type column if provided
+    if node_element_types is not None:
+        df['Element Type'] = node_element_types
+    
+    # Add coordinate system info
+    df['Coordinate System'] = coordinate_system
+    
     # Add combination info
-    df['Combination Index'] = combination_index
+    df['Combination Index'] = combination_index + 1  # 1-based for user display
     df['Combination Name'] = combination_name
     
     df.to_csv(filename, index=False)

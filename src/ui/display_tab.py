@@ -163,6 +163,11 @@ class DisplayTab(QWidget):
         self.view_combination_label = self.components['view_combination_label']
         self.view_combination_combo = self.components['view_combination_combo']
         
+        # Force component controls (for nodal forces visualization)
+        self.force_component_label = self.components['force_component_label']
+        self.force_component_combo = self.components['force_component_combo']
+        self.export_forces_button = self.components['export_forces_button']
+        
         # Combination/Time point controls (MARS-SC: uses combination_combo)
         self.combination_combo = self.components.get('combination_combo')
         self.time_point_spinbox = self.components['time_point_spinbox']
@@ -216,6 +221,12 @@ class DisplayTab(QWidget):
         )
         self.view_combination_combo.currentIndexChanged.connect(
             self._on_view_combination_changed
+        )
+        self.force_component_combo.currentIndexChanged.connect(
+            self._on_force_component_changed
+        )
+        self.export_forces_button.clicked.connect(
+            self._on_export_forces_clicked
         )
         self.deformation_scale_edit.editingFinished.connect(
             self._validate_deformation_scale
@@ -421,6 +432,16 @@ class DisplayTab(QWidget):
         if self.current_mesh is None:
             return
         
+        # For force results, keep force component controls visible in envelope view
+        # For stress results, hide them (stress doesn't have component selection)
+        if self.nodal_forces_result is not None and self.all_combo_results is None:
+            # Force results - keep controls visible
+            has_beam_nodes = self.nodal_forces_result.has_beam_nodes
+            self._show_force_component_controls(True, has_beam_nodes)
+        else:
+            # Stress results or no results - hide force controls
+            self._show_force_component_controls(False)
+        
         # Trigger the scalar display handler to refresh the view
         self._on_scalar_display_changed(self.scalar_display_combo.currentIndex())
         print("DisplayTab: Switched to Envelope View")
@@ -456,10 +477,17 @@ class DisplayTab(QWidget):
         # Try force results
         elif self.nodal_forces_result is not None:
             try:
-                # Get force magnitude for this combination
+                # Set up all force component arrays for this combination
+                self._setup_force_component_arrays(combo_idx)
+                
+                # Get force magnitude as default display
                 combo_values = self.nodal_forces_result.get_force_magnitude(combo_idx)
-                array_name = f"Combo_{combo_idx}_Force"
+                array_name = 'Force_Magnitude'  # Use consistent array name
                 is_force_result = True
+                
+                # Show force component controls
+                has_beam_nodes = self.nodal_forces_result.has_beam_nodes
+                self._show_force_component_controls(True, has_beam_nodes)
             except (ValueError, IndexError) as e:
                 print(f"DisplayTab: Cannot get force magnitude for combination {combo_idx}: {e}")
                 return
@@ -467,13 +495,18 @@ class DisplayTab(QWidget):
             print(f"DisplayTab: Cannot show combination {combo_idx} - no data available")
             return
         
-        # Add this data to the mesh
-        self.current_mesh[array_name] = combo_values
+        # Add this data to the mesh (for stress results - force arrays already set up above)
+        if not is_force_result:
+            array_name = f"Combo_{combo_idx}_Stress"
+            self.current_mesh[array_name] = combo_values
+            # Hide force component controls for stress results
+            self._show_force_component_controls(False)
         self.current_mesh.set_active_scalars(array_name)
         
         # Generate descriptive legend title
         if is_force_result:
-            legend_title = f"Combo_{combo_idx + 1}_Force [N]"
+            force_unit = self.nodal_forces_result.force_unit
+            legend_title = f"Force_Magnitude [{force_unit}]"
         else:
             stress_label = self._get_stress_type_label()
             legend_title = f"Combo_{combo_idx + 1}_{stress_label} [MPa]"
@@ -560,6 +593,155 @@ class DisplayTab(QWidget):
         # Update the legend title to match the default selection with descriptive format
         # This ensures the legend shows "Max_S_vm [MPa]" instead of generic title
         self._on_scalar_display_changed(0)
+    
+    def _update_force_component_options(self, has_beam_nodes: bool):
+        """
+        Update force component dropdown options based on beam presence.
+        
+        Args:
+            has_beam_nodes: True if selection contains nodes attached to beam elements.
+        """
+        self.force_component_combo.blockSignals(True)
+        self.force_component_combo.clear()
+        
+        # Base options always available
+        items = ["Magnitude", "FX", "FY", "FZ"]
+        
+        # Add Shear option only if beam nodes are present
+        if has_beam_nodes:
+            items.append("Shear (FY²+FZ²)^½")
+        
+        self.force_component_combo.addItems(items)
+        self.force_component_combo.setCurrentIndex(0)  # Default to Magnitude
+        self.force_component_combo.blockSignals(False)
+    
+    def _setup_force_component_arrays(self, combo_idx: int):
+        """
+        Add force component arrays to mesh for the selected combination.
+        
+        This sets up FX, FY, FZ, Magnitude, and optionally Shear arrays
+        on the current mesh for the specified combination.
+        
+        Args:
+            combo_idx: Index of the combination to set up arrays for.
+        """
+        if self.nodal_forces_result is None or self.current_mesh is None:
+            return
+        
+        result = self.nodal_forces_result
+        
+        # Get force components for this combination
+        fx = result.all_combo_fx[combo_idx, :]
+        fy = result.all_combo_fy[combo_idx, :]
+        fz = result.all_combo_fz[combo_idx, :]
+        
+        # Add arrays to mesh
+        self.current_mesh['FX'] = fx
+        self.current_mesh['FY'] = fy
+        self.current_mesh['FZ'] = fz
+        self.current_mesh['Force_Magnitude'] = np.sqrt(fx**2 + fy**2 + fz**2)
+        
+        # Add shear force if beam nodes present
+        if result.has_beam_nodes:
+            self.current_mesh['Shear_Force'] = np.sqrt(fy**2 + fz**2)
+    
+    @pyqtSlot(int)
+    def _on_force_component_changed(self, index: int):
+        """
+        Handle force component selection change.
+        
+        Switches the displayed force component (FX, FY, FZ, Magnitude, or Shear).
+        
+        Args:
+            index: New component index from the dropdown.
+        """
+        if self.current_mesh is None:
+            return
+        
+        # Map index to array name
+        component_map = {
+            0: 'Force_Magnitude',
+            1: 'FX',
+            2: 'FY',
+            3: 'FZ',
+            4: 'Shear_Force'  # Only present if beam nodes exist
+        }
+        
+        array_name = component_map.get(index, 'Force_Magnitude')
+        
+        # For envelope view, Force_Magnitude might be stored as Max_Force_Magnitude
+        if array_name == 'Force_Magnitude' and 'Force_Magnitude' not in self.current_mesh.array_names:
+            if 'Max_Force_Magnitude' in self.current_mesh.array_names:
+                array_name = 'Max_Force_Magnitude'
+        
+        # Check if array exists in mesh
+        if array_name not in self.current_mesh.array_names:
+            print(f"DisplayTab: Array '{array_name}' not found in mesh. Available: {self.current_mesh.array_names}")
+            return
+        
+        # Set active scalars and update visualization
+        self.current_mesh.set_active_scalars(array_name)
+        
+        # Update legend title
+        force_unit = "N"
+        if self.nodal_forces_result is not None:
+            force_unit = self.nodal_forces_result.force_unit
+        
+        # Use display-friendly names for legend
+        display_name = array_name
+        if array_name == 'Max_Force_Magnitude':
+            display_name = 'Force_Magnitude'
+        
+        component_labels = {
+            'Force_Magnitude': f'Force_Magnitude [{force_unit}]',
+            'Max_Force_Magnitude': f'Force_Magnitude [{force_unit}]',
+            'FX': f'FX [{force_unit}]',
+            'FY': f'FY [{force_unit}]',
+            'FZ': f'FZ [{force_unit}]',
+            'Shear_Force': f'Shear_Force [{force_unit}]'
+        }
+        
+        self.data_column = component_labels.get(array_name, f'{array_name} [{force_unit}]')
+        self.state.data_column = self.data_column
+        
+        # Update scalar range based on selected component's data
+        data = self.current_mesh[array_name]
+        data_min = float(np.min(data))
+        data_max = float(np.max(data))
+        
+        self.scalar_min_spin.blockSignals(True)
+        self.scalar_max_spin.blockSignals(True)
+        self.scalar_min_spin.setRange(data_min, data_max)
+        self.scalar_max_spin.setRange(data_min, 1e30)
+        self.scalar_min_spin.setValue(data_min)
+        self.scalar_max_spin.setValue(data_max)
+        self.scalar_min_spin.blockSignals(False)
+        self.scalar_max_spin.blockSignals(False)
+        
+        # Refresh visualization
+        self.update_visualization()
+        
+        print(f"DisplayTab: Switched to force component '{display_name}'")
+    
+    def _on_export_forces_clicked(self):
+        """Handle click on Export Forces CSV button."""
+        # Delegate to export handler
+        self.export_handler.export_forces_csv()
+    
+    def _show_force_component_controls(self, show: bool, has_beam_nodes: bool = False):
+        """
+        Show or hide force component controls.
+        
+        Args:
+            show: Whether to show the controls.
+            has_beam_nodes: Whether beam nodes are present (affects Shear option).
+        """
+        self.force_component_label.setVisible(show)
+        self.force_component_combo.setVisible(show)
+        self.export_forces_button.setVisible(show)
+        
+        if show:
+            self._update_force_component_options(has_beam_nodes)
     
     @pyqtSlot(object)
     def _setup_initial_view(self, initial_data):
@@ -899,9 +1081,14 @@ class DisplayTab(QWidget):
             # Populate view combination dropdown for forces
             if self.combination_names and self.nodal_forces_result is not None:
                 self.populate_view_combination_options(self.combination_names)
+                
+                # Show force component controls (with Shear option if beam nodes present)
+                has_beam_nodes = self.nodal_forces_result.has_beam_nodes
+                self._show_force_component_controls(True, has_beam_nodes)
             else:
                 self.view_combination_label.setVisible(False)
                 self.view_combination_combo.setVisible(False)
+                self._show_force_component_controls(False)
         else:
             # Hide scalar display controls for non-batch results
             self.scalar_display_label.setVisible(False)
@@ -1095,6 +1282,9 @@ class DisplayTab(QWidget):
         self.view_combination_combo.blockSignals(False)
         self.view_combination_label.setVisible(False)
         self.view_combination_combo.setVisible(False)
+        
+        # Hide force component controls
+        self._show_force_component_controls(False)
         
         # Re-enable scalar display controls
         self.scalar_display_combo.setEnabled(True)

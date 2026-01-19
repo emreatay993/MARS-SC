@@ -135,6 +135,31 @@ class DisplayTabUIBuilder:
         view_combination_label.setVisible(False)  # Hidden until batch results are loaded
         view_combination_combo.setVisible(False)
         
+        # Force component selection controls (for nodal forces results)
+        force_component_label = QLabel("Force Component:")
+        force_component_combo = QComboBox()
+        force_component_combo.setMinimumWidth(150)
+        force_component_combo.addItems(["Magnitude", "FX", "FY", "FZ"])
+        force_component_combo.setToolTip(
+            "Select which force component to display:\n"
+            "- Magnitude: Total force magnitude sqrt(FX²+FY²+FZ²)\n"
+            "- FX: Force in X direction\n"
+            "- FY: Force in Y direction\n"
+            "- FZ: Force in Z direction\n"
+            "- Shear: Transverse force sqrt(FY²+FZ²) (beam elements only)"
+        )
+        force_component_label.setVisible(False)  # Hidden until nodal forces are loaded
+        force_component_combo.setVisible(False)
+        
+        # Export forces CSV button
+        export_forces_button = QPushButton("Export Forces CSV")
+        export_forces_button.setStyleSheet(BUTTON_STYLE)
+        export_forces_button.setToolTip(
+            "Export nodal forces for the currently selected combination to CSV.\n"
+            "Includes FX, FY, FZ components, magnitude, element type, and coordinate system."
+        )
+        export_forces_button.setVisible(False)  # Hidden until nodal forces are loaded
+        
         # Layout
         graphics_control_layout = QHBoxLayout()
         graphics_control_layout.addWidget(QLabel("Node Point Size:"))
@@ -146,6 +171,9 @@ class DisplayTabUIBuilder:
         graphics_control_layout.addWidget(scalar_display_combo)
         graphics_control_layout.addWidget(view_combination_label)
         graphics_control_layout.addWidget(view_combination_combo)
+        graphics_control_layout.addWidget(force_component_label)
+        graphics_control_layout.addWidget(force_component_combo)
+        graphics_control_layout.addWidget(export_forces_button)
         graphics_control_layout.addWidget(deformation_scale_label)
         graphics_control_layout.addWidget(deformation_scale_edit)
         graphics_control_layout.addWidget(absolute_deformation_checkbox)
@@ -163,6 +191,9 @@ class DisplayTabUIBuilder:
         self.components['scalar_display_combo'] = scalar_display_combo
         self.components['view_combination_label'] = view_combination_label
         self.components['view_combination_combo'] = view_combination_combo
+        self.components['force_component_label'] = force_component_label
+        self.components['force_component_combo'] = force_component_combo
+        self.components['export_forces_button'] = export_forces_button
         self.components['deformation_scale_label'] = deformation_scale_label
         self.components['deformation_scale_edit'] = deformation_scale_edit
         self.components['absolute_deformation_checkbox'] = absolute_deformation_checkbox

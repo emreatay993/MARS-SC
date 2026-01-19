@@ -951,6 +951,15 @@ class SolverTab(QWidget):
         """Handle nodal forces analysis completion."""
         self.nodal_forces_result = result
         
+        # Update export controls for forces (same as stress results)
+        self.single_combo_dropdown.clear()
+        if result.all_combo_fx is not None:
+            for name in self.combination_table.combination_names:
+                self.single_combo_dropdown.addItem(name)
+            self.single_combo_dropdown.setEnabled(True)
+            self.export_single_btn.setEnabled(True)
+            self.export_group.setVisible(True)
+        
         # Create a PyVista mesh for display tab with force magnitude
         mesh = self._create_mesh_from_forces_result(result)
         
@@ -985,6 +994,7 @@ class SolverTab(QWidget):
         # Add max force magnitude as the primary scalar
         if result.max_magnitude_over_combo is not None:
             mesh['Max_Force_Magnitude'] = result.max_magnitude_over_combo
+            mesh['Force_Magnitude'] = result.max_magnitude_over_combo  # Alias for component switching
             mesh.set_active_scalars('Max_Force_Magnitude')
         
         # Add min force magnitude
@@ -996,6 +1006,30 @@ class SolverTab(QWidget):
             mesh['Combo_of_Max'] = result.combo_of_max
         if result.combo_of_min is not None:
             mesh['Combo_of_Min'] = result.combo_of_min
+        
+        # Add max values for each force component (for envelope view component selection)
+        # Compute max absolute value over combinations for FX, FY, FZ
+        if result.all_combo_fx is not None:
+            # Take the value from the combination that had max magnitude (for consistency)
+            num_nodes = result.num_nodes
+            fx_at_max = np.zeros(num_nodes)
+            fy_at_max = np.zeros(num_nodes)
+            fz_at_max = np.zeros(num_nodes)
+            
+            if result.combo_of_max is not None:
+                for node_idx in range(num_nodes):
+                    combo_idx = int(result.combo_of_max[node_idx])
+                    fx_at_max[node_idx] = result.all_combo_fx[combo_idx, node_idx]
+                    fy_at_max[node_idx] = result.all_combo_fy[combo_idx, node_idx]
+                    fz_at_max[node_idx] = result.all_combo_fz[combo_idx, node_idx]
+            
+            mesh['FX'] = fx_at_max
+            mesh['FY'] = fy_at_max
+            mesh['FZ'] = fz_at_max
+            
+            # Add shear force if beam nodes present
+            if result.has_beam_nodes:
+                mesh['Shear_Force'] = np.sqrt(fy_at_max**2 + fz_at_max**2)
         
         return mesh
     
@@ -1100,26 +1134,64 @@ class SolverTab(QWidget):
         self._on_solve_clicked()
     
     def _export_single_combination(self):
-        """Export a single combination result to CSV."""
-        if self.combination_result is None:
+        """Export a single combination result to CSV (stress or forces)."""
+        # Check if we have either stress or force results
+        if self.combination_result is None and self.nodal_forces_result is None:
             QMessageBox.warning(self, "No Results", "Run analysis first before exporting.")
             return
         
         combo_idx = self.single_combo_dropdown.currentIndex()
         combo_name = self.single_combo_dropdown.currentText()
         
-        # Get save path
-        filename, _ = QFileDialog.getSaveFileName(
-            self, f"Export {combo_name}",
-            f"{combo_name.replace(' ', '_')}.csv",
-            "CSV Files (*.csv)"
-        )
-        
-        if filename:
-            self.file_handler.export_single_combination_result(
-                self.combination_result, combo_idx, filename
+        # Determine if we're exporting stress or force results
+        if self.combination_result is not None:
+            # Stress results
+            default_filename = f"{combo_name.replace(' ', '_')}_stress.csv"
+            filename, _ = QFileDialog.getSaveFileName(
+                self, f"Export Stress: {combo_name}",
+                default_filename,
+                "CSV Files (*.csv)"
             )
-            self.console_textbox.append(f"Exported {combo_name} to {filename}")
+            
+            if filename:
+                self.file_handler.export_single_combination_result(
+                    self.combination_result, combo_idx, filename
+                )
+                self.console_textbox.append(f"Exported stress for {combo_name} to {filename}")
+        
+        elif self.nodal_forces_result is not None:
+            # Force results
+            from file_io.exporters import export_nodal_forces_single_combination
+            
+            result = self.nodal_forces_result
+            default_filename = f"{combo_name.replace(' ', '_')}_forces.csv"
+            filename, _ = QFileDialog.getSaveFileName(
+                self, f"Export Forces: {combo_name}",
+                default_filename,
+                "CSV Files (*.csv)"
+            )
+            
+            if filename:
+                # Get force components for this combination
+                fx = result.all_combo_fx[combo_idx, :]
+                fy = result.all_combo_fy[combo_idx, :]
+                fz = result.all_combo_fz[combo_idx, :]
+                
+                export_nodal_forces_single_combination(
+                    filename=filename,
+                    node_ids=result.node_ids,
+                    node_coords=result.node_coords,
+                    fx=fx,
+                    fy=fy,
+                    fz=fz,
+                    combination_index=combo_idx,
+                    combination_name=combo_name,
+                    force_unit=result.force_unit,
+                    coordinate_system=result.coordinate_system,
+                    node_element_types=result.node_element_types,
+                    include_shear=result.has_beam_nodes
+                )
+                self.console_textbox.append(f"Exported forces for {combo_name} to {filename}")
     
     # ========== Plasticity Dialog ==========
     

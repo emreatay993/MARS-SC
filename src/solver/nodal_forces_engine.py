@@ -84,6 +84,10 @@ class NodalForcesCombinationEngine:
         
         # Force unit
         self._force_unit: str = "N"
+        
+        # Element type information (populated during preload)
+        self._node_element_types: Optional[np.ndarray] = None
+        self._has_beam_nodes: bool = False
     
     @property
     def node_ids(self) -> np.ndarray:
@@ -109,6 +113,21 @@ class NodalForcesCombinationEngine:
         """Force unit string."""
         return self._force_unit
     
+    @property
+    def node_element_types(self) -> Optional[np.ndarray]:
+        """Element types per node ('beam' or 'solid_shell')."""
+        return self._node_element_types
+    
+    @property
+    def has_beam_nodes(self) -> bool:
+        """True if any node has beam elements attached."""
+        return self._has_beam_nodes
+    
+    @property
+    def coordinate_system(self) -> str:
+        """Coordinate system for forces ('Global' or 'Local')."""
+        return "Global" if self.rotate_to_global else "Local"
+    
     def validate_nodal_forces_availability(self) -> Tuple[bool, str]:
         """
         Validate that nodal forces are available in both RST files
@@ -133,7 +152,9 @@ class NodalForcesCombinationEngine:
                 # Check only active load steps
                 for step_id in active_a1_steps:
                     try:
-                        self.reader1.read_nodal_forces_for_loadstep(step_id, self.scoping)
+                        self.reader1.read_nodal_forces_for_loadstep(
+                            step_id, self.scoping, rotate_to_global=self.rotate_to_global
+                        )
                     except NodalForcesNotAvailableError as e:
                         errors.append(f"Analysis 1, Load Step {step_id}: {str(e)}")
         
@@ -148,7 +169,9 @@ class NodalForcesCombinationEngine:
                 # Check only active load steps
                 for step_id in active_a2_steps:
                     try:
-                        self.reader2.read_nodal_forces_for_loadstep(step_id, self.scoping)
+                        self.reader2.read_nodal_forces_for_loadstep(
+                            step_id, self.scoping, rotate_to_global=self.rotate_to_global
+                        )
                     except NodalForcesNotAvailableError as e:
                         errors.append(f"Analysis 2, Load Step {step_id}: {str(e)}")
         
@@ -221,6 +244,11 @@ class NodalForcesCombinationEngine:
         
         # Get node coordinates
         self._node_ids, self._node_coords = self.reader1.get_node_coordinates(self.scoping)
+        
+        # Get element type information per node (beam vs solid/shell)
+        if progress_callback:
+            progress_callback(total_steps, total_steps, "Detecting element types...")
+        self._node_element_types, self._has_beam_nodes = self.reader1.get_node_element_types(self.scoping)
     
     def compute_combination_numpy(self, combo_index: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
@@ -419,6 +447,9 @@ class NodalForcesCombinationEngine:
             all_combo_fy=fy_all,
             all_combo_fz=fz_all,
             force_unit=self.force_unit,
+            node_element_types=self._node_element_types.copy() if self._node_element_types is not None else None,
+            has_beam_nodes=self._has_beam_nodes,
+            coordinate_system=self.coordinate_system,
         )
         
         # Auto-cleanup cached data to free memory

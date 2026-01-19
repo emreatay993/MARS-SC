@@ -620,6 +620,95 @@ class DPFAnalysisReader:
             # If we can't determine, assume no beams (fail open for usability)
             return False
     
+    def get_node_element_types(
+        self, 
+        nodal_scoping: 'dpf.Scoping'
+    ) -> Tuple[np.ndarray, bool]:
+        """
+        Determine element type for each node in the scoping.
+        
+        For each node, checks all attached elements and marks the node as 'beam'
+        if ANY attached element is a beam type, otherwise marks as 'solid_shell'.
+        
+        Args:
+            nodal_scoping: DPF Scoping containing node IDs to analyze.
+            
+        Returns:
+            Tuple of (element_types_array, has_beam_nodes) where:
+            - element_types_array: numpy array of strings ('beam' or 'solid_shell')
+                                   aligned with nodal_scoping.ids order
+            - has_beam_nodes: True if any node has beam elements attached
+        """
+        node_ids = np.array(nodal_scoping.ids)
+        num_nodes = len(node_ids)
+        
+        # Default all nodes to 'solid_shell'
+        element_types = np.array(['solid_shell'] * num_nodes, dtype=object)
+        has_beam_nodes = False
+        
+        try:
+            mesh = self.mesh
+            
+            # Build a mapping from node_id to index in our array
+            node_id_to_idx = {nid: idx for idx, nid in enumerate(node_ids)}
+            
+            # Build reverse connectivity: node_id -> list of element_ids
+            # This is more efficient than checking each node individually
+            node_to_elements: Dict[int, List[int]] = {nid: [] for nid in node_ids}
+            
+            # Iterate through all elements and build connectivity
+            for elem_idx in range(mesh.elements.n_elements):
+                try:
+                    element = mesh.elements.element_by_index(elem_idx)
+                    elem_id = mesh.elements.scoping.ids[elem_idx]
+                    connectivity = element.connectivity
+                    
+                    # Add this element to all its nodes that are in our scoping
+                    for node_id in connectivity:
+                        if node_id in node_to_elements:
+                            node_to_elements[node_id].append((elem_id, element))
+                except Exception:
+                    continue
+            
+            # Now check each node's elements for beam types
+            for node_id, elements in node_to_elements.items():
+                if node_id not in node_id_to_idx:
+                    continue
+                    
+                node_idx = node_id_to_idx[node_id]
+                
+                for elem_id, element in elements:
+                    is_beam = False
+                    
+                    # Check if element is a beam using the shape property
+                    if hasattr(element, 'shape'):
+                        if element.shape == "beam":
+                            is_beam = True
+                    
+                    # Alternative: check element type descriptor
+                    if not is_beam and hasattr(element, 'type'):
+                        elem_type = element.type
+                        # Check if element type descriptor indicates beam
+                        if hasattr(elem_type, 'shape') and elem_type.shape == "beam":
+                            is_beam = True
+                        # Some DPF versions use different attribute
+                        elif hasattr(elem_type, 'name'):
+                            type_name = str(elem_type.name).lower()
+                            if 'beam' in type_name or 'line' in type_name or 'pipe' in type_name:
+                                is_beam = True
+                    
+                    if is_beam:
+                        element_types[node_idx] = 'beam'
+                        has_beam_nodes = True
+                        break  # No need to check more elements for this node
+            
+            return (element_types, has_beam_nodes)
+            
+        except Exception as e:
+            # If we can't determine element types, return all as solid_shell
+            # This is a safe fallback that won't break functionality
+            return (element_types, False)
+    
     def get_all_nodes_scoping(self) -> 'dpf.Scoping':
         """
         Get a scoping containing all nodes in the mesh.
@@ -907,6 +996,11 @@ class DPFAnalysisReader:
         """
         Check if nodal forces (element nodal forces) are available in the RST file.
         
+        Uses a two-step approach:
+        1. Check if element_nodal_forces is listed in available_results
+        2. Try to actually read data to confirm availability (tries both with and 
+           without global rotation as some element types fail with rotation)
+        
         Returns:
             True if nodal forces are available, False otherwise.
         """
@@ -914,24 +1008,54 @@ class DPFAnalysisReader:
             return self._nodal_forces_available
         
         try:
-            # Try to access element nodal forces operator
-            nforce_op = self.model.results.element_nodal_forces()
+            # Step 1: Check available_results first (faster, more reliable)
+            result_info = self.model.metadata.result_info
+            available = result_info.available_results
             
-            # Set time scoping to first load step to test
-            time_scoping = dpf.Scoping()
-            time_scoping.ids = [1]
-            nforce_op.inputs.time_scoping.connect(time_scoping)
-            nforce_op.inputs.requested_location.connect(dpf.locations.nodal)
+            # Check if element_nodal_forces is in available results
+            has_enf = any(
+                "element_nodal_forces" in str(res).lower() or 
+                "enf" in str(getattr(res, 'name', '')).lower()
+                for res in available
+            )
             
-            # Try to get the fields container
-            fields_container = nforce_op.outputs.fields_container()
+            if not has_enf:
+                self._nodal_forces_available = False
+                return False
             
-            # Check if we got valid data
-            if fields_container and len(fields_container) > 0:
-                field = fields_container[0]
-                if field.data is not None and len(field.data) > 0:
-                    self._nodal_forces_available = True
-                    return True
+            # Step 2: Try to actually read data to confirm
+            # Use first available load step (don't hardcode to 1)
+            load_step_ids = self.get_load_step_ids()
+            if not load_step_ids:
+                self._nodal_forces_available = False
+                return False
+            
+            # Try with default rotation first, then without rotation
+            # Some element types (e.g., elements with more integration points than nodes)
+            # fail when rotating to global coordinate system
+            for rotate_to_global in [True, False]:
+                try:
+                    nforce_op = self.model.results.element_nodal_forces()
+                    
+                    time_scoping = dpf.Scoping()
+                    time_scoping.ids = [load_step_ids[0]]
+                    nforce_op.inputs.time_scoping.connect(time_scoping)
+                    nforce_op.inputs.bool_rotate_to_global.connect(rotate_to_global)
+                    # NOTE: Do NOT connect requested_location - let DPF use defaults
+                    
+                    # Try to get the fields container
+                    fields_container = nforce_op.outputs.fields_container()
+                    
+                    # Check if we got valid data
+                    if fields_container and len(fields_container) > 0:
+                        field = fields_container[0]
+                        if field.data is not None and len(field.data) > 0:
+                            self._nodal_forces_available = True
+                            return True
+                except Exception:
+                    # Try the next rotation setting
+                    continue
+            
             self._nodal_forces_available = False
             return False
             
@@ -951,10 +1075,17 @@ class DPFAnalysisReader:
         
         try:
             nforce_op = self.model.results.element_nodal_forces()
+            
+            # Use first available load step
+            load_step_ids = self.get_load_step_ids()
+            if not load_step_ids:
+                self._force_unit = "N"
+                return "N"
+            
             time_scoping = dpf.Scoping()
-            time_scoping.ids = [1]
+            time_scoping.ids = [load_step_ids[0]]
             nforce_op.inputs.time_scoping.connect(time_scoping)
-            nforce_op.inputs.requested_location.connect(dpf.locations.nodal)
+            # NOTE: Do NOT connect requested_location - let DPF use defaults
             
             fields_container = nforce_op.outputs.fields_container()
             if fields_container and len(fields_container) > 0:
@@ -989,8 +1120,8 @@ class DPFAnalysisReader:
                           returns results for all nodes.
             rotate_to_global: If True (default), rotate forces to global coordinate
                              system. If False, keep forces in element (local) 
-                             coordinate system. Note: Beam/pipe element forces are 
-                             always in local coordinates regardless of this setting.
+                             coordinate system. Note: Per DPF documentation, beam/pipe 
+                             element forces CAN be rotated to global when this is True.
             
         Returns:
             Tuple of (node_ids, fx, fy, fz) arrays.
@@ -1018,8 +1149,9 @@ class DPFAnalysisReader:
             # Set coordinate system rotation option
             nforce_op.inputs.bool_rotate_to_global.connect(rotate_to_global)
             
-            # Request nodal location (sums element nodal forces at shared nodes)
-            nforce_op.inputs.requested_location.connect(dpf.locations.nodal)
+            # NOTE: Do NOT connect requested_location - let DPF use defaults
+            # The previous code used dpf.locations.nodal which caused issues with
+            # the element_nodal_forces operator
             
             # Apply mesh scoping if provided
             if nodal_scoping is not None:
@@ -1147,8 +1279,8 @@ class DPFAnalysisReader:
             # Set coordinate system rotation option
             nforce_op.inputs.bool_rotate_to_global.connect(rotate_to_global)
             
-            # Request nodal location
-            nforce_op.inputs.requested_location.connect(dpf.locations.nodal)
+            # NOTE: Do NOT connect requested_location - let DPF use defaults
+            # The previous code used dpf.locations.nodal which caused issues
             
             # Apply mesh scoping if provided
             if nodal_scoping is not None:

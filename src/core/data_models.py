@@ -282,6 +282,9 @@ class NodalForcesResult:
         all_combo_fy: Full FY results array, shape (num_combinations, num_nodes).
         all_combo_fz: Full FZ results array, shape (num_combinations, num_nodes).
         force_unit: Unit of force (e.g., "N").
+        node_element_types: Array of element types per node ('beam' or 'solid_shell').
+        has_beam_nodes: True if any node has beam elements attached.
+        coordinate_system: Coordinate system used for forces ('Global' or 'Local').
     """
     node_ids: np.ndarray
     node_coords: np.ndarray
@@ -293,6 +296,9 @@ class NodalForcesResult:
     all_combo_fy: Optional[np.ndarray] = None
     all_combo_fz: Optional[np.ndarray] = None
     force_unit: str = "N"
+    node_element_types: Optional[np.ndarray] = None
+    has_beam_nodes: bool = False
+    coordinate_system: str = "Global"
     
     @property
     def num_nodes(self) -> int:
@@ -322,6 +328,58 @@ class NodalForcesResult:
         fy = self.all_combo_fy[combo_idx, :]
         fz = self.all_combo_fz[combo_idx, :]
         return np.sqrt(fx**2 + fy**2 + fz**2)
+    
+    def get_shear_force(self, combo_idx: int) -> np.ndarray:
+        """
+        Compute shear force (transverse force) for a specific combination.
+        
+        Shear force is computed as sqrt(FY^2 + FZ^2), which represents the 
+        transverse force component for beam elements (perpendicular to beam axis).
+        
+        Args:
+            combo_idx: Index of the combination.
+            
+        Returns:
+            Array of shear force values, shape (num_nodes,).
+        """
+        if self.all_combo_fy is None or self.all_combo_fz is None:
+            raise ValueError("Force components not available.")
+        fy = self.all_combo_fy[combo_idx, :]
+        fz = self.all_combo_fz[combo_idx, :]
+        return np.sqrt(fy**2 + fz**2)
+    
+    def get_force_component(self, combo_idx: int, component: str) -> np.ndarray:
+        """
+        Get a specific force component for a combination.
+        
+        Args:
+            combo_idx: Index of the combination.
+            component: Force component name - 'FX', 'FY', 'FZ', 'Magnitude', or 'Shear'.
+            
+        Returns:
+            Array of force values for the specified component, shape (num_nodes,).
+        """
+        component_upper = component.upper()
+        
+        if component_upper == 'FX':
+            if self.all_combo_fx is None:
+                raise ValueError("FX component not available.")
+            return self.all_combo_fx[combo_idx, :]
+        elif component_upper == 'FY':
+            if self.all_combo_fy is None:
+                raise ValueError("FY component not available.")
+            return self.all_combo_fy[combo_idx, :]
+        elif component_upper == 'FZ':
+            if self.all_combo_fz is None:
+                raise ValueError("FZ component not available.")
+            return self.all_combo_fz[combo_idx, :]
+        elif component_upper == 'MAGNITUDE':
+            return self.get_force_magnitude(combo_idx)
+        elif component_upper == 'SHEAR':
+            return self.get_shear_force(combo_idx)
+        else:
+            raise ValueError(f"Unknown force component: {component}. "
+                           f"Valid options: 'FX', 'FY', 'FZ', 'Magnitude', 'Shear'")
 
 
 # =============================================================================

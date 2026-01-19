@@ -4,7 +4,7 @@ Export-related functionality for the Display tab.
 
 from PyQt5.QtWidgets import QFileDialog, QMessageBox
 
-from file_io.exporters import export_mesh_to_csv, export_apdl_ic
+from file_io.exporters import export_mesh_to_csv, export_apdl_ic, export_nodal_forces_single_combination
 from ui.handlers.display_base_handler import DisplayBaseHandler
 
 
@@ -100,4 +100,105 @@ class DisplayExportHandler(DisplayBaseHandler):
             QMessageBox.critical(
                 self.tab, "Export Error",
                 f"Failed to export initial conditions:\n{exc}"
+            )
+
+    def export_forces_csv(self) -> None:
+        """
+        Export nodal forces for the currently selected combination to CSV.
+        
+        Exports FX, FY, FZ components, magnitude, shear (if beams present),
+        element type, and coordinate system information.
+        """
+        # Check if nodal forces result is available
+        if self.tab.nodal_forces_result is None:
+            QMessageBox.warning(
+                self.tab, "No Forces Data",
+                "No nodal forces data available.\n\n"
+                "Please run a combination analysis with 'Nodal Forces' output enabled."
+            )
+            return
+        
+        result = self.tab.nodal_forces_result
+        
+        # Get the currently selected combination from view_combination_combo
+        view_combo_idx = self.tab.view_combination_combo.currentIndex()
+        
+        if view_combo_idx == 0:
+            # Envelope view selected - ask user to select a specific combination
+            QMessageBox.information(
+                self.tab, "Select Combination",
+                "Please select a specific combination from the 'View Combination' dropdown "
+                "to export its nodal forces.\n\n"
+                "The envelope view cannot be exported as forces CSV."
+            )
+            return
+        
+        # Get the actual combination index (0-based)
+        combo_idx = view_combo_idx - 1  # Account for "(Envelope View)" at index 0
+        
+        # Validate combination index
+        if combo_idx < 0 or combo_idx >= result.num_combinations:
+            QMessageBox.warning(
+                self.tab, "Invalid Combination",
+                f"Invalid combination index: {combo_idx}.\n"
+                f"Available combinations: 0 to {result.num_combinations - 1}"
+            )
+            return
+        
+        # Get combination name
+        combo_name = ""
+        if self.tab.combination_names and combo_idx < len(self.tab.combination_names):
+            combo_name = self.tab.combination_names[combo_idx]
+        else:
+            combo_name = f"Combination_{combo_idx + 1}"
+        
+        # Get force components for this combination
+        fx = result.all_combo_fx[combo_idx, :]
+        fy = result.all_combo_fy[combo_idx, :]
+        fz = result.all_combo_fz[combo_idx, :]
+        
+        # Generate default filename
+        safe_name = combo_name.replace(" ", "_").replace("/", "_").replace("\\", "_")
+        default_filename = f"nodal_forces_{safe_name}.csv"
+        
+        # Show file save dialog
+        file_name, _ = QFileDialog.getSaveFileName(
+            self.tab,
+            "Export Nodal Forces",
+            default_filename,
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        
+        if not file_name:
+            return
+        
+        try:
+            # Export using the updated function
+            export_nodal_forces_single_combination(
+                filename=file_name,
+                node_ids=result.node_ids,
+                node_coords=result.node_coords,
+                fx=fx,
+                fy=fy,
+                fz=fz,
+                combination_index=combo_idx,
+                combination_name=combo_name,
+                force_unit=result.force_unit,
+                coordinate_system=result.coordinate_system,
+                node_element_types=result.node_element_types,
+                include_shear=result.has_beam_nodes
+            )
+            
+            QMessageBox.information(
+                self.tab, "Export Successful",
+                f"Nodal forces exported successfully to:\n{file_name}\n\n"
+                f"Combination: {combo_name}\n"
+                f"Coordinate System: {result.coordinate_system}\n"
+                f"Nodes: {result.num_nodes:,}"
+            )
+            
+        except Exception as exc:
+            QMessageBox.critical(
+                self.tab, "Export Error",
+                f"Failed to export nodal forces:\n{exc}"
             )
