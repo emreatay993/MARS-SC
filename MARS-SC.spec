@@ -2,7 +2,8 @@
 """
 PyInstaller spec file for MARS-SC: Solution Combination application.
 
-Build command:
+Build commands (from project root, with venv activated):
+    pip install pyinstaller
     pyinstaller MARS-SC.spec --clean
 
 The executable will be created in the dist/MARS-SC folder.
@@ -17,6 +18,18 @@ block_cipher = None
 # Get the absolute path to the project directories
 SPEC_ROOT = os.path.abspath(SPECPATH)
 SRC_DIR = os.path.join(SPEC_ROOT, 'src')
+
+# CRITICAL: Add src directory to sys.path BEFORE PyInstaller analyzes imports
+# This allows PyInstaller to find our application modules
+sys.path.insert(0, SRC_DIR)
+
+# Now we can try to collect our application submodules
+app_hidden_imports = []
+for pkg in ['ui', 'core', 'solver', 'file_io', 'utils']:
+    try:
+        app_hidden_imports += collect_submodules(pkg)
+    except Exception as e:
+        print(f"Warning: Could not collect submodules for {pkg}: {e}")
 
 # Collect all submodules for complex packages
 hiddenimports = [
@@ -70,8 +83,13 @@ hiddenimports = [
     'tqdm',
     'lxml',
     'openpyxl',
-    
-    # Application modules (relative to src directory)
+]
+
+# Add collected application modules
+hiddenimports += app_hidden_imports
+
+# Manual fallback list in case collect_submodules didn't work
+manual_app_imports = [
     'core',
     'core.data_models',
     'core.computation',
@@ -127,12 +145,16 @@ hiddenimports = [
     'utils.tooltips',
     'utils.torch_setup',
 ]
+hiddenimports += manual_app_imports
 
 # Collect additional submodules dynamically
 hiddenimports += collect_submodules('pyvista')
 hiddenimports += collect_submodules('vtkmodules')
 hiddenimports += collect_submodules('matplotlib')
 hiddenimports += collect_submodules('scipy')
+
+# Remove duplicates
+hiddenimports = list(set(hiddenimports))
 
 # Data files to include (non-Python resources)
 datas = [
@@ -153,14 +175,14 @@ datas += collect_data_files('vtkmodules')
 datas += collect_data_files('matplotlib')
 
 a = Analysis(
-    [os.path.join(SPEC_ROOT, 'mars_sc_entry.py')],  # Use the entry point wrapper
-    pathex=[SRC_DIR],  # Add src directory to Python path for module discovery
+    [os.path.join(SPEC_ROOT, 'mars_sc_entry.py')],
+    pathex=[SRC_DIR],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[os.path.join(SPEC_ROOT, 'pyinstaller_runtime_hook.py')],
     excludes=[
         'tkinter',
         'test',

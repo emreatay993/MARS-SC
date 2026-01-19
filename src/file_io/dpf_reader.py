@@ -699,6 +699,26 @@ class DPFAnalysisReader:
         # Stress tensor has 6 components: SX, SY, SZ, SXY, SYZ, SXZ
         stress_data = stress_field.data
         
+        # Handle case where stress data is 1D (e.g., beam elements)
+        # Beam elements don't have a full 6-component stress tensor
+        if stress_data.ndim == 1:
+            # Single component data (beam axial stress or similar)
+            # Cannot extract 6-component tensor - raise informative error
+            raise BeamElementNotSupportedError(
+                f"Stress data is 1-dimensional (shape: {stress_data.shape}). "
+                f"This typically occurs when the scoping includes beam or line elements "
+                f"which don't have a 6-component stress tensor. "
+                f"Please ensure your named selection contains only solid/shell elements."
+            )
+        
+        # Verify we have 6 components
+        if stress_data.shape[1] < 6:
+            raise ValueError(
+                f"Expected 6 stress components but got {stress_data.shape[1]}. "
+                f"Stress data shape: {stress_data.shape}. "
+                f"This may occur with element types that don't support full stress tensors."
+            )
+        
         # Extract individual components (in DPF returned order)
         # DPF stress tensor component order: XX, YY, ZZ, XY, YZ, XZ
         sx = stress_data[:, 0].copy()
@@ -1021,6 +1041,21 @@ class DPFAnalysisReader:
             
             # Get force data - DPF returns 3-component vector (FX, FY, FZ)
             force_data = force_field.data
+            
+            # Handle case where force data is 1D (unexpected format)
+            if force_data.ndim == 1:
+                raise ValueError(
+                    f"Force data is 1-dimensional (shape: {force_data.shape}). "
+                    f"Expected 2D array with 3 components (FX, FY, FZ). "
+                    f"This may indicate incompatible element types in the scoping."
+                )
+            
+            # Verify we have at least 3 components
+            if force_data.shape[1] < 3:
+                raise ValueError(
+                    f"Expected 3 force components but got {force_data.shape[1]}. "
+                    f"Force data shape: {force_data.shape}."
+                )
             
             # Extract individual components (in DPF returned order)
             fx = force_data[:, 0].copy()
