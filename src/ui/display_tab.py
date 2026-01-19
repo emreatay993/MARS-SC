@@ -86,6 +86,7 @@ class DisplayTab(QWidget):
         self.current_result_type = None  # "von_mises", "max_principal", or "min_principal"
         self.all_combo_results = None  # Full results array, shape (num_combinations, num_nodes)
         self.nodal_forces_result = None  # NodalForcesResult for force-based visualization
+        self.deformation_result = None  # DeformationResult for displacement visualization
         self.anim_timer = None
         self.time_text_actor = None
         self.current_anim_time = 0.0
@@ -168,6 +169,11 @@ class DisplayTab(QWidget):
         self.force_component_combo = self.components['force_component_combo']
         self.export_forces_button = self.components['export_forces_button']
         
+        # Displacement component controls (for deformation visualization)
+        self.displacement_component_label = self.components.get('displacement_component_label')
+        self.displacement_component_combo = self.components.get('displacement_component_combo')
+        self.export_deformation_button = self.components.get('export_deformation_button')
+        
         # Combination/Time point controls (MARS-SC: uses combination_combo)
         self.combination_combo = self.components.get('combination_combo')
         self.time_point_spinbox = self.components['time_point_spinbox']
@@ -228,6 +234,17 @@ class DisplayTab(QWidget):
         self.export_forces_button.clicked.connect(
             self._on_export_forces_clicked
         )
+        
+        # Displacement component controls
+        if self.displacement_component_combo is not None:
+            self.displacement_component_combo.currentIndexChanged.connect(
+                self._on_displacement_component_changed
+            )
+        if self.export_deformation_button is not None:
+            self.export_deformation_button.clicked.connect(
+                self._on_export_deformation_clicked
+            )
+        
         self.deformation_scale_edit.editingFinished.connect(
             self._validate_deformation_scale
         )
@@ -442,6 +459,12 @@ class DisplayTab(QWidget):
             # Stress results or no results - hide force controls
             self._show_force_component_controls(False)
         
+        # Show displacement controls if deformation result is available
+        if self.deformation_result is not None:
+            self._show_displacement_component_controls(True)
+        else:
+            self._show_displacement_component_controls(False)
+        
         # Trigger the scalar display handler to refresh the view
         self._on_scalar_display_changed(self.scalar_display_combo.currentIndex())
         print("DisplayTab: Switched to Envelope View")
@@ -502,6 +525,14 @@ class DisplayTab(QWidget):
             # Hide force component controls for stress results
             self._show_force_component_controls(False)
         self.current_mesh.set_active_scalars(array_name)
+        
+        # Show displacement controls if deformation result is available
+        if self.deformation_result is not None:
+            self._show_displacement_component_controls(True)
+            # Also set up displacement component arrays for this combination
+            self._setup_displacement_component_arrays(combo_idx)
+        else:
+            self._show_displacement_component_controls(False)
         
         # Generate descriptive legend title
         if is_force_result:
@@ -645,6 +676,37 @@ class DisplayTab(QWidget):
         if result.has_beam_nodes:
             self.current_mesh['Shear_Force'] = np.sqrt(fy**2 + fz**2)
     
+    def _setup_displacement_component_arrays(self, combo_idx: int):
+        """
+        Add displacement component arrays to mesh for the selected combination.
+        
+        This sets up UX, UY, UZ, and U_mag arrays on the current mesh for 
+        the specified combination.
+        
+        Args:
+            combo_idx: Index of the combination to set up arrays for.
+        """
+        if self.deformation_result is None or self.current_mesh is None:
+            return
+        
+        result = self.deformation_result
+        
+        # Validate combination index
+        if combo_idx < 0 or combo_idx >= result.num_combinations:
+            print(f"DisplayTab: Invalid combination index {combo_idx} for displacement")
+            return
+        
+        # Get displacement components for this combination
+        ux = result.all_combo_ux[combo_idx, :]
+        uy = result.all_combo_uy[combo_idx, :]
+        uz = result.all_combo_uz[combo_idx, :]
+        
+        # Add arrays to mesh
+        self.current_mesh['UX'] = ux
+        self.current_mesh['UY'] = uy
+        self.current_mesh['UZ'] = uz
+        self.current_mesh['U_mag'] = np.sqrt(ux**2 + uy**2 + uz**2)
+    
     @pyqtSlot(int)
     def _on_force_component_changed(self, index: int):
         """
@@ -742,6 +804,90 @@ class DisplayTab(QWidget):
         
         if show:
             self._update_force_component_options(has_beam_nodes)
+    
+    def _on_displacement_component_changed(self, index: int):
+        """
+        Handle displacement component selection change.
+        
+        Switches the displayed displacement component (UX, UY, UZ, or U_mag).
+        
+        Args:
+            index: New component index from the dropdown.
+        """
+        if self.current_mesh is None or self.deformation_result is None:
+            return
+        
+        # Map index to array name
+        # Combo order: U_mag, UX, UY, UZ
+        component_map = {
+            0: 'U_mag',
+            1: 'UX',
+            2: 'UY',
+            3: 'UZ'
+        }
+        
+        array_name = component_map.get(index, 'U_mag')
+        
+        # Check if array exists in mesh
+        if array_name not in self.current_mesh.array_names:
+            print(f"DisplayTab: Array '{array_name}' not found in mesh. Available: {self.current_mesh.array_names}")
+            return
+        
+        # Set active scalars and update visualization
+        self.current_mesh.set_active_scalars(array_name)
+        
+        # Update legend title
+        disp_unit = "mm"
+        if self.deformation_result is not None:
+            disp_unit = self.deformation_result.displacement_unit
+        
+        component_labels = {
+            'U_mag': f'U_mag [{disp_unit}]',
+            'UX': f'UX [{disp_unit}]',
+            'UY': f'UY [{disp_unit}]',
+            'UZ': f'UZ [{disp_unit}]'
+        }
+        
+        self.data_column = component_labels.get(array_name, f'{array_name} [{disp_unit}]')
+        self.state.data_column = self.data_column
+        
+        # Update scalar range based on selected component's data
+        data = self.current_mesh[array_name]
+        data_min = float(np.min(data))
+        data_max = float(np.max(data))
+        
+        self.scalar_min_spin.blockSignals(True)
+        self.scalar_max_spin.blockSignals(True)
+        self.scalar_min_spin.setRange(data_min, data_max)
+        self.scalar_max_spin.setRange(data_min, 1e30)
+        self.scalar_min_spin.setValue(data_min)
+        self.scalar_max_spin.setValue(data_max)
+        self.scalar_min_spin.blockSignals(False)
+        self.scalar_max_spin.blockSignals(False)
+        
+        # Refresh visualization
+        self.update_visualization()
+        
+        print(f"DisplayTab: Switched to displacement component '{array_name}'")
+    
+    def _on_export_deformation_clicked(self):
+        """Handle click on Export Deformation CSV button."""
+        # Delegate to export handler
+        self.export_handler.export_deformation_csv()
+    
+    def _show_displacement_component_controls(self, show: bool):
+        """
+        Show or hide displacement component controls.
+        
+        Args:
+            show: Whether to show the controls.
+        """
+        if self.displacement_component_label is not None:
+            self.displacement_component_label.setVisible(show)
+        if self.displacement_component_combo is not None:
+            self.displacement_component_combo.setVisible(show)
+        if self.export_deformation_button is not None:
+            self.export_deformation_button.setVisible(show)
     
     @pyqtSlot(object)
     def _setup_initial_view(self, initial_data):
@@ -1044,10 +1190,19 @@ class DisplayTab(QWidget):
                 self.nodal_forces_result = solver_tab.nodal_forces_result
             else:
                 self.nodal_forces_result = None
+            
+            # Get deformation result for deformed mesh and displacement component selection
+            if solver_tab and solver_tab.deformation_result:
+                self.deformation_result = solver_tab.deformation_result
+                # Store original coordinates for deformation scaling
+                self.original_node_coords = mesh.points.copy()
+            else:
+                self.deformation_result = None
         except (AttributeError, RuntimeError):
             self.combination_names = []
             self.all_combo_results = None
             self.nodal_forces_result = None
+            self.deformation_result = None
         
         # Populate scalar display options if this is batch solve result
         has_min_data = "Min_Stress" in mesh.array_names
@@ -1095,6 +1250,38 @@ class DisplayTab(QWidget):
             self.scalar_display_combo.setVisible(False)
             self.view_combination_label.setVisible(False)
             self.view_combination_combo.setVisible(False)
+        
+        # Handle deformation controls visibility and deformation scale controls
+        has_deformation = "Max_U_mag" in mesh.array_names or "U_mag" in mesh.array_names
+        if self.deformation_result is not None or has_deformation:
+            self._show_displacement_component_controls(True)
+            # Show deformation scale controls
+            self.deformation_scale_label.setVisible(True)
+            self.deformation_scale_edit.setVisible(True)
+            
+            # If this is a deformation-only result, also populate view combination options
+            if has_deformation and "Max_Stress" not in mesh.array_names and not has_force_data:
+                # Deformation-only result - set up scalar display options for displacement
+                self.scalar_display_combo.blockSignals(True)
+                self.scalar_display_combo.clear()
+                self.scalar_display_combo.addItem("Max Value")
+                self.scalar_display_combo.addItem("Combo # of Max")
+                if "Min_U_mag" in mesh.array_names:
+                    self.scalar_display_combo.addItem("Min Value")
+                    self.scalar_display_combo.addItem("Combo # of Min")
+                self.scalar_display_combo.setCurrentIndex(0)
+                self.scalar_display_combo.blockSignals(False)
+                self.scalar_display_label.setVisible(True)
+                self.scalar_display_combo.setVisible(True)
+                
+                # Populate view combination dropdown for deformation
+                if self.combination_names and self.deformation_result is not None:
+                    self.populate_view_combination_options(self.combination_names)
+        else:
+            self._show_displacement_component_controls(False)
+            # Hide deformation scale controls if no deformation
+            self.deformation_scale_label.setVisible(False)
+            self.deformation_scale_edit.setVisible(False)
         
         # Update the visualization
         self.update_visualization()

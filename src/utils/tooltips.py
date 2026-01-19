@@ -35,6 +35,12 @@ TOOLTIP_NODAL_FORCES = (
     "Requires 'Nodal Forces' to be enabled in ANSYS Output Controls."
 )
 
+TOOLTIP_DEFORMATION = (
+    "Calculate combined displacement/deformation (UX, UY, UZ, U_mag).\n\n"
+    "Can be selected alongside stress outputs.\n"
+    "Enables deformed mesh visualization with scale control."
+)
+
 TOOLTIP_NODAL_FORCES_CSYS = (
     "Coordinate System for Nodal Forces Output\n"
     "─────────────────────────────────────────\n\n"

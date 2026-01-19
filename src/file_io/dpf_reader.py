@@ -57,6 +57,45 @@ def get_stress_unit_conversion_factor(source_unit: str) -> float:
     return conversion_to_mpa.get(source_unit, 1e-6)  # Default to Pa->MPa if unknown
 
 
+def get_displacement_unit_conversion_factor(source_unit: str) -> Tuple[float, str]:
+    """
+    Get the conversion factor to convert from source unit to millimeters.
+    
+    MARS-SC reports displacements in millimeters (mm) for consistency with 
+    the millimeter-Newton unit system used throughout.
+    
+    Args:
+        source_unit: The source unit string from DPF (e.g., "m", "mm", "in", etc.)
+        
+    Returns:
+        Tuple of (multiplication_factor, target_unit).
+        - multiplication_factor: Factor to multiply values by to convert to mm.
+        - target_unit: The target unit string ("mm").
+    """
+    # Common displacement unit conversion factors to mm
+    # 1 m = 1000 mm
+    conversion_to_mm = {
+        'm': 1000.0,          # meters to mm
+        'M': 1000.0,          # meters (uppercase)
+        'meter': 1000.0,      # meters (spelled out)
+        'meters': 1000.0,     # meters (plural)
+        'mm': 1.0,            # Already mm
+        'MM': 1.0,            # Already mm (uppercase)
+        'millimeter': 1.0,    # Already mm (spelled out)
+        'millimeters': 1.0,   # Already mm (plural)
+        'cm': 10.0,           # centimeters to mm
+        'in': 25.4,           # inches to mm
+        'inch': 25.4,         # inches (spelled out)
+        'inches': 25.4,       # inches (plural)
+        'ft': 304.8,          # feet to mm
+        'um': 0.001,          # micrometers to mm
+        'µm': 0.001,          # micrometers (symbol)
+    }
+    
+    factor = conversion_to_mm.get(source_unit, 1000.0)  # Default to m->mm if unknown
+    return factor, "mm"
+
+
 class DPFNotAvailableError(Exception):
     """Raised when DPF is not available but required."""
     pass
@@ -451,6 +490,9 @@ class DPFAnalysisReader:
         # Check nodal forces availability once (result is cached)
         nodal_forces_available = self.check_nodal_forces_available()
         
+        # Check displacement availability
+        displacement_available = self.check_displacement_available()
+        
         # Get appropriate set IDs based on skip_substeps option
         if skip_substeps:
             load_step_ids = self.get_last_substep_ids()
@@ -471,6 +513,8 @@ class DPFAnalysisReader:
             stress_conversion_factor=self.stress_conversion_factor,
             nodal_forces_available=nodal_forces_available,
             force_unit=self.get_force_unit() if nodal_forces_available else "N",
+            displacement_available=displacement_available,
+            displacement_unit=self.get_displacement_unit() if displacement_available else "mm",
         )
     
     def get_nodal_scoping_from_named_selection(self, ns_name: str) -> 'dpf.Scoping':
@@ -931,7 +975,10 @@ class DPFAnalysisReader:
     
     def get_node_coordinates(self, nodal_scoping: Optional['dpf.Scoping'] = None) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Get XYZ coordinates for scoped nodes.
+        Get XYZ coordinates for scoped nodes, converted to millimeters.
+        
+        MARS-SC uses the mm-N-MPa unit system throughout. This method converts
+        coordinates from DPF's native unit (typically meters) to millimeters.
         
         Args:
             nodal_scoping: Optional DPF Scoping to filter nodes. If None,
@@ -939,6 +986,7 @@ class DPFAnalysisReader:
             
         Returns:
             Tuple of (node_ids, coordinates) where coordinates has shape (num_nodes, 3).
+            Coordinates are in millimeters.
         """
         mesh = self.mesh
         
@@ -946,6 +994,14 @@ class DPFAnalysisReader:
             node_ids = np.array(nodal_scoping.ids)
         else:
             node_ids = np.array(mesh.nodes.scoping.ids)
+        
+        # Get the coordinate unit from the mesh and compute conversion factor to mm
+        try:
+            coord_unit = mesh.nodes.coordinates_field.unit or "m"
+        except Exception:
+            coord_unit = "m"  # Default assumption
+        
+        conversion_factor, _ = get_displacement_unit_conversion_factor(coord_unit)
         
         # Get coordinates for each node
         coords = []
@@ -959,7 +1015,10 @@ class DPFAnalysisReader:
                 # If node not found, use zeros
                 coords.append([0.0, 0.0, 0.0])
         
-        return (node_ids, np.array(coords))
+        # Convert coordinates to mm
+        coords_array = np.array(coords) * conversion_factor
+        
+        return (node_ids, coords_array)
     
     def get_model_info(self) -> Dict:
         """
@@ -989,6 +1048,9 @@ class DPFAnalysisReader:
         
         # Check nodal forces availability
         info['nodal_forces_available'] = self.check_nodal_forces_available()
+        
+        # Check displacement availability
+        info['displacement_available'] = self.check_displacement_available()
         
         return info
     
@@ -1379,6 +1441,198 @@ class DPFAnalysisReader:
             Number of node IDs in the scoping.
         """
         return len(scoping.ids)
+    
+    # =========================================================================
+    # Displacement (Deformation) Methods
+    # =========================================================================
+    
+    def check_displacement_available(self) -> bool:
+        """
+        Check if displacement results are available in the RST file.
+        
+        Returns:
+            True if displacement results are available, False otherwise.
+        """
+        try:
+            # Check if displacement is in available_results
+            result_info = self.model.metadata.result_info
+            available = result_info.available_results
+            
+            # Check for displacement result
+            has_displacement = any(
+                "displacement" in str(res).lower() or
+                "u" == str(getattr(res, 'name', '')).lower()
+                for res in available
+            )
+            
+            if not has_displacement:
+                return False
+            
+            # Try to actually read data to confirm
+            load_step_ids = self.get_load_step_ids()
+            if not load_step_ids:
+                return False
+            
+            disp_op = self.model.results.displacement()
+            time_scoping = dpf.Scoping()
+            time_scoping.ids = [load_step_ids[0]]
+            disp_op.inputs.time_scoping.connect(time_scoping)
+            
+            fields_container = disp_op.outputs.fields_container()
+            
+            if fields_container and len(fields_container) > 0:
+                field = fields_container[0]
+                if field.data is not None and len(field.data) > 0:
+                    return True
+            
+            return False
+            
+        except Exception:
+            return False
+    
+    def get_displacement_unit(self) -> str:
+        """
+        Get the displacement unit for output display.
+        
+        MARS-SC always converts displacement values to millimeters internally,
+        so this method always returns "mm" regardless of the source file's unit.
+        
+        Returns:
+            "mm" - displacements are always reported in millimeters.
+        """
+        # MARS-SC converts all displacement values to mm internally
+        # (similar to how stresses are converted to MPa)
+        return "mm"
+    
+    def read_displacement_for_loadstep(
+        self, 
+        load_step: int, 
+        nodal_scoping: Optional['dpf.Scoping'] = None
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Read displacement (UX, UY, UZ) for a load step.
+        
+        Extracts nodal displacement components from the RST file for the
+        specified load step. Optionally filters to specific nodes via scoping.
+        
+        IMPORTANT: When nodal_scoping is provided, the returned arrays are 
+        guaranteed to be ordered according to nodal_scoping.ids, NOT the order
+        that DPF returns them. This ensures consistent alignment with coordinates
+        obtained via get_node_coordinates().
+        
+        Args:
+            load_step: Load step/set ID (1-based).
+            nodal_scoping: Optional DPF Scoping to filter nodes. If None, 
+                          returns results for all nodes.
+            
+        Returns:
+            Tuple of (node_ids, ux, uy, uz) arrays.
+            Each displacement component array has shape (num_nodes,).
+            Node IDs and displacement arrays are ordered to match input scoping.
+            
+        Raises:
+            DisplacementNotAvailableError: If displacement results are not available.
+        """
+        try:
+            # Store input scoping order for later reordering
+            input_node_ids_order = None
+            if nodal_scoping is not None:
+                input_node_ids_order = np.array(nodal_scoping.ids)
+            
+            # Create displacement operator
+            disp_op = self.model.results.displacement()
+            
+            # Set time scoping for the specific load step
+            time_scoping = dpf.Scoping()
+            time_scoping.ids = [load_step]
+            disp_op.inputs.time_scoping.connect(time_scoping)
+            
+            # Apply mesh scoping if provided
+            if nodal_scoping is not None:
+                disp_op.inputs.mesh_scoping.connect(nodal_scoping)
+            
+            # Get the displacement field
+            fields_container = disp_op.outputs.fields_container()
+            
+            if not fields_container or len(fields_container) == 0:
+                raise DisplacementNotAvailableError(
+                    f"No displacement data available for load step {load_step}."
+                )
+            
+            disp_field = fields_container[0]
+            
+            # Get the displacement unit and compute conversion factor to mm
+            source_unit = disp_field.unit or "m"
+            conversion_factor, _ = get_displacement_unit_conversion_factor(source_unit)
+            
+            # Get node IDs from the field scoping (DPF's returned order)
+            dpf_node_ids = np.array(disp_field.scoping.ids)
+            
+            # Get displacement data - DPF returns 3-component vector (UX, UY, UZ)
+            disp_data = disp_field.data
+            
+            # Handle case where displacement data is 1D (unexpected format)
+            if disp_data.ndim == 1:
+                raise ValueError(
+                    f"Displacement data is 1-dimensional (shape: {disp_data.shape}). "
+                    f"Expected 2D array with 3 components (UX, UY, UZ)."
+                )
+            
+            # Verify we have at least 3 components
+            if disp_data.shape[1] < 3:
+                raise ValueError(
+                    f"Expected 3 displacement components but got {disp_data.shape[1]}. "
+                    f"Displacement data shape: {disp_data.shape}."
+                )
+            
+            # Extract individual components (in DPF returned order) and convert to mm
+            ux = disp_data[:, 0].copy() * conversion_factor
+            uy = disp_data[:, 1].copy() * conversion_factor
+            uz = disp_data[:, 2].copy() * conversion_factor
+            
+            # CRITICAL FIX: Reorder/align arrays to match input scoping order
+            if input_node_ids_order is not None:
+                # Build a lookup: node_id -> index in DPF results
+                dpf_id_to_idx = {nid: idx for idx, nid in enumerate(dpf_node_ids)}
+                
+                # Check if DPF returned exactly the nodes we requested in the same order
+                if len(input_node_ids_order) == len(dpf_node_ids) and np.array_equal(dpf_node_ids, input_node_ids_order):
+                    # Perfect match - no reordering needed
+                    pass
+                elif len(input_node_ids_order) == len(dpf_node_ids):
+                    # Same count but different order - reorder to match input
+                    reorder_indices = np.array([dpf_id_to_idx[nid] for nid in input_node_ids_order])
+                    ux = ux[reorder_indices]
+                    uy = uy[reorder_indices]
+                    uz = uz[reorder_indices]
+                    dpf_node_ids = input_node_ids_order
+                else:
+                    # DPF returned different node count than requested
+                    # Create full-size arrays aligned to input scoping, with zeros for missing nodes
+                    num_requested = len(input_node_ids_order)
+                    ux_full = np.zeros(num_requested)
+                    uy_full = np.zeros(num_requested)
+                    uz_full = np.zeros(num_requested)
+                    
+                    # Fill in values for nodes that have data
+                    for req_idx, nid in enumerate(input_node_ids_order):
+                        if nid in dpf_id_to_idx:
+                            dpf_idx = dpf_id_to_idx[nid]
+                            ux_full[req_idx] = ux[dpf_idx]
+                            uy_full[req_idx] = uy[dpf_idx]
+                            uz_full[req_idx] = uz[dpf_idx]
+                    
+                    ux, uy, uz = ux_full, uy_full, uz_full
+                    dpf_node_ids = input_node_ids_order
+            
+            return (dpf_node_ids, ux, uy, uz)
+            
+        except DisplacementNotAvailableError:
+            raise
+        except Exception as e:
+            raise DisplacementNotAvailableError(
+                f"Failed to read displacement for load step {load_step}: {e}"
+            )
 
 
 def scale_stress_field(field: 'dpf.Field', scale_factor: float) -> 'dpf.Field':
@@ -1542,3 +1796,8 @@ def compute_force_magnitude(force_field: 'dpf.Field') -> 'dpf.Field':
     norm_op.inputs.field.connect(force_field)
     
     return norm_op.outputs.field()
+
+
+class DisplacementNotAvailableError(Exception):
+    """Raised when displacement results are not available in the RST file."""
+    pass

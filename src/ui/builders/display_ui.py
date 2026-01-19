@@ -160,6 +160,30 @@ class DisplayTabUIBuilder:
         )
         export_forces_button.setVisible(False)  # Hidden until nodal forces are loaded
         
+        # Displacement component selection controls (for deformation results)
+        displacement_component_label = QLabel("Displacement:")
+        displacement_component_combo = QComboBox()
+        displacement_component_combo.setMinimumWidth(120)
+        displacement_component_combo.addItems(["U_mag", "UX", "UY", "UZ"])
+        displacement_component_combo.setToolTip(
+            "Select which displacement component to display as contour:\n"
+            "- U_mag: Total displacement magnitude sqrt(UX²+UY²+UZ²)\n"
+            "- UX: Displacement in X direction\n"
+            "- UY: Displacement in Y direction\n"
+            "- UZ: Displacement in Z direction"
+        )
+        displacement_component_label.setVisible(False)  # Hidden until deformation is available
+        displacement_component_combo.setVisible(False)
+        
+        # Export deformation CSV button
+        export_deformation_button = QPushButton("Export Deformation CSV")
+        export_deformation_button.setStyleSheet(BUTTON_STYLE)
+        export_deformation_button.setToolTip(
+            "Export displacement results for the currently selected combination to CSV.\n"
+            "Includes UX, UY, UZ components and magnitude."
+        )
+        export_deformation_button.setVisible(False)  # Hidden until deformation is available
+        
         # Layout
         graphics_control_layout = QHBoxLayout()
         graphics_control_layout.addWidget(QLabel("Node Point Size:"))
@@ -174,6 +198,9 @@ class DisplayTabUIBuilder:
         graphics_control_layout.addWidget(force_component_label)
         graphics_control_layout.addWidget(force_component_combo)
         graphics_control_layout.addWidget(export_forces_button)
+        graphics_control_layout.addWidget(displacement_component_label)
+        graphics_control_layout.addWidget(displacement_component_combo)
+        graphics_control_layout.addWidget(export_deformation_button)
         graphics_control_layout.addWidget(deformation_scale_label)
         graphics_control_layout.addWidget(deformation_scale_edit)
         graphics_control_layout.addWidget(absolute_deformation_checkbox)
@@ -194,6 +221,9 @@ class DisplayTabUIBuilder:
         self.components['force_component_label'] = force_component_label
         self.components['force_component_combo'] = force_component_combo
         self.components['export_forces_button'] = export_forces_button
+        self.components['displacement_component_label'] = displacement_component_label
+        self.components['displacement_component_combo'] = displacement_component_combo
+        self.components['export_deformation_button'] = export_deformation_button
         self.components['deformation_scale_label'] = deformation_scale_label
         self.components['deformation_scale_edit'] = deformation_scale_edit
         self.components['absolute_deformation_checkbox'] = absolute_deformation_checkbox
@@ -373,6 +403,10 @@ class DisplayTabUIBuilder:
         plotter = QtInteractor(parent=parent)
         plotter.set_background(DEFAULT_BACKGROUND_COLOR)
         plotter.setContextMenuPolicy(Qt.CustomContextMenu)
+        
+        # Use isometric (parallel) projection instead of perspective
+        # This maintains consistent object sizes regardless of distance
+        plotter.enable_parallel_projection()
         
         self.components['plotter'] = plotter
         

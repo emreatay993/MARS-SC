@@ -43,7 +43,8 @@ from utils.tooltips import (
     TOOLTIP_VON_MISES, TOOLTIP_MAX_PRINCIPAL, TOOLTIP_MIN_PRINCIPAL,
     TOOLTIP_NODAL_FORCES, TOOLTIP_NODAL_FORCES_CSYS, TOOLTIP_COMBINATION_HISTORY,
     TOOLTIP_PLASTICITY_CORRECTION, TOOLTIP_PLASTICITY_METHOD, TOOLTIP_MAX_ITERATIONS,
-    TOOLTIP_TOLERANCE, TOOLTIP_EXTRAPOLATION, TOOLTIP_IMPORT_CSV, TOOLTIP_EXPORT_CSV
+    TOOLTIP_TOLERANCE, TOOLTIP_EXTRAPOLATION, TOOLTIP_IMPORT_CSV, TOOLTIP_EXPORT_CSV,
+    TOOLTIP_DEFORMATION
 )
 from ui.styles.style_constants import (
     BUTTON_STYLE, GROUP_BOX_STYLE, TAB_STYLE, READONLY_INPUT_STYLE,
@@ -283,6 +284,11 @@ class SolverTabUIBuilder:
         nodal_forces_csys_combo.setMaximumWidth(120)
         nodal_forces_csys_combo.setVisible(False)  # Hidden until nodal forces is checked
         
+        # Deformation (displacement) checkbox - can be selected with stress outputs
+        deformation_checkbox = QCheckBox('Deformation (Displacement)')
+        deformation_checkbox.setStyleSheet(CHECKBOX_STYLE)
+        deformation_checkbox.setToolTip(TOOLTIP_DEFORMATION)
+        
         plasticity_correction_checkbox = QCheckBox('Enable Plasticity Correction')
         plasticity_correction_checkbox.setStyleSheet(CHECKBOX_STYLE)
         plasticity_correction_checkbox.setToolTip(TOOLTIP_PLASTICITY_CORRECTION)
@@ -300,6 +306,9 @@ class SolverTabUIBuilder:
         nodal_forces_row.addStretch()
         output_layout.addLayout(nodal_forces_row)
         
+        # Deformation row
+        output_layout.addWidget(deformation_checkbox)
+        
         output_layout.addWidget(combination_history_checkbox)
         output_layout.addWidget(plasticity_correction_checkbox)
         
@@ -315,13 +324,15 @@ class SolverTabUIBuilder:
         self.components['min_principal_stress_checkbox'] = min_principal_stress_checkbox
         self.components['nodal_forces_checkbox'] = nodal_forces_checkbox
         self.components['nodal_forces_csys_combo'] = nodal_forces_csys_combo
+        self.components['deformation_checkbox'] = deformation_checkbox
         self.components['plasticity_correction_checkbox'] = plasticity_correction_checkbox
         self.components['output_options_group'] = output_group
         
         # Initially disable checkboxes until files are loaded
         for key in ['von_mises_checkbox', 'max_principal_stress_checkbox',
                     'min_principal_stress_checkbox', 'nodal_forces_checkbox',
-                    'plasticity_correction_checkbox', 'combination_history_checkbox']:
+                    'deformation_checkbox', 'plasticity_correction_checkbox', 
+                    'combination_history_checkbox']:
             self.components[key].setEnabled(False)
         
         return output_group

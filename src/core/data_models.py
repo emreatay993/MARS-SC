@@ -30,6 +30,8 @@ class AnalysisData:
         stress_conversion_factor: Factor to convert stress to MPa.
         nodal_forces_available: Whether nodal forces are available in the RST.
         force_unit: Force unit from the RST file (e.g., "N").
+        displacement_available: Whether displacement results are available in the RST.
+        displacement_unit: Displacement unit from the RST file (e.g., "mm", "m").
     """
     file_path: str
     num_load_steps: int
@@ -41,6 +43,8 @@ class AnalysisData:
     stress_conversion_factor: float = 1e-6  # Default Pa to MPa
     nodal_forces_available: bool = False
     force_unit: str = "N"
+    displacement_available: bool = False
+    displacement_unit: str = "mm"
     
     def get_time_for_step(self, step_id: int) -> Optional[float]:
         """
@@ -299,6 +303,38 @@ class NodalForcesResult:
     node_element_types: Optional[np.ndarray] = None
     has_beam_nodes: bool = False
     coordinate_system: str = "Global"
+
+
+@dataclass
+class DeformationResult:
+    """
+    Container for deformation (displacement) combination analysis results.
+    
+    Holds the results of computing displacement envelopes (max/min) across all
+    combinations for each displacement component.
+    
+    Attributes:
+        node_ids: Array of node IDs.
+        node_coords: Original (undeformed) node coordinates, shape (num_nodes, 3).
+        max_magnitude_over_combo: Maximum displacement magnitude over all combinations, shape (num_nodes,).
+        min_magnitude_over_combo: Minimum displacement magnitude over all combinations, shape (num_nodes,).
+        combo_of_max: Index of combination that caused max at each node, shape (num_nodes,).
+        combo_of_min: Index of combination that caused min at each node, shape (num_nodes,).
+        all_combo_ux: Full UX (X displacement) results array, shape (num_combinations, num_nodes).
+        all_combo_uy: Full UY (Y displacement) results array, shape (num_combinations, num_nodes).
+        all_combo_uz: Full UZ (Z displacement) results array, shape (num_combinations, num_nodes).
+        displacement_unit: Unit of displacement (e.g., "mm", "m").
+    """
+    node_ids: np.ndarray
+    node_coords: np.ndarray
+    max_magnitude_over_combo: Optional[np.ndarray] = None
+    min_magnitude_over_combo: Optional[np.ndarray] = None
+    combo_of_max: Optional[np.ndarray] = None
+    combo_of_min: Optional[np.ndarray] = None
+    all_combo_ux: Optional[np.ndarray] = None
+    all_combo_uy: Optional[np.ndarray] = None
+    all_combo_uz: Optional[np.ndarray] = None
+    displacement_unit: str = "mm"
     
     @property
     def num_nodes(self) -> int:
@@ -308,78 +344,57 @@ class NodalForcesResult:
     @property
     def num_combinations(self) -> int:
         """Number of combinations (if full results available)."""
-        if self.all_combo_fx is not None:
-            return self.all_combo_fx.shape[0]
+        if self.all_combo_ux is not None:
+            return self.all_combo_ux.shape[0]
         return 0
     
-    def get_force_magnitude(self, combo_idx: int) -> np.ndarray:
+    def get_displacement_magnitude(self, combo_idx: int) -> np.ndarray:
         """
-        Compute force magnitude for a specific combination.
+        Compute displacement magnitude for a specific combination.
         
         Args:
             combo_idx: Index of the combination.
             
         Returns:
-            Array of force magnitudes, shape (num_nodes,).
+            Array of displacement magnitudes, shape (num_nodes,).
         """
-        if self.all_combo_fx is None or self.all_combo_fy is None or self.all_combo_fz is None:
-            raise ValueError("Force components not available.")
-        fx = self.all_combo_fx[combo_idx, :]
-        fy = self.all_combo_fy[combo_idx, :]
-        fz = self.all_combo_fz[combo_idx, :]
-        return np.sqrt(fx**2 + fy**2 + fz**2)
+        if self.all_combo_ux is None or self.all_combo_uy is None or self.all_combo_uz is None:
+            raise ValueError("Displacement components not available.")
+        ux = self.all_combo_ux[combo_idx, :]
+        uy = self.all_combo_uy[combo_idx, :]
+        uz = self.all_combo_uz[combo_idx, :]
+        return np.sqrt(ux**2 + uy**2 + uz**2)
     
-    def get_shear_force(self, combo_idx: int) -> np.ndarray:
+    def get_displacement_component(self, combo_idx: int, component: str) -> np.ndarray:
         """
-        Compute shear force (transverse force) for a specific combination.
-        
-        Shear force is computed as sqrt(FY^2 + FZ^2), which represents the 
-        transverse force component for beam elements (perpendicular to beam axis).
+        Get a specific displacement component for a combination.
         
         Args:
             combo_idx: Index of the combination.
+            component: Displacement component name - 'UX', 'UY', 'UZ', or 'U_mag'.
             
         Returns:
-            Array of shear force values, shape (num_nodes,).
-        """
-        if self.all_combo_fy is None or self.all_combo_fz is None:
-            raise ValueError("Force components not available.")
-        fy = self.all_combo_fy[combo_idx, :]
-        fz = self.all_combo_fz[combo_idx, :]
-        return np.sqrt(fy**2 + fz**2)
-    
-    def get_force_component(self, combo_idx: int, component: str) -> np.ndarray:
-        """
-        Get a specific force component for a combination.
-        
-        Args:
-            combo_idx: Index of the combination.
-            component: Force component name - 'FX', 'FY', 'FZ', 'Magnitude', or 'Shear'.
-            
-        Returns:
-            Array of force values for the specified component, shape (num_nodes,).
+            Array of displacement values for the specified component, shape (num_nodes,).
         """
         component_upper = component.upper()
         
-        if component_upper == 'FX':
-            if self.all_combo_fx is None:
-                raise ValueError("FX component not available.")
-            return self.all_combo_fx[combo_idx, :]
-        elif component_upper == 'FY':
-            if self.all_combo_fy is None:
-                raise ValueError("FY component not available.")
-            return self.all_combo_fy[combo_idx, :]
-        elif component_upper == 'FZ':
-            if self.all_combo_fz is None:
-                raise ValueError("FZ component not available.")
-            return self.all_combo_fz[combo_idx, :]
-        elif component_upper == 'MAGNITUDE':
-            return self.get_force_magnitude(combo_idx)
-        elif component_upper == 'SHEAR':
-            return self.get_shear_force(combo_idx)
+        if component_upper == 'UX':
+            if self.all_combo_ux is None:
+                raise ValueError("UX component not available.")
+            return self.all_combo_ux[combo_idx, :]
+        elif component_upper == 'UY':
+            if self.all_combo_uy is None:
+                raise ValueError("UY component not available.")
+            return self.all_combo_uy[combo_idx, :]
+        elif component_upper == 'UZ':
+            if self.all_combo_uz is None:
+                raise ValueError("UZ component not available.")
+            return self.all_combo_uz[combo_idx, :]
+        elif component_upper in ('U_MAG', 'UMAG', 'MAGNITUDE'):
+            return self.get_displacement_magnitude(combo_idx)
         else:
-            raise ValueError(f"Unknown force component: {component}. "
-                           f"Valid options: 'FX', 'FY', 'FZ', 'Magnitude', 'Shear'")
+            raise ValueError(f"Unknown displacement component: {component}. "
+                           f"Valid options: 'UX', 'UY', 'UZ', 'U_mag'")
 
 
 # =============================================================================
@@ -416,6 +431,7 @@ class SolverConfig:
         calculate_max_principal_stress: Whether to calculate max principal stress.
         calculate_min_principal_stress: Whether to calculate min principal stress.
         calculate_nodal_forces: Whether to calculate combined nodal forces.
+        calculate_deformation: Whether to calculate combined displacement/deformation.
         nodal_forces_rotate_to_global: If True, rotate nodal forces to global coordinate 
             system. If False, keep forces in element (local) coordinate system.
         combination_history_mode: Whether in combination history mode (single node).
@@ -428,6 +444,7 @@ class SolverConfig:
     calculate_max_principal_stress: bool = False
     calculate_min_principal_stress: bool = False
     calculate_nodal_forces: bool = False
+    calculate_deformation: bool = False
     nodal_forces_rotate_to_global: bool = True
     combination_history_mode: bool = False
     selected_node_id: Optional[int] = None

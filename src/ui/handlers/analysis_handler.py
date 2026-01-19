@@ -22,9 +22,14 @@ from PyQt5.QtWidgets import QMessageBox, QApplication
 
 from solver.combination_engine import CombinationEngine
 from solver.nodal_forces_engine import NodalForcesCombinationEngine
-from file_io.dpf_reader import DPFAnalysisReader, BeamElementNotSupportedError, NodalForcesNotAvailableError
+from solver.deformation_engine import DeformationCombinationEngine
+from file_io.dpf_reader import (
+    DPFAnalysisReader, BeamElementNotSupportedError, 
+    NodalForcesNotAvailableError, DisplacementNotAvailableError
+)
 from core.data_models import (
-    SolverConfig, CombinationResult, CombinationTableData, PlasticityConfig, NodalForcesResult
+    SolverConfig, CombinationResult, CombinationTableData, PlasticityConfig, 
+    NodalForcesResult, DeformationResult
 )
 
 
@@ -45,6 +50,7 @@ class SolverAnalysisHandler:
         self._solve_start_time: Optional[datetime] = None
         self._combination_engine: Optional[CombinationEngine] = None
         self._nodal_forces_engine: Optional[NodalForcesCombinationEngine] = None
+        self._deformation_engine: Optional[DeformationCombinationEngine] = None
 
     def solve(self, config: Optional[SolverConfig] = None):
         """
@@ -68,10 +74,10 @@ class SolverAnalysisHandler:
         stress_type = self._get_stress_type(config)
         
         # Check if at least one output is selected
-        if stress_type is None and not config.calculate_nodal_forces:
+        if stress_type is None and not config.calculate_nodal_forces and not config.calculate_deformation:
             QMessageBox.warning(
                 self.tab, "No Output Selected",
-                "Please select at least one output type (stress or nodal forces)."
+                "Please select at least one output type (stress, nodal forces, or deformation)."
             )
             return
         
@@ -86,6 +92,7 @@ class SolverAnalysisHandler:
         
         stress_result = None
         forces_result = None
+        deformation_result = None
         
         try:
             # Run stress analysis if any stress type is selected
@@ -111,9 +118,16 @@ class SolverAnalysisHandler:
                 
                 forces_result = self._run_nodal_forces_analysis(config)
             
+            # Run deformation analysis if requested
+            if config.calculate_deformation:
+                self.tab.console_textbox.append("\nRunning deformation combination...\n")
+                QApplication.processEvents()
+                
+                deformation_result = self._run_deformation_analysis(config)
+            
             # Handle results
-            if stress_result is not None or forces_result is not None:
-                self._on_solve_complete(stress_result, config, forces_result)
+            if stress_result is not None or forces_result is not None or deformation_result is not None:
+                self._on_solve_complete(stress_result, config, forces_result, deformation_result)
             
         except NodalForcesNotAvailableError as e:
             self.tab.progress_bar.setVisible(False)
@@ -123,6 +137,15 @@ class SolverAnalysisHandler:
                 f"Ensure 'Write element nodal forces' is enabled in ANSYS Output Controls."
             )
             QMessageBox.critical(self.tab, "Nodal Forces Error", error_msg)
+            
+        except DisplacementNotAvailableError as e:
+            self.tab.progress_bar.setVisible(False)
+            error_msg = (
+                f"Displacement Results Not Available\n\n"
+                f"{str(e)}\n\n"
+                f"Ensure displacement output is enabled in ANSYS Output Controls."
+            )
+            QMessageBox.critical(self.tab, "Displacement Error", error_msg)
             
         except MemoryError as e:
             self.tab.progress_bar.setVisible(False)
@@ -349,6 +372,126 @@ class SolverAnalysisHandler:
             )
             return None
     
+    def _run_deformation_analysis(self, config: SolverConfig) -> Optional[DeformationResult]:
+        """
+        Run deformation (displacement) combination analysis.
+        
+        Args:
+            config: SolverConfig with analysis settings.
+            
+        Returns:
+            DeformationResult or None if failed.
+        """
+        # Progress callback that updates GUI
+        def on_progress(current, total, message):
+            if total > 0:
+                percent = int((current / total) * 100)
+                self.tab.progress_bar.setValue(percent)
+                self.tab.progress_bar.setFormat(f"{message} ({percent}%)")
+            else:
+                self.tab.progress_bar.setFormat(message)
+            QApplication.processEvents()  # Keep GUI responsive
+        
+        try:
+            # Create deformation engine
+            engine = self._create_deformation_engine(config)
+            if engine is None:
+                return None
+            
+            self._deformation_engine = engine
+            
+            # Validate displacement availability
+            on_progress(0, 100, "Validating displacement availability...")
+            is_valid, error_msg = engine.validate_displacement_availability()
+            if not is_valid:
+                raise DisplacementNotAvailableError(error_msg)
+            
+            # Preload displacement data
+            on_progress(5, 100, "Loading displacement from RST files...")
+            engine.preload_displacement_data(progress_callback=on_progress)
+            
+            # Compute results based on mode
+            if config.combination_history_mode and config.selected_node_id:
+                # Single node history mode
+                on_progress(50, 100, f"Computing displacement history for node {config.selected_node_id}...")
+                combo_indices, ux, uy, uz, magnitude = engine.compute_single_node_history(
+                    config.selected_node_id
+                )
+                
+                # Create result object for history mode
+                result = DeformationResult(
+                    node_ids=np.array([config.selected_node_id]),
+                    node_coords=np.array([[0, 0, 0]]),  # Placeholder
+                    all_combo_ux=ux.reshape(-1, 1),
+                    all_combo_uy=uy.reshape(-1, 1),
+                    all_combo_uz=uz.reshape(-1, 1),
+                    displacement_unit=engine.displacement_unit,
+                )
+                result.metadata = {
+                    'mode': 'history',
+                    'node_id': config.selected_node_id,
+                    'combination_indices': combo_indices,
+                    'ux': ux,
+                    'uy': uy,
+                    'uz': uz,
+                    'magnitude': magnitude,
+                }
+            else:
+                # Full envelope analysis
+                on_progress(10, 100, "Computing deformation for all combinations...")
+                result = engine.compute_full_analysis(progress_callback=on_progress)
+            
+            on_progress(100, 100, "Deformation complete")
+            return result
+            
+        except DisplacementNotAvailableError:
+            raise
+        except Exception as e:
+            self.tab.console_textbox.append(f"\nError in deformation analysis: {e}\n")
+            raise
+    
+    def _create_deformation_engine(self, config: SolverConfig) -> Optional[DeformationCombinationEngine]:
+        """
+        Create and configure the DeformationCombinationEngine.
+        
+        Args:
+            config: SolverConfig with analysis settings.
+            
+        Returns:
+            Configured DeformationCombinationEngine or None if creation fails.
+        """
+        try:
+            # Get readers from file handler
+            reader1 = self.tab.file_handler.base_reader
+            reader2 = self.tab.file_handler.combine_reader
+            
+            if reader1 is None or reader2 is None:
+                raise ValueError("DPF readers not available. Please reload RST files.")
+            
+            # Get nodal scoping from named selection
+            ns_name = self.tab.get_selected_named_selection()
+            nodal_scoping = reader1.get_nodal_scoping_from_named_selection(ns_name)
+            
+            # Get combination table
+            combo_table = self.tab.get_combination_table_data()
+            
+            # Create engine
+            engine = DeformationCombinationEngine(
+                reader1=reader1,
+                reader2=reader2,
+                nodal_scoping=nodal_scoping,
+                combination_table=combo_table,
+            )
+            
+            return engine
+            
+        except Exception as e:
+            QMessageBox.critical(
+                self.tab, "Engine Creation Error",
+                f"Failed to create deformation engine:\n\n{e}"
+            )
+            return None
+    
     def _validate_inputs(self, config: SolverConfig) -> bool:
         """Validate inputs before running analysis."""
         # Check RST files loaded
@@ -500,7 +643,8 @@ class SolverAnalysisHandler:
         self, 
         stress_result: Optional[CombinationResult], 
         config: SolverConfig,
-        forces_result: Optional[NodalForcesResult] = None
+        forces_result: Optional[NodalForcesResult] = None,
+        deformation_result: Optional[DeformationResult] = None
     ):
         """Handle successful solve completion."""
         # Re-enable UI
@@ -512,6 +656,8 @@ class SolverAnalysisHandler:
             self.tab.combination_result = stress_result
         if forces_result is not None:
             self.tab.nodal_forces_result = forces_result
+        if deformation_result is not None:
+            self.tab.deformation_result = deformation_result
         
         # Handle stress results based on mode
         if stress_result is not None:
@@ -527,6 +673,13 @@ class SolverAnalysisHandler:
             else:
                 self._handle_forces_envelope_result(forces_result, config)
         
+        # Handle deformation results
+        if deformation_result is not None:
+            if config.combination_history_mode:
+                self._handle_deformation_history_result(deformation_result, config)
+            else:
+                self._handle_deformation_envelope_result(deformation_result, config)
+        
         # Notify tab of completion for visualization
         # IMPORTANT: Skip 3D mesh update in history mode to preserve existing contour
         # History mode only updates the time history plot, not the 3D display
@@ -537,6 +690,11 @@ class SolverAnalysisHandler:
             elif forces_result is not None:
                 # Only display forces if no stress was computed
                 self.tab.on_forces_analysis_complete(forces_result)
+            
+            # Notify deformation result - if no stress/forces, deformation creates its own mesh
+            if deformation_result is not None:
+                is_standalone = (stress_result is None and forces_result is None)
+                self.tab.on_deformation_analysis_complete(deformation_result, is_standalone=is_standalone)
         
         # Log completion
         self._log_solve_complete()
@@ -843,6 +1001,108 @@ class SolverAnalysisHandler:
         if output_dir:
             self._export_forces_envelope_csv(result, output_dir)
     
+    def _handle_deformation_history_result(self, result: DeformationResult, config: SolverConfig):
+        """Handle results from deformation combination history mode (single node)."""
+        metadata = getattr(result, 'metadata', {}) or {}
+        node_id = metadata.get('node_id', config.selected_node_id)
+        combo_indices = metadata.get('combination_indices', np.arange(result.num_combinations))
+        ux = metadata.get('ux', result.all_combo_ux[:, 0] if result.all_combo_ux is not None else np.array([]))
+        uy = metadata.get('uy', result.all_combo_uy[:, 0] if result.all_combo_uy is not None else np.array([]))
+        uz = metadata.get('uz', result.all_combo_uz[:, 0] if result.all_combo_uz is not None else np.array([]))
+        magnitude = metadata.get('magnitude', np.sqrt(ux**2 + uy**2 + uz**2))
+        
+        # Log results
+        self.tab.console_textbox.append(
+            f"\nDeformation history computed for Node {node_id}\n"
+            f"  Combinations: {len(combo_indices)}\n"
+            f"  Max Displacement Magnitude: {np.max(magnitude):.6f} {result.displacement_unit}\n"
+            f"  Min Displacement Magnitude: {np.min(magnitude):.6f} {result.displacement_unit}\n"
+        )
+    
+    def _handle_deformation_envelope_result(self, result: DeformationResult, config: SolverConfig):
+        """Handle results from deformation envelope (batch) analysis."""
+        # Log summary
+        self.tab.console_textbox.append(
+            f"\nDeformation envelope analysis complete\n"
+            f"  Nodes: {result.num_nodes}\n"
+            f"  Combinations: {self.tab.combination_table.num_combinations if self.tab.combination_table else 'N/A'}\n"
+            f"  Displacement Unit: {result.displacement_unit}\n"
+        )
+        
+        if result.max_magnitude_over_combo is not None:
+            max_val = np.max(result.max_magnitude_over_combo)
+            max_node_idx = np.argmax(result.max_magnitude_over_combo)
+            max_node_id = result.node_ids[max_node_idx]
+            max_combo_idx = result.combo_of_max[max_node_idx] if result.combo_of_max is not None else -1
+            
+            # Get combination name if available
+            combo_name = ""
+            if self.tab.combination_table and 0 <= max_combo_idx < len(self.tab.combination_table.combination_names):
+                combo_name = f" ({self.tab.combination_table.combination_names[max_combo_idx]})"
+            
+            self.tab.console_textbox.append(
+                f"  Maximum Displacement: {max_val:.6f} {result.displacement_unit} at Node {max_node_id} "
+                f"(Combination {max_combo_idx + 1}{combo_name})\n"
+            )
+        
+        if result.min_magnitude_over_combo is not None:
+            min_val = np.min(result.min_magnitude_over_combo)
+            min_node_idx = np.argmin(result.min_magnitude_over_combo)
+            min_node_id = result.node_ids[min_node_idx]
+            min_combo_idx = result.combo_of_min[min_node_idx] if result.combo_of_min is not None else -1
+            
+            # Get combination name if available
+            combo_name = ""
+            if self.tab.combination_table and 0 <= min_combo_idx < len(self.tab.combination_table.combination_names):
+                combo_name = f" ({self.tab.combination_table.combination_names[min_combo_idx]})"
+            
+            self.tab.console_textbox.append(
+                f"  Minimum Displacement: {min_val:.6f} {result.displacement_unit} at Node {min_node_id} "
+                f"(Combination {min_combo_idx + 1}{combo_name})\n"
+            )
+        
+        # Auto-export deformation envelope results to CSV
+        output_dir = self._get_output_directory()
+        if output_dir:
+            self._export_deformation_envelope_csv(result, output_dir)
+    
+    def _export_deformation_envelope_csv(
+        self, 
+        result: DeformationResult, 
+        output_dir: str
+    ):
+        """
+        Export deformation envelope results to CSV files.
+        
+        Args:
+            result: DeformationResult containing envelope data.
+            output_dir: Directory to write the CSV file.
+        """
+        from file_io.exporters import export_deformation_envelope
+        
+        try:
+            combo_names = self.tab.combination_table.combination_names if self.tab.combination_table else None
+            
+            # Build filename
+            filename = os.path.join(output_dir, "envelope_deformation.csv")
+            
+            export_deformation_envelope(
+                filename=filename,
+                node_ids=result.node_ids,
+                node_coords=result.node_coords,
+                max_magnitude=result.max_magnitude_over_combo,
+                min_magnitude=result.min_magnitude_over_combo,
+                combo_of_max=result.combo_of_max,
+                combo_of_min=result.combo_of_min,
+                combination_names=combo_names,
+                displacement_unit=result.displacement_unit
+            )
+            
+            self.tab.console_textbox.append(f"  Exported deformation envelope to: {filename}\n")
+            
+        except Exception as e:
+            self.tab.console_textbox.append(f"  Warning: Failed to export deformation CSV: {e}\n")
+    
     def _log_solve_start(self, config: SolverConfig):
         """Log solve start information."""
         current_time = datetime.now()
@@ -858,6 +1118,8 @@ class SolverAnalysisHandler:
         if config.calculate_nodal_forces:
             csys = "Global" if config.nodal_forces_rotate_to_global else "Local (Element)"
             output_types.append(f"Nodal Forces ({csys})")
+        if config.calculate_deformation:
+            output_types.append("Deformation")
         
         mode = "Combination History" if config.combination_history_mode else "Envelope"
         

@@ -460,7 +460,8 @@ class MatplotlibWidget(QWidget):
     
     def update_combination_history_plot(self, combination_indices, stress_values, node_id=None,
                                         combination_names=None, stress_type="von_mises",
-                                        plasticity_overlay=None):
+                                        plasticity_overlay=None,
+                                        deformation_data=None, displacement_unit="mm"):
         """
         Update the plot with combination history data (stress vs combination number).
         
@@ -469,12 +470,21 @@ class MatplotlibWidget(QWidget):
         
         Args:
             combination_indices: Array of combination indices (0, 1, 2, ...)
-            stress_values: Array of stress values at each combination
+            stress_values: Array of stress values at each combination (or None if only deformation)
             node_id: Optional node ID for the title
             combination_names: Optional list of combination names for x-axis labels
             stress_type: Type of stress ("von_mises", "max_principal", "min_principal")
             plasticity_overlay: Optional dict with corrected values
+            deformation_data: Optional dict with 'ux', 'uy', 'uz', 'u_mag' arrays for deformation plotting
+            displacement_unit: Unit string for displacement (e.g., "mm")
         """
+        # Check if this is a deformation-only plot
+        if stress_values is None and deformation_data is not None:
+            self._update_deformation_history_plot(
+                combination_indices, deformation_data, node_id,
+                combination_names, displacement_unit
+            )
+            return
         # Reset state
         self.figure.clear()
         self.plotted_lines.clear()
@@ -595,6 +605,116 @@ class MatplotlibWidget(QWidget):
                                       bbox=dict(boxstyle="round", fc="w"),
                                       arrowprops=dict(arrowstyle="->"))
         self.annot.set_visible(False)
+        
+        self.table.resizeColumnsToContents()
+        self.canvas.draw()
+        QTimer.singleShot(0, self.adjust_splitter_size)
+    
+    def _update_deformation_history_plot(self, combination_indices, deformation_data, 
+                                          node_id=None, combination_names=None, 
+                                          displacement_unit="mm"):
+        """
+        Internal method to plot deformation history (UX, UY, UZ, U_mag vs combination).
+        
+        Args:
+            combination_indices: Array of combination indices (0, 1, 2, ...)
+            deformation_data: Dict with 'ux', 'uy', 'uz', 'u_mag' arrays
+            node_id: Optional node ID for the title
+            combination_names: Optional list of combination names
+            displacement_unit: Unit string for displacement (e.g., "mm")
+        """
+        # Reset state
+        self.figure.clear()
+        self.plotted_lines.clear()
+        self.legend_map.clear()
+        
+        self.ax = self.figure.add_subplot(1, 1, 1)
+        
+        x = np.asarray(combination_indices)
+        ux = np.asarray(deformation_data.get('ux', []))
+        uy = np.asarray(deformation_data.get('uy', []))
+        uz = np.asarray(deformation_data.get('uz', []))
+        u_mag = np.asarray(deformation_data.get('u_mag', []))
+        
+        # Plot all 4 traces with distinct styling
+        if len(u_mag) > 0:
+            line_mag, = self.ax.plot(x, u_mag, label='U_mag', color='black', 
+                                     linewidth=2, marker='o', markersize=4)
+            self.plotted_lines.append(line_mag)
+        
+        if len(ux) > 0:
+            line_ux, = self.ax.plot(x, ux, label='UX', color='red', 
+                                    linestyle='--', linewidth=1, marker='s', markersize=3)
+            self.plotted_lines.append(line_ux)
+        
+        if len(uy) > 0:
+            line_uy, = self.ax.plot(x, uy, label='UY', color='green', 
+                                    linestyle='--', linewidth=1, marker='^', markersize=3)
+            self.plotted_lines.append(line_uy)
+        
+        if len(uz) > 0:
+            line_uz, = self.ax.plot(x, uz, label='UZ', color='blue', 
+                                    linestyle='--', linewidth=1, marker='v', markersize=3)
+            self.plotted_lines.append(line_uz)
+        
+        # Title and labels
+        title = "Deformation vs Combination"
+        if node_id is not None:
+            title = f"Deformation (Node ID: {node_id})"
+        self.ax.set_title(title, fontsize=8)
+        self.ax.set_xlabel('Combination #', fontsize=8)
+        self.ax.set_ylabel(f'Displacement [{displacement_unit}]', fontsize=8)
+        self.ax.set_xlim(np.min(x) - 0.5, np.max(x) + 0.5)
+        self.ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+        self.ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
+        self.ax.grid(True, which='both', linestyle='-', linewidth=0.5)
+        self.ax.minorticks_on()
+        self.ax.tick_params(axis='both', which='major', labelsize=8)
+        
+        # Interactive legend
+        handles, labels = self.ax.get_legend_handles_labels()
+        if handles:
+            leg = self.ax.legend(handles, labels, fontsize=7, loc='upper right')
+            for legline, legtext, origline in zip(leg.get_lines(), leg.get_texts(), self.plotted_lines):
+                legline.set_picker(True)
+                legline.set_pickradius(5)
+                self.legend_map[legline] = origline
+                legtext.set_picker(True)
+                self.legend_map[legtext] = origline
+        
+        # Max annotation
+        if len(u_mag) > 0:
+            max_mag = np.max(u_mag)
+            combo_of_max = x[np.argmax(u_mag)]
+            textstr = f'Max U_mag: {max_mag:.4f} {displacement_unit}\nAt Combination: {int(combo_of_max) + 1}'
+            self.ax.text(0.05, 0.95, textstr, transform=self.ax.transAxes, fontsize=8,
+                        verticalalignment='top', horizontalalignment='left',
+                        bbox=dict(facecolor='white', alpha=0.5, boxstyle='round,pad=0.2'))
+        
+        # Hover annotation
+        self.annot = self.ax.annotate("", xy=(0, 0), xytext=(20, 20),
+                                      textcoords="offset points",
+                                      bbox=dict(boxstyle="round", fc="w"),
+                                      arrowprops=dict(arrowstyle="->"))
+        self.annot.set_visible(False)
+        
+        # Populate table
+        self.model.clear()
+        headers = ["Combo #", "Name", f"U_mag [{displacement_unit}]", 
+                   f"UX [{displacement_unit}]", f"UY [{displacement_unit}]", f"UZ [{displacement_unit}]"]
+        self.model.setHorizontalHeaderLabels(headers)
+        
+        for idx in range(len(x)):
+            name = combination_names[idx] if combination_names and idx < len(combination_names) else ""
+            row_items = [
+                QStandardItem(f"{int(x[idx]) + 1}"),  # 1-based
+                QStandardItem(name),
+                QStandardItem(f"{u_mag[idx]:.5f}" if idx < len(u_mag) else ""),
+                QStandardItem(f"{ux[idx]:.5f}" if idx < len(ux) else ""),
+                QStandardItem(f"{uy[idx]:.5f}" if idx < len(uy) else ""),
+                QStandardItem(f"{uz[idx]:.5f}" if idx < len(uz) else "")
+            ]
+            self.model.appendRow(row_items)
         
         self.table.resizeColumnsToContents()
         self.canvas.draw()
@@ -1255,6 +1375,279 @@ class PlotlyMaxWidget(QWidget):
         self.table.resizeColumnsToContents()
         QTimer.singleShot(0, self.adjust_splitter_size)
     
+    def update_deformation_envelope_plot(self, node_ids, max_magnitude=None, min_magnitude=None,
+                                          combo_of_max=None, combo_of_min=None,
+                                          combination_names=None, displacement_unit="mm",
+                                          show_top_n=50):
+        """
+        Update plot with deformation envelope results (max/min U_mag over combinations).
+        
+        Args:
+            node_ids: Array of node IDs
+            max_magnitude: Array of maximum displacement magnitudes over all combinations
+            min_magnitude: Array of minimum displacement magnitudes over all combinations
+            combo_of_max: Array of combination indices where max occurred
+            combo_of_min: Array of combination indices where min occurred
+            combination_names: Optional list of combination names
+            displacement_unit: Displacement unit string (e.g., "mm")
+            show_top_n: Number of top nodes to display in the plot (default 50)
+        """
+        # Build traces for the plot
+        fig = go.Figure()
+        
+        traces_added = False
+        
+        # Add max magnitude trace (bar chart of top N nodes)
+        if max_magnitude is not None and len(max_magnitude) > 0:
+            # Sort by max magnitude descending and take top N
+            sorted_indices = np.argsort(max_magnitude)[::-1][:show_top_n]
+            sorted_node_ids = np.array(node_ids)[sorted_indices]
+            sorted_max = np.array(max_magnitude)[sorted_indices]
+            
+            hover_text = []
+            for i, idx in enumerate(sorted_indices):
+                text = f"Node: {sorted_node_ids[i]}<br>Max U_mag: {sorted_max[i]:.4f} {displacement_unit}"
+                if combo_of_max is not None:
+                    combo_idx = int(combo_of_max[idx])
+                    combo_name = combination_names[combo_idx] if combination_names and combo_idx < len(combination_names) else f"#{combo_idx + 1}"
+                    text += f"<br>At: {combo_name}"
+                hover_text.append(text)
+            
+            fig.add_trace(go.Bar(
+                x=[f"Node {nid}" for nid in sorted_node_ids],
+                y=sorted_max,
+                name=f'Max U_mag [{displacement_unit}]',
+                marker_color='purple',
+                hovertext=hover_text,
+                hoverinfo='text'
+            ))
+            traces_added = True
+        
+        # Add min magnitude trace if provided
+        if min_magnitude is not None and len(min_magnitude) > 0:
+            # Sort by min magnitude ascending and take top N
+            sorted_indices = np.argsort(min_magnitude)[:show_top_n]
+            sorted_node_ids = np.array(node_ids)[sorted_indices]
+            sorted_min = np.array(min_magnitude)[sorted_indices]
+            
+            hover_text = []
+            for i, idx in enumerate(sorted_indices):
+                text = f"Node: {sorted_node_ids[i]}<br>Min U_mag: {sorted_min[i]:.4f} {displacement_unit}"
+                if combo_of_min is not None:
+                    combo_idx = int(combo_of_min[idx])
+                    combo_name = combination_names[combo_idx] if combination_names and combo_idx < len(combination_names) else f"#{combo_idx + 1}"
+                    text += f"<br>At: {combo_name}"
+                hover_text.append(text)
+            
+            fig.add_trace(go.Bar(
+                x=[f"Node {nid}" for nid in sorted_node_ids],
+                y=sorted_min,
+                name=f'Min U_mag [{displacement_unit}]',
+                marker_color='teal',
+                hovertext=hover_text,
+                hoverinfo='text'
+            ))
+            traces_added = True
+        
+        if not traces_added:
+            fig.add_annotation(
+                text="No deformation envelope data available",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False
+            )
+        
+        fig.update_layout(
+            title=f'Deformation Envelope - Top {show_top_n} Nodes',
+            xaxis_title="Node",
+            yaxis_title=f"Displacement Magnitude [{displacement_unit}]",
+            template="plotly_white",
+            font=dict(size=10),
+            margin=dict(l=50, r=50, t=50, b=100),
+            legend=dict(font=dict(size=9)),
+            barmode='group',
+            xaxis_tickangle=-45
+        )
+        
+        # Display
+        try:
+            main_win = self.window()
+            if hasattr(main_win, 'plotting_handler') and main_win.plotting_handler:
+                main_win.plotting_handler.load_fig_to_webview(fig, self.web_view)
+            else:
+                self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
+        except Exception as e:
+            print(f"Error rendering deformation envelope plot: {e}")
+            self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
+        
+        # Populate table with all data
+        headers = ["Node ID", f"Max U_mag [{displacement_unit}]", "Combo of Max", 
+                   f"Min U_mag [{displacement_unit}]", "Combo of Min"]
+        
+        self.model.setHorizontalHeaderLabels(headers)
+        self.model.removeRows(0, self.model.rowCount())
+        
+        for i, nid in enumerate(node_ids):
+            row_items = [QStandardItem(f"{int(nid)}")]
+            
+            if max_magnitude is not None:
+                row_items.append(QStandardItem(f"{max_magnitude[i]:.6f}"))
+                if combo_of_max is not None:
+                    combo_idx = int(combo_of_max[i])
+                    combo_name = combination_names[combo_idx] if combination_names and combo_idx < len(combination_names) else str(combo_idx + 1)
+                    row_items.append(QStandardItem(combo_name))
+                else:
+                    row_items.append(QStandardItem(""))
+            else:
+                row_items.extend([QStandardItem(""), QStandardItem("")])
+            
+            if min_magnitude is not None:
+                row_items.append(QStandardItem(f"{min_magnitude[i]:.6f}"))
+                if combo_of_min is not None:
+                    combo_idx = int(combo_of_min[i])
+                    combo_name = combination_names[combo_idx] if combination_names and combo_idx < len(combination_names) else str(combo_idx + 1)
+                    row_items.append(QStandardItem(combo_name))
+                else:
+                    row_items.append(QStandardItem(""))
+            else:
+                row_items.extend([QStandardItem(""), QStandardItem("")])
+            
+            self.model.appendRow(row_items)
+        
+        self.table.resizeColumnsToContents()
+        QTimer.singleShot(0, self.adjust_splitter_size)
+    
+    def update_deformation_over_combinations_plot(self, combination_indices, 
+                                                   ux_per_combo, uy_per_combo, 
+                                                   uz_per_combo, umag_per_combo,
+                                                   combination_names=None,
+                                                   displacement_unit="mm",
+                                                   node_id=None):
+        """
+        Plot deformation components (UX, UY, UZ, U_mag) vs combination number.
+        
+        This shows how the displacement components change across combinations
+        for a specific node (time history mode).
+        
+        Args:
+            combination_indices: Array of combination indices (0, 1, 2, ...)
+            ux_per_combo: Array of UX values (one per combination)
+            uy_per_combo: Array of UY values (one per combination)
+            uz_per_combo: Array of UZ values (one per combination)
+            umag_per_combo: Array of U_mag values (one per combination)
+            combination_names: Optional list of combination names
+            displacement_unit: Displacement unit string (e.g., "mm")
+            node_id: Optional node ID for the title
+        """
+        # Build figure
+        fig = go.Figure()
+        
+        x_values = np.array(combination_indices)
+        
+        # Create x-axis labels (1-based for user-friendliness)
+        if combination_names and len(combination_names) == len(x_values):
+            x_labels = combination_names
+        else:
+            x_labels = [f"Combo {i+1}" for i in x_values]
+        
+        # Add U_mag trace (primary, thicker line)
+        if umag_per_combo is not None:
+            fig.add_trace(go.Scatter(
+                x=x_values + 1,  # 1-based for display
+                y=umag_per_combo,
+                mode='lines+markers',
+                name='U_mag',
+                line=dict(color='black', width=2),
+                marker=dict(size=8, color='black')
+            ))
+        
+        # Add UX trace
+        if ux_per_combo is not None:
+            fig.add_trace(go.Scatter(
+                x=x_values + 1,
+                y=ux_per_combo,
+                mode='lines+markers',
+                name='UX',
+                line=dict(color='red', width=1, dash='dash'),
+                marker=dict(size=6, color='red')
+            ))
+        
+        # Add UY trace
+        if uy_per_combo is not None:
+            fig.add_trace(go.Scatter(
+                x=x_values + 1,
+                y=uy_per_combo,
+                mode='lines+markers',
+                name='UY',
+                line=dict(color='green', width=1, dash='dash'),
+                marker=dict(size=6, color='green')
+            ))
+        
+        # Add UZ trace
+        if uz_per_combo is not None:
+            fig.add_trace(go.Scatter(
+                x=x_values + 1,
+                y=uz_per_combo,
+                mode='lines+markers',
+                name='UZ',
+                line=dict(color='blue', width=1, dash='dash'),
+                marker=dict(size=6, color='blue')
+            ))
+        
+        title = f'Deformation vs Combination'
+        if node_id is not None:
+            title = f'Deformation (Node ID: {node_id})'
+        
+        fig.update_layout(
+            title=title,
+            xaxis_title="Combination #",
+            yaxis_title=f"Displacement [{displacement_unit}]",
+            template="plotly_white",
+            font=dict(size=10),
+            margin=dict(l=50, r=50, t=50, b=50),
+            legend=dict(font=dict(size=9)),
+            xaxis=dict(
+                tickmode='array',
+                tickvals=x_values + 1,
+                ticktext=[f"{i+1}" for i in x_values],
+                dtick=1
+            )
+        )
+        
+        # Display
+        try:
+            main_win = self.window()
+            if hasattr(main_win, 'plotting_handler') and main_win.plotting_handler:
+                main_win.plotting_handler.load_fig_to_webview(fig, self.web_view)
+            else:
+                self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
+        except Exception as e:
+            print(f"Error rendering deformation over combinations plot: {e}")
+            self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
+        
+        # Populate table
+        headers = ["Combo #", "Name", 
+                   f"U_mag [{displacement_unit}]", 
+                   f"UX [{displacement_unit}]", 
+                   f"UY [{displacement_unit}]", 
+                   f"UZ [{displacement_unit}]"]
+        
+        self.model.setHorizontalHeaderLabels(headers)
+        self.model.removeRows(0, self.model.rowCount())
+        
+        for i in range(len(combination_indices)):
+            row_items = [
+                QStandardItem(f"{combination_indices[i] + 1}"),  # 1-based
+                QStandardItem(x_labels[i] if i < len(x_labels) else ""),
+                QStandardItem(f"{umag_per_combo[i]:.6f}" if umag_per_combo is not None else ""),
+                QStandardItem(f"{ux_per_combo[i]:.6f}" if ux_per_combo is not None else ""),
+                QStandardItem(f"{uy_per_combo[i]:.6f}" if uy_per_combo is not None else ""),
+                QStandardItem(f"{uz_per_combo[i]:.6f}" if uz_per_combo is not None else "")
+            ]
+            self.model.appendRow(row_items)
+        
+        self.table.resizeColumnsToContents()
+        QTimer.singleShot(0, self.adjust_splitter_size)
+
     def clear_plot(self):
         """Clear the plot and table."""
         self.web_view.setHtml("")

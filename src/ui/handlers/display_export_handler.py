@@ -4,7 +4,10 @@ Export-related functionality for the Display tab.
 
 from PyQt5.QtWidgets import QFileDialog, QMessageBox
 
-from file_io.exporters import export_mesh_to_csv, export_apdl_ic, export_nodal_forces_single_combination
+from file_io.exporters import (
+    export_mesh_to_csv, export_apdl_ic, 
+    export_nodal_forces_single_combination, export_deformation_single_combination
+)
 from ui.handlers.display_base_handler import DisplayBaseHandler
 
 
@@ -201,4 +204,101 @@ class DisplayExportHandler(DisplayBaseHandler):
             QMessageBox.critical(
                 self.tab, "Export Error",
                 f"Failed to export nodal forces:\n{exc}"
+            )
+
+    def export_deformation_csv(self) -> None:
+        """
+        Export deformation (displacement) for the currently selected combination to CSV.
+        
+        Exports UX, UY, UZ components and magnitude (U_mag).
+        """
+        # Check if deformation result is available
+        if self.tab.deformation_result is None:
+            QMessageBox.warning(
+                self.tab, "No Deformation Data",
+                "No deformation data available.\n\n"
+                "Please run a combination analysis with 'Deformation' output enabled."
+            )
+            return
+        
+        result = self.tab.deformation_result
+        
+        # Get the currently selected combination from view_combination_combo
+        view_combo_idx = self.tab.view_combination_combo.currentIndex()
+        
+        if view_combo_idx == 0:
+            # Envelope view selected - ask user to select a specific combination
+            QMessageBox.information(
+                self.tab, "Select Combination",
+                "Please select a specific combination from the 'View Combination' dropdown "
+                "to export its displacement data.\n\n"
+                "The envelope view cannot be exported as displacement CSV."
+            )
+            return
+        
+        # Get the actual combination index (0-based)
+        combo_idx = view_combo_idx - 1  # Account for "(Envelope View)" at index 0
+        
+        # Validate combination index
+        if combo_idx < 0 or combo_idx >= result.num_combinations:
+            QMessageBox.warning(
+                self.tab, "Invalid Combination",
+                f"Invalid combination index: {combo_idx}.\n"
+                f"Available combinations: 0 to {result.num_combinations - 1}"
+            )
+            return
+        
+        # Get combination name
+        combo_name = ""
+        if self.tab.combination_names and combo_idx < len(self.tab.combination_names):
+            combo_name = self.tab.combination_names[combo_idx]
+        else:
+            combo_name = f"Combination_{combo_idx + 1}"
+        
+        # Get displacement components for this combination
+        ux = result.all_combo_ux[combo_idx, :]
+        uy = result.all_combo_uy[combo_idx, :]
+        uz = result.all_combo_uz[combo_idx, :]
+        
+        # Generate default filename
+        safe_name = combo_name.replace(" ", "_").replace("/", "_").replace("\\", "_")
+        default_filename = f"deformation_{safe_name}.csv"
+        
+        # Show file save dialog
+        file_name, _ = QFileDialog.getSaveFileName(
+            self.tab,
+            "Export Deformation",
+            default_filename,
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        
+        if not file_name:
+            return
+        
+        try:
+            # Export using the updated function
+            export_deformation_single_combination(
+                filename=file_name,
+                node_ids=result.node_ids,
+                node_coords=result.node_coords,
+                ux=ux,
+                uy=uy,
+                uz=uz,
+                combination_index=combo_idx,
+                combination_name=combo_name,
+                displacement_unit=result.displacement_unit
+            )
+            
+            QMessageBox.information(
+                self.tab, "Export Successful",
+                f"Deformation exported successfully to:\n{file_name}\n\n"
+                f"Combination: {combo_name}\n"
+                f"Displacement Unit: {result.displacement_unit}\n"
+                f"Nodes: {result.num_nodes:,}"
+            )
+            
+        except Exception as exc:
+            QMessageBox.critical(
+                self.tab, "Export Error",
+                f"Failed to export deformation:\n{exc}"
             )

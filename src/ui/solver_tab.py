@@ -78,7 +78,7 @@ from ui.widgets.console import Logger
 from ui.widgets.plotting import MatplotlibWidget
 from core.data_models import (
     AnalysisData, CombinationTableData, CombinationResult, NodalForcesResult,
-    TemperatureFieldData, MaterialProfileData, SolverConfig
+    DeformationResult, TemperatureFieldData, MaterialProfileData, SolverConfig
 )
 
 
@@ -113,6 +113,7 @@ class SolverTab(QWidget):
         self.combination_table: Optional[CombinationTableData] = None
         self.combination_result: Optional[CombinationResult] = None
         self.nodal_forces_result: Optional[NodalForcesResult] = None
+        self.deformation_result: Optional[DeformationResult] = None
         
         # Temperature and material data (for plasticity)
         self.temperature_field_data: Optional[TemperatureFieldData] = None
@@ -195,6 +196,7 @@ class SolverTab(QWidget):
         self.min_principal_stress_checkbox = self.components['min_principal_stress_checkbox']
         self.nodal_forces_checkbox = self.components['nodal_forces_checkbox']
         self.nodal_forces_csys_combo = self.components['nodal_forces_csys_combo']
+        self.deformation_checkbox = self.components['deformation_checkbox']
         self.plasticity_correction_checkbox = self.components['plasticity_correction_checkbox']
         
         # Single node controls
@@ -244,7 +246,7 @@ class SolverTab(QWidget):
         # Connect cell change signal for coefficient highlighting
         self.combo_table.cellChanged.connect(self._on_coefficient_cell_changed)
         
-        # Output checkboxes - mutual exclusivity for output types
+        # Output checkboxes - mutual exclusivity for stress output types only
         self.von_mises_checkbox.toggled.connect(
             lambda checked: self._on_output_checkbox_toggled(self.von_mises_checkbox, checked))
         self.max_principal_stress_checkbox.toggled.connect(
@@ -254,6 +256,9 @@ class SolverTab(QWidget):
         self.nodal_forces_checkbox.toggled.connect(
             lambda checked: self._on_output_checkbox_toggled(self.nodal_forces_checkbox, checked))
         self.nodal_forces_checkbox.toggled.connect(self._toggle_nodal_forces_csys_combo)
+        
+        # Deformation checkbox - NOT mutually exclusive, can be selected alongside stress
+        self.deformation_checkbox.toggled.connect(self._update_solve_button_state)
         
         # Mode toggles (not mutually exclusive with output types)
         self.combination_history_checkbox.toggled.connect(self._toggle_combination_history_mode)
@@ -475,6 +480,27 @@ class SolverTab(QWidget):
                 "Combine nodal forces from both analyses.\n"
                 "Requires 'Write element nodal forces' to be enabled in ANSYS Output Controls."
             )
+        
+        # Enable deformation checkbox only if both files have displacement results
+        displacement_available = False
+        if enabled and self.analysis1_data and self.analysis2_data:
+            displacement_available = (
+                self.analysis1_data.displacement_available and 
+                self.analysis2_data.displacement_available
+            )
+        
+        self.deformation_checkbox.setEnabled(displacement_available)
+        if not displacement_available and enabled:
+            self.deformation_checkbox.setToolTip(
+                "Displacement results not available.\n"
+                "At least one RST file does not contain displacement results."
+            )
+        else:
+            self.deformation_checkbox.setToolTip(
+                "Calculate combined displacement/deformation (UX, UY, UZ, U_mag).\n"
+                "Can be selected alongside stress outputs.\n"
+                "Enables deformed mesh visualization with scale control."
+            )
     
     # ========== Combination Table Methods ==========
     
@@ -679,7 +705,8 @@ class SolverTab(QWidget):
                 self.von_mises_checkbox.isChecked(),
                 self.max_principal_stress_checkbox.isChecked(),
                 self.min_principal_stress_checkbox.isChecked(),
-                self.nodal_forces_checkbox.isChecked()
+                self.nodal_forces_checkbox.isChecked(),
+                self.deformation_checkbox.isChecked()
             ])
         )
         self.solve_button.setEnabled(can_solve)
@@ -779,7 +806,8 @@ class SolverTab(QWidget):
             self.von_mises_checkbox.isChecked(),
             self.max_principal_stress_checkbox.isChecked(),
             self.min_principal_stress_checkbox.isChecked(),
-            self.nodal_forces_checkbox.isChecked()
+            self.nodal_forces_checkbox.isChecked(),
+            self.deformation_checkbox.isChecked()
         ]):
             QMessageBox.warning(self, "Missing Input", "Please select at least one output type.")
             return False
@@ -884,6 +912,7 @@ class SolverTab(QWidget):
             calculate_max_principal_stress=self.max_principal_stress_checkbox.isChecked(),
             calculate_min_principal_stress=self.min_principal_stress_checkbox.isChecked(),
             calculate_nodal_forces=self.nodal_forces_checkbox.isChecked(),
+            calculate_deformation=self.deformation_checkbox.isChecked(),
             nodal_forces_rotate_to_global=nodal_forces_rotate_to_global,
             combination_history_mode=self.combination_history_checkbox.isChecked(),
             output_directory=self.project_directory,
@@ -973,6 +1002,47 @@ class SolverTab(QWidget):
         # Emit signal for display tab with mesh
         self.combination_result_ready.emit(mesh, scalar_bar_title, data_min, data_max)
     
+    def on_deformation_analysis_complete(self, result: DeformationResult, is_standalone: bool = False):
+        """
+        Handle deformation analysis completion.
+        
+        Args:
+            result: DeformationResult with displacement data.
+            is_standalone: If True, deformation is the only output type - create and emit mesh.
+        """
+        self.deformation_result = result
+        
+        # Log summary
+        self.console_textbox.append(
+            f"\nDeformation analysis complete\n"
+            f"  Nodes: {result.num_nodes}\n"
+            f"  Combinations: {result.num_combinations}\n"
+            f"  Displacement Unit: {result.displacement_unit}\n"
+        )
+        
+        if result.max_magnitude_over_combo is not None:
+            max_val = np.max(result.max_magnitude_over_combo)
+            max_node_idx = np.argmax(result.max_magnitude_over_combo)
+            max_node_id = result.node_ids[max_node_idx]
+            
+            self.console_textbox.append(
+                f"  Maximum Displacement: {max_val:.6f} {result.displacement_unit} at Node {max_node_id}\n"
+            )
+        
+        # If deformation is the only output, create and emit mesh for display
+        if is_standalone:
+            mesh = self._create_mesh_from_deformation_result(result)
+            
+            # Determine scalar bar title
+            scalar_bar_title = f'Displacement Magnitude [{result.displacement_unit}]'
+            
+            # Get data range from max envelope
+            data_min = float(np.min(result.max_magnitude_over_combo)) if result.max_magnitude_over_combo is not None else 0.0
+            data_max = float(np.max(result.max_magnitude_over_combo)) if result.max_magnitude_over_combo is not None else 0.0
+            
+            # Emit signal for display tab with mesh
+            self.combination_result_ready.emit(mesh, scalar_bar_title, data_min, data_max)
+    
     def _create_mesh_from_forces_result(self, result: NodalForcesResult):
         """
         Create a PyVista mesh from NodalForcesResult for visualization.
@@ -1030,6 +1100,60 @@ class SolverTab(QWidget):
             # Add shear force if beam nodes present
             if result.has_beam_nodes:
                 mesh['Shear_Force'] = np.sqrt(fy_at_max**2 + fz_at_max**2)
+        
+        return mesh
+    
+    def _create_mesh_from_deformation_result(self, result: DeformationResult):
+        """
+        Create a PyVista mesh from DeformationResult for visualization.
+        
+        Args:
+            result: DeformationResult with node coordinates and displacement values.
+            
+        Returns:
+            PyVista PolyData mesh with displacement magnitude as scalars.
+        """
+        import pyvista as pv
+        
+        # Create point cloud mesh from node coordinates
+        mesh = pv.PolyData(result.node_coords)
+        
+        # Add node IDs (must be 'NodeID' for hover functionality to work)
+        mesh['NodeID'] = result.node_ids
+        
+        # Add max displacement magnitude as the primary scalar (for envelope view)
+        if result.max_magnitude_over_combo is not None:
+            mesh['Max_U_mag'] = result.max_magnitude_over_combo
+            mesh['U_mag'] = result.max_magnitude_over_combo  # Alias for component switching
+            mesh.set_active_scalars('Max_U_mag')
+        
+        # Add min displacement magnitude
+        if result.min_magnitude_over_combo is not None:
+            mesh['Min_U_mag'] = result.min_magnitude_over_combo
+        
+        # Add combination indices
+        if result.combo_of_max is not None:
+            mesh['Combo_of_Max'] = result.combo_of_max
+        if result.combo_of_min is not None:
+            mesh['Combo_of_Min'] = result.combo_of_min
+        
+        # Add displacement components at the combination of max magnitude (for envelope view component selection)
+        if result.all_combo_ux is not None:
+            num_nodes = result.num_nodes
+            ux_at_max = np.zeros(num_nodes)
+            uy_at_max = np.zeros(num_nodes)
+            uz_at_max = np.zeros(num_nodes)
+            
+            if result.combo_of_max is not None:
+                for node_idx in range(num_nodes):
+                    combo_idx = int(result.combo_of_max[node_idx])
+                    ux_at_max[node_idx] = result.all_combo_ux[combo_idx, node_idx]
+                    uy_at_max[node_idx] = result.all_combo_uy[combo_idx, node_idx]
+                    uz_at_max[node_idx] = result.all_combo_uz[combo_idx, node_idx]
+            
+            mesh['UX'] = ux_at_max
+            mesh['UY'] = uy_at_max
+            mesh['UZ'] = uz_at_max
         
         return mesh
     

@@ -3,6 +3,7 @@ Visualization updates and rendering helpers for the Display tab.
 """
 
 import time
+from typing import Optional
 import numpy as np
 import vtk
 from PyQt5.QtCore import QTimer
@@ -18,6 +19,119 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
         super().__init__(tab, state)
         self.viz_manager = viz_manager
 
+    def apply_deformed_coordinates(self, combo_idx: Optional[int] = None) -> bool:
+        """
+        Apply deformed coordinates to the current mesh based on deformation scale.
+        
+        This modifies the mesh node positions to show the deformed shape. The scalar
+        coloring (stress, force, or displacement component) is independent of this.
+        
+        Args:
+            combo_idx: Combination index to use. If None, uses current view_combination_combo.
+                       Index 0 in combo means envelope view (use max displacement).
+        
+        Returns:
+            bool: True if deformation was applied successfully, False otherwise.
+        """
+        mesh = self.state.current_mesh or self.tab.current_mesh
+        if mesh is None:
+            return False
+        
+        # Check if we have deformation results
+        deformation_result = getattr(self.tab, 'deformation_result', None)
+        if deformation_result is None:
+            return False
+        
+        # Get original coordinates (stored when mesh was created)
+        original_coords = getattr(self.tab, 'original_node_coords', None)
+        if original_coords is None:
+            # Store original coordinates the first time
+            self.tab.original_node_coords = mesh.points.copy()
+            original_coords = self.tab.original_node_coords
+        
+        # Get deformation scale factor
+        try:
+            scale = float(self.tab.deformation_scale_edit.text())
+        except (ValueError, AttributeError):
+            scale = 1.0
+        
+        # Determine which combination to use
+        if combo_idx is None:
+            view_combo_idx = self.tab.view_combination_combo.currentIndex()
+        else:
+            view_combo_idx = combo_idx
+        
+        # Get displacement data
+        try:
+            if view_combo_idx == 0:
+                # Envelope view - use displacement at max magnitude
+                # For envelope, we can use the combo_of_max to get the displacement
+                # at each node's maximum magnitude combination, or simply use all zeros
+                # For simplicity, in envelope mode we'll show the shape at max overall
+                if deformation_result.all_combo_ux is None:
+                    return False
+                
+                # Find which combination has the maximum overall magnitude
+                all_mag = np.sqrt(
+                    deformation_result.all_combo_ux**2 + 
+                    deformation_result.all_combo_uy**2 + 
+                    deformation_result.all_combo_uz**2
+                )
+                max_per_combo = np.max(all_mag, axis=1)
+                max_combo_idx = int(np.argmax(max_per_combo))
+                
+                ux = deformation_result.all_combo_ux[max_combo_idx, :]
+                uy = deformation_result.all_combo_uy[max_combo_idx, :]
+                uz = deformation_result.all_combo_uz[max_combo_idx, :]
+            else:
+                # Specific combination (subtract 1 to account for envelope at index 0)
+                actual_combo_idx = view_combo_idx - 1
+                if actual_combo_idx < 0 or actual_combo_idx >= deformation_result.num_combinations:
+                    return False
+                
+                ux = deformation_result.all_combo_ux[actual_combo_idx, :]
+                uy = deformation_result.all_combo_uy[actual_combo_idx, :]
+                uz = deformation_result.all_combo_uz[actual_combo_idx, :]
+        except (IndexError, TypeError, AttributeError) as e:
+            print(f"DisplayVisualizationHandler: Error getting displacement data: {e}")
+            return False
+        
+        # Validate array sizes match
+        if len(ux) != mesh.n_points or len(original_coords) != mesh.n_points:
+            print(f"DisplayVisualizationHandler: Size mismatch - mesh points: {mesh.n_points}, "
+                  f"displacement: {len(ux)}, original coords: {len(original_coords)}")
+            return False
+        
+        # Apply scaled deformation to coordinates
+        # Both coordinates and displacement are in mm (MARS-SC uses mm-N-MPa unit system)
+        deformed_coords = original_coords.copy()
+        deformed_coords[:, 0] += scale * ux
+        deformed_coords[:, 1] += scale * uy
+        deformed_coords[:, 2] += scale * uz
+        
+        # Update mesh points
+        mesh.points = deformed_coords
+        
+        return True
+    
+    def reset_to_original_coordinates(self) -> bool:
+        """
+        Reset mesh coordinates to original (undeformed) state.
+        
+        Returns:
+            bool: True if reset was successful, False otherwise.
+        """
+        mesh = self.state.current_mesh or self.tab.current_mesh
+        if mesh is None:
+            return False
+        
+        original_coords = getattr(self.tab, 'original_node_coords', None)
+        if original_coords is None:
+            return False
+        
+        mesh.points = original_coords.copy()
+        return True
+
     def update_visualization(self) -> None:
         """Refresh the 3D view with the current mesh."""
         mesh = self.state.current_mesh or self.tab.current_mesh
@@ -26,6 +140,11 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
 
         plotter = self.tab.plotter
         plotter.clear()
+        
+        # Apply deformed coordinates if deformation results are available
+        deformation_result = getattr(self.tab, 'deformation_result', None)
+        if deformation_result is not None:
+            self.apply_deformed_coordinates()
 
         # Use active scalars if set, otherwise fall back to first array (e.g., NodeID)
         active_scalars = mesh.active_scalars_name
@@ -259,7 +378,7 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
         self.tab.plotter.render()
 
     def validate_deformation_scale(self) -> None:
-        """Validate deformation scale factor input."""
+        """Validate deformation scale factor input and update visualization."""
         text = self.tab.deformation_scale_edit.text()
         try:
             value = float(text)
@@ -271,6 +390,11 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
 
         self.state.last_valid_deformation_scale = value
         self.tab.last_valid_deformation_scale = value
+        
+        # If deformation results are available, update the visualization
+        deformation_result = getattr(self.tab, 'deformation_result', None)
+        if deformation_result is not None:
+            self.update_visualization()
 
     def apply_scalar_field(self, field_name: str, values) -> bool:
         """

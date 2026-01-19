@@ -652,3 +652,217 @@ def export_nodal_forces_history(
     df['Node ID'] = node_id
     
     df.to_csv(filename, index=False)
+
+
+# =============================================================================
+# Deformation (Displacement) Export Functions
+# =============================================================================
+
+def export_deformation_envelope(
+    filename: str,
+    node_ids: np.ndarray,
+    node_coords: Optional[np.ndarray],
+    max_magnitude: Optional[np.ndarray] = None,
+    min_magnitude: Optional[np.ndarray] = None,
+    combo_of_max: Optional[np.ndarray] = None,
+    combo_of_min: Optional[np.ndarray] = None,
+    combination_names: Optional[List[str]] = None,
+    displacement_unit: str = "mm"
+) -> None:
+    """
+    Export deformation envelope results (max/min magnitude over combinations) to CSV.
+    
+    Args:
+        filename: Path to the output CSV file.
+        node_ids: Array of node IDs.
+        node_coords: Optional array of node coordinates (n_nodes, 3).
+        max_magnitude: Array of maximum displacement magnitudes over all combinations.
+        min_magnitude: Array of minimum displacement magnitudes over all combinations.
+        combo_of_max: Array of combination indices where max occurred.
+        combo_of_min: Array of combination indices where min occurred.
+        combination_names: Optional list of combination names for labeling.
+        displacement_unit: Displacement unit string (e.g., "mm", "m").
+    """
+    df = pd.DataFrame()
+    
+    # Add node IDs
+    df['NodeID'] = node_ids.flatten() if node_ids is not None else range(len(max_magnitude or min_magnitude))
+    
+    # Add coordinates if provided
+    if node_coords is not None:
+        df['X'] = node_coords[:, 0]
+        df['Y'] = node_coords[:, 1]
+        df['Z'] = node_coords[:, 2]
+    
+    # Add max envelope columns
+    if max_magnitude is not None:
+        df[f'Max Displacement Magnitude [{displacement_unit}]'] = max_magnitude
+        if combo_of_max is not None:
+            df['Combination of Max (#)'] = (combo_of_max.astype(int) + 1)
+            if combination_names is not None:
+                df['Combination of Max (Name)'] = [
+                    combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
+                    for idx in combo_of_max
+                ]
+    
+    # Add min envelope columns
+    if min_magnitude is not None:
+        df[f'Min Displacement Magnitude [{displacement_unit}]'] = min_magnitude
+        if combo_of_min is not None:
+            df['Combination of Min (#)'] = (combo_of_min.astype(int) + 1)
+            if combination_names is not None:
+                df['Combination of Min (Name)'] = [
+                    combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
+                    for idx in combo_of_min
+                ]
+    
+    df.to_csv(filename, index=False)
+
+
+def export_deformation_single_combination(
+    filename: str,
+    node_ids: np.ndarray,
+    node_coords: Optional[np.ndarray],
+    ux: np.ndarray,
+    uy: np.ndarray,
+    uz: np.ndarray,
+    combination_index: int,
+    combination_name: str = "",
+    displacement_unit: str = "mm"
+) -> None:
+    """
+    Export deformation (displacement) for a single combination to CSV format.
+    
+    Args:
+        filename: Path to the output CSV file.
+        node_ids: Array of node IDs.
+        node_coords: Optional array of node coordinates (n_nodes, 3).
+        ux, uy, uz: Displacement component arrays.
+        combination_index: Index of the combination being exported.
+        combination_name: Name of the combination for metadata.
+        displacement_unit: Displacement unit string.
+    """
+    df = pd.DataFrame()
+    
+    # Add node IDs
+    df['NodeID'] = node_ids.flatten() if node_ids is not None else range(len(ux))
+    
+    # Add coordinates if provided
+    if node_coords is not None:
+        df['X'] = node_coords[:, 0]
+        df['Y'] = node_coords[:, 1]
+        df['Z'] = node_coords[:, 2]
+    
+    # Add displacement components
+    df[f'UX [{displacement_unit}]'] = ux
+    df[f'UY [{displacement_unit}]'] = uy
+    df[f'UZ [{displacement_unit}]'] = uz
+    
+    # Add displacement magnitude
+    magnitude = np.sqrt(ux**2 + uy**2 + uz**2)
+    df[f'U_mag [{displacement_unit}]'] = magnitude
+    
+    # Add combination info
+    df['Combination Index'] = combination_index + 1  # 1-based for user display
+    df['Combination Name'] = combination_name
+    
+    df.to_csv(filename, index=False)
+
+
+def export_deformation_all_combinations(
+    filename: str,
+    node_ids: np.ndarray,
+    node_coords: Optional[np.ndarray],
+    all_combo_ux: np.ndarray,
+    all_combo_uy: np.ndarray,
+    all_combo_uz: np.ndarray,
+    combination_names: Optional[List[str]] = None,
+    displacement_unit: str = "mm"
+) -> None:
+    """
+    Export all deformation combinations for all nodes to a single CSV.
+    
+    Creates a wide-format CSV where each combination has UX, UY, UZ, U_mag columns.
+    
+    Args:
+        filename: Path to the output CSV file.
+        node_ids: Array of node IDs.
+        node_coords: Optional array of node coordinates (n_nodes, 3).
+        all_combo_ux: UX array of shape (n_combinations, n_nodes).
+        all_combo_uy: UY array of shape (n_combinations, n_nodes).
+        all_combo_uz: UZ array of shape (n_combinations, n_nodes).
+        combination_names: Optional list of combination names.
+        displacement_unit: Displacement unit string.
+    """
+    df = pd.DataFrame()
+    
+    # Add node IDs
+    df['NodeID'] = node_ids.flatten() if node_ids is not None else range(all_combo_ux.shape[1])
+    
+    # Add coordinates if provided
+    if node_coords is not None:
+        df['X'] = node_coords[:, 0]
+        df['Y'] = node_coords[:, 1]
+        df['Z'] = node_coords[:, 2]
+    
+    # Add each combination as columns
+    num_combinations = all_combo_ux.shape[0]
+    
+    for i in range(num_combinations):
+        combo_name = combination_names[i] if combination_names and i < len(combination_names) else f"Combo_{i}"
+        
+        df[f'{combo_name}_UX [{displacement_unit}]'] = all_combo_ux[i, :]
+        df[f'{combo_name}_UY [{displacement_unit}]'] = all_combo_uy[i, :]
+        df[f'{combo_name}_UZ [{displacement_unit}]'] = all_combo_uz[i, :]
+        
+        # Calculate and add magnitude
+        magnitude = np.sqrt(all_combo_ux[i, :]**2 + all_combo_uy[i, :]**2 + all_combo_uz[i, :]**2)
+        df[f'{combo_name}_U_mag [{displacement_unit}]'] = magnitude
+    
+    df.to_csv(filename, index=False)
+
+
+def export_deformation_history(
+    filename: str,
+    node_id: int,
+    combination_indices: np.ndarray,
+    ux: np.ndarray,
+    uy: np.ndarray,
+    uz: np.ndarray,
+    combination_names: Optional[List[str]] = None,
+    displacement_unit: str = "mm"
+) -> None:
+    """
+    Export deformation history for a single node to CSV format.
+    
+    Args:
+        filename: Path to the output CSV file.
+        node_id: ID of the node being exported.
+        combination_indices: Array of combination indices.
+        ux, uy, uz: Displacement component arrays at each combination.
+        combination_names: Optional list of combination names.
+        displacement_unit: Displacement unit string.
+    """
+    df = pd.DataFrame()
+    
+    # Display 1-based combination number
+    df['Combination #'] = (np.asarray(combination_indices).astype(int) + 1)
+    
+    if combination_names is not None:
+        df['Combination Name'] = [
+            combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
+            for idx in combination_indices
+        ]
+    
+    df[f'UX [{displacement_unit}]'] = ux
+    df[f'UY [{displacement_unit}]'] = uy
+    df[f'UZ [{displacement_unit}]'] = uz
+    
+    # Add magnitude
+    magnitude = np.sqrt(ux**2 + uy**2 + uz**2)
+    df[f'U_mag [{displacement_unit}]'] = magnitude
+    
+    # Add node ID as metadata column
+    df['Node ID'] = node_id
+    
+    df.to_csv(filename, index=False)
