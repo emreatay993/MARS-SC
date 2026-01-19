@@ -83,6 +83,10 @@ hiddenimports = [
     'tqdm',
     'lxml',
     'openpyxl',
+    
+    # Standard library modules that may be needed
+    'unittest',
+    'unittest.mock',
 ]
 
 # Add collected application modules
@@ -187,7 +191,6 @@ a = Analysis(
         'tkinter',
         'test',
         'tests',
-        'unittest',
         'pytest',
         'IPython',
         'jupyter',
