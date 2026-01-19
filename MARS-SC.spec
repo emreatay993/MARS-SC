@@ -157,6 +157,15 @@ hiddenimports += collect_submodules('vtkmodules')
 hiddenimports += collect_submodules('matplotlib')
 hiddenimports += collect_submodules('scipy')
 
+# Collect ANSYS DPF submodules
+try:
+    hiddenimports += collect_submodules('ansys')
+    hiddenimports += collect_submodules('ansys.dpf')
+    hiddenimports += collect_submodules('ansys.dpf.core')
+    hiddenimports += collect_submodules('ansys.dpf.gate')
+except Exception as e:
+    print(f"Warning: Could not collect ansys submodules: {e}")
+
 # Remove duplicates
 hiddenimports = list(set(hiddenimports))
 
@@ -178,10 +187,90 @@ datas += collect_data_files('pyvista')
 datas += collect_data_files('vtkmodules')
 datas += collect_data_files('matplotlib')
 
+# CRITICAL: Collect ANSYS DPF data files and binaries
+# DPF requires its gatebin directory with native binaries
+try:
+    import ansys.dpf.core as dpf_core
+    dpf_path = os.path.dirname(dpf_core.__file__)
+    
+    # Collect all DPF data files
+    datas += collect_data_files('ansys.dpf.core')
+    datas += collect_data_files('ansys.dpf.gate')
+    
+    # Explicitly add gatebin directory if it exists
+    gatebin_path = os.path.join(dpf_path, 'gatebin')
+    if os.path.exists(gatebin_path):
+        # Add entire gatebin directory
+        datas.append((gatebin_path, 'ansys/dpf/core/gatebin'))
+        print(f"Found DPF gatebin at: {gatebin_path}")
+    
+    # Also check in ansys.dpf.gate package
+    try:
+        import ansys.dpf.gate as dpf_gate
+        gate_path = os.path.dirname(dpf_gate.__file__)
+        gate_gatebin = os.path.join(gate_path, 'gatebin')
+        if os.path.exists(gate_gatebin):
+            datas.append((gate_gatebin, 'ansys/dpf/gate/gatebin'))
+            print(f"Found DPF gate gatebin at: {gate_gatebin}")
+    except ImportError:
+        pass
+    
+    # Collect any .dll, .so, .dylib files from ansys packages
+    ansys_base = os.path.dirname(os.path.dirname(dpf_path))  # ansys folder
+    if os.path.exists(ansys_base):
+        for root, dirs, files in os.walk(ansys_base):
+            for f in files:
+                if f.endswith(('.dll', '.so', '.dylib', '.pyd')):
+                    src_file = os.path.join(root, f)
+                    # Compute relative destination path
+                    rel_path = os.path.relpath(root, os.path.dirname(ansys_base))
+                    datas.append((src_file, rel_path))
+                    
+except ImportError as e:
+    print(f"Warning: Could not import ansys.dpf.core: {e}")
+except Exception as e:
+    print(f"Warning: Error collecting DPF files: {e}")
+
+# Collect gRPC binaries (needed by DPF)
+try:
+    datas += collect_data_files('grpc')
+    datas += collect_data_files('grpcio')
+except Exception:
+    pass
+
+# Collect binaries from DPF
+binaries = []
+try:
+    import ansys.dpf.core as dpf_core
+    dpf_path = os.path.dirname(dpf_core.__file__)
+    
+    # Look for binaries in gatebin
+    gatebin_path = os.path.join(dpf_path, 'gatebin')
+    if os.path.exists(gatebin_path):
+        for f in os.listdir(gatebin_path):
+            if f.endswith(('.dll', '.so', '.dylib')):
+                src = os.path.join(gatebin_path, f)
+                binaries.append((src, 'ansys/dpf/core/gatebin'))
+    
+    # Also check gate package
+    try:
+        import ansys.dpf.gate as dpf_gate
+        gate_path = os.path.dirname(dpf_gate.__file__)
+        gate_gatebin = os.path.join(gate_path, 'gatebin')
+        if os.path.exists(gate_gatebin):
+            for f in os.listdir(gate_gatebin):
+                if f.endswith(('.dll', '.so', '.dylib')):
+                    src = os.path.join(gate_gatebin, f)
+                    binaries.append((src, 'ansys/dpf/gate/gatebin'))
+    except ImportError:
+        pass
+except Exception as e:
+    print(f"Warning: Could not collect DPF binaries: {e}")
+
 a = Analysis(
     [os.path.join(SPEC_ROOT, 'mars_sc_entry.py')],
     pathex=[SRC_DIR],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
