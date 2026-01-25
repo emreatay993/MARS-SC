@@ -41,6 +41,21 @@ TOOLTIP_DEFORMATION = (
     "Enables deformed mesh visualization with scale control."
 )
 
+TOOLTIP_DEFORMATION_CYLINDRICAL_CS = (
+    "Cylindrical Coordinate System for Deformation Output\n"
+    "────────────────────────────────────────────────────\n\n"
+    "Enter a coordinate system ID to transform displacement results\n"
+    "from global Cartesian (X, Y, Z) to cylindrical coordinates (R, Theta, Z).\n\n"
+    "• Leave empty: Results remain in global Cartesian coordinates (default)\n"
+    "• Enter CS ID: Results are rotated to the specified cylindrical CS\n\n"
+    "The coordinate system must exist in the RST file.\n"
+    "Use ANSYS coordinate system IDs (e.g., from LOCAL or CS commands).\n\n"
+    "Output components when cylindrical CS is used:\n"
+    "  UX -> Radial displacement (UR)\n"
+    "  UY -> Tangential displacement (U_theta)\n"
+    "  UZ -> Axial displacement (UZ)"
+)
+
 TOOLTIP_NODAL_FORCES_CSYS = (
     "Coordinate System for Nodal Forces Output\n"
     "─────────────────────────────────────────\n\n"

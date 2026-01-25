@@ -197,6 +197,9 @@ class SolverTab(QWidget):
         self.nodal_forces_checkbox = self.components['nodal_forces_checkbox']
         self.nodal_forces_csys_combo = self.components['nodal_forces_csys_combo']
         self.deformation_checkbox = self.components['deformation_checkbox']
+        self.deformation_csys_combo = self.components['deformation_csys_combo']
+        self.deformation_cs_id_label = self.components['deformation_cs_id_label']
+        self.deformation_cs_input = self.components['deformation_cs_input']
         self.plasticity_correction_checkbox = self.components['plasticity_correction_checkbox']
         
         # Single node controls
@@ -259,6 +262,8 @@ class SolverTab(QWidget):
         
         # Deformation checkbox - NOT mutually exclusive, can be selected alongside stress
         self.deformation_checkbox.toggled.connect(self._update_solve_button_state)
+        self.deformation_checkbox.toggled.connect(self._toggle_deformation_csys_options)
+        self.deformation_csys_combo.currentIndexChanged.connect(self._on_deformation_csys_changed)
         
         # Mode toggles (not mutually exclusive with output types)
         self.combination_history_checkbox.toggled.connect(self._toggle_combination_history_mode)
@@ -724,6 +729,32 @@ class SolverTab(QWidget):
         """Toggle nodal forces coordinate system combo visibility."""
         self.nodal_forces_csys_combo.setVisible(checked)
     
+    def _toggle_deformation_csys_options(self, checked: bool):
+        """Toggle deformation coordinate system options visibility."""
+        self.deformation_csys_combo.setVisible(checked)
+        if checked:
+            # Show CS ID input only if Cylindrical is selected
+            is_cylindrical = self.deformation_csys_combo.currentIndex() == 1
+            self.deformation_cs_id_label.setVisible(is_cylindrical)
+            self.deformation_cs_input.setVisible(is_cylindrical)
+        else:
+            # Hide all CS options when deformation is unchecked
+            self.deformation_cs_id_label.setVisible(False)
+            self.deformation_cs_input.setVisible(False)
+            # Reset to Cartesian and clear CS ID
+            self.deformation_csys_combo.setCurrentIndex(0)
+            self.deformation_cs_input.clear()
+    
+    def _on_deformation_csys_changed(self, index: int):
+        """Handle deformation coordinate system selection change."""
+        # index 0 = Cartesian (Global), index 1 = Cylindrical
+        is_cylindrical = (index == 1)
+        self.deformation_cs_id_label.setVisible(is_cylindrical)
+        self.deformation_cs_input.setVisible(is_cylindrical)
+        if not is_cylindrical:
+            # Clear CS ID when switching back to Cartesian
+            self.deformation_cs_input.clear()
+    
     def _on_output_checkbox_toggled(self, source_checkbox, checked: bool):
         """
         Handle output type checkbox toggle with mutual exclusivity.
@@ -911,6 +942,13 @@ class SolverTab(QWidget):
         # "Local (Element)" = index 1 = rotate_to_global=False
         nodal_forces_rotate_to_global = self.nodal_forces_csys_combo.currentIndex() == 0
         
+        # Get cylindrical CS ID for deformation (None if Cartesian selected or empty)
+        deformation_cylindrical_cs_id = None
+        if self.deformation_csys_combo.currentIndex() == 1:  # Cylindrical selected
+            deformation_cs_text = self.deformation_cs_input.text().strip()
+            if deformation_cs_text:
+                deformation_cylindrical_cs_id = int(deformation_cs_text)
+        
         config = SolverConfig(
             calculate_von_mises=self.von_mises_checkbox.isChecked(),
             calculate_max_principal_stress=self.max_principal_stress_checkbox.isChecked(),
@@ -918,6 +956,7 @@ class SolverTab(QWidget):
             calculate_nodal_forces=self.nodal_forces_checkbox.isChecked(),
             calculate_deformation=self.deformation_checkbox.isChecked(),
             nodal_forces_rotate_to_global=nodal_forces_rotate_to_global,
+            deformation_cylindrical_cs_id=deformation_cylindrical_cs_id,
             combination_history_mode=self.combination_history_checkbox.isChecked(),
             output_directory=self.project_directory,
         )

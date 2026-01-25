@@ -22,7 +22,7 @@ from PyQt5.QtWidgets import QMessageBox, QApplication
 
 from solver.combination_engine import CombinationEngine
 from solver.nodal_forces_engine import NodalForcesCombinationEngine
-from solver.deformation_engine import DeformationCombinationEngine
+from solver.deformation_engine import DeformationCombinationEngine, CylindricalCSNotFoundError
 from file_io.dpf_reader import (
     DPFAnalysisReader, BeamElementNotSupportedError, 
     NodalForcesNotAvailableError, DisplacementNotAvailableError
@@ -146,6 +146,14 @@ class SolverAnalysisHandler:
                 f"Ensure displacement output is enabled in ANSYS Output Controls."
             )
             QMessageBox.critical(self.tab, "Displacement Error", error_msg)
+        
+        except CylindricalCSNotFoundError as e:
+            self.tab.progress_bar.setVisible(False)
+            error_msg = (
+                f"Cylindrical Coordinate System Error\n\n"
+                f"{str(e)}"
+            )
+            QMessageBox.critical(self.tab, "Coordinate System Error", error_msg)
             
         except MemoryError as e:
             self.tab.progress_bar.setVisible(False)
@@ -406,6 +414,17 @@ class SolverAnalysisHandler:
             if not is_valid:
                 raise DisplacementNotAvailableError(error_msg)
             
+            # Validate cylindrical coordinate system if specified
+            if engine.uses_cylindrical_cs:
+                on_progress(2, 100, f"Validating coordinate system {config.deformation_cylindrical_cs_id}...")
+                is_valid, error_msg = engine.validate_cylindrical_cs()
+                if not is_valid:
+                    raise CylindricalCSNotFoundError(error_msg)
+                self.tab.console_textbox.append(
+                    f"  Cylindrical CS {config.deformation_cylindrical_cs_id} validated - "
+                    f"results will be in cylindrical coordinates (R, Theta, Z)\n"
+                )
+            
             # Preload displacement data
             on_progress(5, 100, "Loading displacement from RST files...")
             engine.preload_displacement_data(progress_callback=on_progress)
@@ -444,7 +463,7 @@ class SolverAnalysisHandler:
             on_progress(100, 100, "Deformation complete")
             return result
             
-        except DisplacementNotAvailableError:
+        except (DisplacementNotAvailableError, CylindricalCSNotFoundError):
             raise
         except Exception as e:
             self.tab.console_textbox.append(f"\nError in deformation analysis: {e}\n")
@@ -475,12 +494,13 @@ class SolverAnalysisHandler:
             # Get combination table
             combo_table = self.tab.get_combination_table_data()
             
-            # Create engine
+            # Create engine with optional cylindrical CS
             engine = DeformationCombinationEngine(
                 reader1=reader1,
                 reader2=reader2,
                 nodal_scoping=nodal_scoping,
                 combination_table=combo_table,
+                cylindrical_cs_id=config.deformation_cylindrical_cs_id,
             )
             
             return engine

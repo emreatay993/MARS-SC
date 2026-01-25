@@ -434,6 +434,9 @@ class SolverConfig:
         calculate_deformation: Whether to calculate combined displacement/deformation.
         nodal_forces_rotate_to_global: If True, rotate nodal forces to global coordinate 
             system. If False, keep forces in element (local) coordinate system.
+        deformation_cylindrical_cs_id: Optional coordinate system ID for transforming
+            deformation results to cylindrical coordinates. If None, results remain
+            in global Cartesian coordinates.
         combination_history_mode: Whether in combination history mode (single node).
         selected_node_id: Node ID for combination history mode.
         selected_combination_index: Combination index for single combination export.
@@ -446,6 +449,7 @@ class SolverConfig:
     calculate_nodal_forces: bool = False
     calculate_deformation: bool = False
     nodal_forces_rotate_to_global: bool = True
+    deformation_cylindrical_cs_id: Optional[int] = None
     combination_history_mode: bool = False
     selected_node_id: Optional[int] = None
     selected_combination_index: Optional[int] = None

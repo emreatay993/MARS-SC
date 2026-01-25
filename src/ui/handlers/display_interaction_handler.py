@@ -37,6 +37,11 @@ class DisplayInteractionHandler(DisplayBaseHandler):
         """Create and display the right-click context menu."""
         if self.tab.current_mesh is None:
             return
+        
+        # Check if click is on the legend (scalar bar)
+        if self._is_click_on_legend(position):
+            self._show_legend_context_menu(position)
+            return
 
         context_menu = QMenu(self.tab)
         context_menu.setStyleSheet(CONTEXT_MENU_STYLE)
@@ -627,6 +632,115 @@ class DisplayInteractionHandler(DisplayBaseHandler):
         self.set_state_attr("target_node_id", None)
         self.set_state_attr("freeze_tracked_node", False)
         self.set_state_attr("freeze_baseline", None)
+
+    # ------------------------------------------------------------------
+    # Legend (Scalar Bar) context menu
+    # ------------------------------------------------------------------
+    def _is_click_on_legend(self, position: QPoint) -> bool:
+        """
+        Check if the click position is on the scalar bar (legend).
+        
+        The scalar bar is positioned at normalized viewport coordinates:
+        - position_x: 0.04 (left edge)
+        - position_y: 0.35 (bottom edge)
+        - width: 0.05
+        - height: 0.5
+        
+        We add some padding for easier clicking.
+        """
+        try:
+            # Get plotter widget size
+            plotter = self.tab.plotter
+            width = plotter.width()
+            height = plotter.height()
+            
+            if width == 0 or height == 0:
+                return False
+            
+            # Convert click position to normalized coordinates (0-1)
+            # Note: Qt Y is from top, but normalized viewport Y is from bottom
+            norm_x = position.x() / width
+            norm_y = 1.0 - (position.y() / height)  # Flip Y axis
+            
+            # Scalar bar bounds (with padding for easier clicking)
+            # Original: x=0.04, y=0.35, w=0.05, h=0.5
+            padding = 0.02
+            sb_left = 0.04 - padding
+            sb_right = 0.04 + 0.05 + padding + 0.06  # Extra for labels
+            sb_bottom = 0.35 - padding
+            sb_top = 0.35 + 0.5 + padding + 0.05  # Extra for title
+            
+            return (sb_left <= norm_x <= sb_right and 
+                    sb_bottom <= norm_y <= sb_top)
+        except Exception:
+            return False
+    
+    def _show_legend_context_menu(self, position: QPoint) -> None:
+        """Show a simplified context menu for the legend with digit controls."""
+        context_menu = QMenu(self.tab)
+        context_menu.setStyleSheet(CONTEXT_MENU_STYLE)
+        
+        # Section title
+        self._add_section_title(context_menu, "Legend Options")
+        
+        # Current digits info
+        current_digits = self.state.scalar_bar_digits
+        digits_label = QLabel(f"  Decimal places: {current_digits}")
+        digits_label.setStyleSheet("color: #666; font-size: 9px; padding: 2px 5px;")
+        digits_action = QWidgetAction(context_menu)
+        digits_action.setDefaultWidget(digits_label)
+        context_menu.addAction(digits_action)
+        
+        context_menu.addSeparator()
+        
+        # Increase digits action
+        increase_action = QAction("Increase Digits (+)", self.tab)
+        increase_action.setEnabled(current_digits < 10)
+        increase_action.triggered.connect(self._increase_scalar_bar_digits)
+        context_menu.addAction(increase_action)
+        
+        # Decrease digits action
+        decrease_action = QAction("Decrease Digits (-)", self.tab)
+        decrease_action.setEnabled(current_digits > 0)
+        decrease_action.triggered.connect(self._decrease_scalar_bar_digits)
+        context_menu.addAction(decrease_action)
+        
+        context_menu.exec_(self.tab.plotter.mapToGlobal(position))
+    
+    def _increase_scalar_bar_digits(self) -> None:
+        """Increase the number of decimal places in the scalar bar."""
+        if self.state.scalar_bar_digits < 10:
+            self.state.scalar_bar_digits += 1
+            self._update_scalar_bar_format()
+    
+    def _decrease_scalar_bar_digits(self) -> None:
+        """Decrease the number of decimal places in the scalar bar."""
+        if self.state.scalar_bar_digits > 0:
+            self.state.scalar_bar_digits -= 1
+            self._update_scalar_bar_format()
+    
+    def _update_scalar_bar_format(self) -> None:
+        """Update the scalar bar format with current digit setting."""
+        try:
+            plotter = self.tab.plotter
+            
+            # Get the scalar bar actor
+            # The scalar bar is keyed by its title (data column name)
+            data_column = self.state.data_column or self.tab.data_column
+            if data_column and data_column in plotter.scalar_bars:
+                scalar_bar = plotter.scalar_bars[data_column]
+                
+                # Create new format string
+                digits = self.state.scalar_bar_digits
+                fmt = f"%.{digits}f"
+                
+                # Update the label format
+                scalar_bar.SetLabelFormat(fmt)
+                
+                # Render to show changes
+                plotter.render()
+        except Exception as e:
+            print(f"Error updating scalar bar format: {e}")
 
     # ------------------------------------------------------------------
     # Helpers

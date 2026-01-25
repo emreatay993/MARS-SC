@@ -49,3 +49,4 @@ class DisplayState:
     freeze_tracked_node: bool = False
     freeze_baseline: Optional[Any] = None
     pick_indicator_actor: Optional[Any] = None
+    scalar_bar_digits: int = 4  # Number of decimal places for legend labels

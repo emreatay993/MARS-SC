@@ -11,6 +11,11 @@ Where:
     - α_i are coefficients for Analysis 1 load steps
     - β_j are coefficients for Analysis 2 load steps
     - U_A1_i and U_A2_j are displacement vectors for each load step
+
+Optional cylindrical coordinate transformation:
+    When a cylindrical coordinate system ID is provided, the combined displacement
+    results are transformed from global Cartesian (X, Y, Z) to cylindrical coordinates
+    (R, Theta, Z) using the DPF rotate_in_cylindrical_cs operator.
 """
 
 from typing import Dict, Tuple, Optional, Callable, List
@@ -28,6 +33,11 @@ if DPF_AVAILABLE:
     from ansys.dpf import core as dpf
 
 
+class CylindricalCSNotFoundError(Exception):
+    """Raised when the specified cylindrical coordinate system is not found in the RST file."""
+    pass
+
+
 class DeformationCombinationEngine:
     """
     Performs linear combination of displacement from two analyses.
@@ -35,11 +45,15 @@ class DeformationCombinationEngine:
     This engine preloads displacement data from both analyses and then computes
     combined displacements for each combination defined in the combination table.
     
+    Optionally transforms results to cylindrical coordinates when a coordinate
+    system ID is provided.
+    
     Attributes:
         reader1: DPFAnalysisReader for Analysis 1 (base analysis).
         reader2: DPFAnalysisReader for Analysis 2 (analysis to combine).
         scoping: DPF Scoping defining which nodes to process.
         table: CombinationTableData with combination coefficients.
+        cylindrical_cs_id: Optional coordinate system ID for cylindrical transformation.
     """
     
     def __init__(
@@ -48,6 +62,7 @@ class DeformationCombinationEngine:
         reader2: DPFAnalysisReader,
         nodal_scoping,  # dpf.Scoping
         combination_table: CombinationTableData,
+        cylindrical_cs_id: Optional[int] = None,
     ):
         """
         Initialize the deformation combination engine.
@@ -57,11 +72,15 @@ class DeformationCombinationEngine:
             reader2: DPFAnalysisReader for Analysis 2 (to combine).
             nodal_scoping: DPF Scoping with node IDs to process.
             combination_table: CombinationTableData with coefficients.
+            cylindrical_cs_id: Optional coordinate system ID for transforming
+                results to cylindrical coordinates. If None, results remain
+                in global Cartesian coordinates.
         """
         self.reader1 = reader1
         self.reader2 = reader2
         self.scoping = nodal_scoping
         self.table = combination_table
+        self.cylindrical_cs_id = cylindrical_cs_id
         
         # Displacement cache: maps (analysis_idx, step_id) -> displacement components tuple
         # Each tuple is (node_ids, ux, uy, uz)
@@ -73,6 +92,12 @@ class DeformationCombinationEngine:
         
         # Displacement unit
         self._displacement_unit: str = "mm"
+        
+        # Cylindrical CS field (cached after validation)
+        self._cylindrical_cs_field: Optional[object] = None  # dpf.Field
+        
+        # Mesh for cylindrical transformation
+        self._mesh: Optional[object] = None  # dpf.MeshedRegion
     
     @property
     def node_ids(self) -> np.ndarray:
@@ -97,6 +122,56 @@ class DeformationCombinationEngine:
     def displacement_unit(self) -> str:
         """Displacement unit string."""
         return self._displacement_unit
+    
+    @property
+    def uses_cylindrical_cs(self) -> bool:
+        """Whether cylindrical coordinate transformation is enabled."""
+        return self.cylindrical_cs_id is not None
+    
+    def validate_cylindrical_cs(self) -> Tuple[bool, str]:
+        """
+        Validate that the specified cylindrical coordinate system exists in the RST file.
+        
+        Also caches the coordinate system field for later use.
+        
+        Returns:
+            Tuple of (is_valid, error_message). If valid, error_message is empty.
+        """
+        if self.cylindrical_cs_id is None:
+            return True, ""  # No CS specified, nothing to validate
+        
+        try:
+            # Get the coordinate system from the RST file using DPF
+            # Access data sources via the model's metadata
+            data_sources = dpf.DataSources(self.reader1.rst_path)
+            
+            cs_op = dpf.operators.result.coordinate_system(
+                cs_id=self.cylindrical_cs_id,
+                data_sources=data_sources
+            )
+            
+            cs_field = cs_op.outputs.field()
+            
+            if cs_field is None or len(cs_field.data) == 0:
+                return False, (
+                    f"Coordinate system ID {self.cylindrical_cs_id} not found in RST file.\n\n"
+                    f"Please verify the coordinate system ID exists in your ANSYS model."
+                )
+            
+            # Cache the coordinate system field
+            self._cylindrical_cs_field = cs_field
+            
+            # Also get and cache the mesh
+            self._mesh = self.reader1.model.metadata.meshed_region
+            
+            return True, ""
+            
+        except Exception as e:
+            return False, (
+                f"Failed to retrieve coordinate system ID {self.cylindrical_cs_id}:\n\n"
+                f"{str(e)}\n\n"
+                f"Please verify the coordinate system ID exists in your ANSYS model."
+            )
     
     def validate_displacement_availability(self) -> Tuple[bool, str]:
         """
@@ -255,6 +330,60 @@ class DeformationCombinationEngine:
         """
         return np.sqrt(ux**2 + uy**2 + uz**2)
     
+    def _rotate_to_cylindrical(
+        self,
+        ux: np.ndarray,
+        uy: np.ndarray,
+        uz: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Rotate displacement components to cylindrical coordinate system.
+        
+        Uses DPF's rotate_in_cylindrical_cs operator to transform displacement
+        from global Cartesian (X, Y, Z) to cylindrical coordinates (R, Theta, Z).
+        
+        Args:
+            ux, uy, uz: Displacement components in global Cartesian coordinates.
+            
+        Returns:
+            Tuple of (ur, u_theta, uz_cyl) - displacement in cylindrical coordinates.
+            - ur: Radial displacement
+            - u_theta: Tangential (circumferential) displacement  
+            - uz_cyl: Axial displacement (along cylinder axis)
+        """
+        if not self.uses_cylindrical_cs or self._cylindrical_cs_field is None:
+            return ux, uy, uz
+        
+        # Create a DPF field from the numpy arrays
+        disp_field = dpf.fields_factory.create_3d_vector_field(
+            num_entities=len(self.node_ids),
+            location=dpf.locations.nodal
+        )
+        
+        # Set the scoping (node IDs)
+        disp_field.scoping.ids = self.node_ids.tolist()
+        
+        # Set the data (interleaved: x1,y1,z1, x2,y2,z2, ...)
+        data = np.column_stack([ux, uy, uz]).flatten()
+        disp_field.data = data
+        
+        # Apply cylindrical rotation using DPF operator
+        rotate_op = dpf.operators.geo.rotate_in_cylindrical_cs(
+            field=disp_field,
+            coordinate_system=self._cylindrical_cs_field,
+            mesh=self._mesh
+        )
+        
+        rotated_field = rotate_op.outputs.field()
+        
+        # Extract rotated components
+        rotated_data = rotated_field.data.reshape(-1, 3)
+        ur = rotated_data[:, 0]
+        u_theta = rotated_data[:, 1]
+        uz_cyl = rotated_data[:, 2]
+        
+        return ur, u_theta, uz_cyl
+    
     def compute_all_combinations(
         self,
         progress_callback: Optional[Callable[[int, int, str], None]] = None
@@ -262,12 +391,23 @@ class DeformationCombinationEngine:
         """
         Compute combined displacements for ALL combinations.
         
+        If a cylindrical coordinate system is specified, the displacements are
+        transformed from global Cartesian to cylindrical coordinates:
+        - ux -> ur (radial)
+        - uy -> u_theta (tangential)
+        - uz -> uz_cyl (axial)
+        
         Args:
             progress_callback: Optional callback(current, total, message) for progress.
             
         Returns:
             Tuple of (ux_all, uy_all, uz_all, magnitude_all) arrays,
             each of shape (num_combinations, num_nodes).
+            
+            When cylindrical CS is used:
+            - ux_all contains radial displacement (UR)
+            - uy_all contains tangential displacement (U_theta)
+            - uz_all contains axial displacement (UZ)
         """
         num_combos = self.table.num_combinations
         num_nodes = self.num_nodes
@@ -277,19 +417,30 @@ class DeformationCombinationEngine:
         uz_all = np.zeros((num_combos, num_nodes))
         magnitude_all = np.zeros((num_combos, num_nodes))
         
+        cs_info = f" (CS {self.cylindrical_cs_id})" if self.uses_cylindrical_cs else ""
+        
         for combo_idx in range(num_combos):
             if progress_callback:
                 combo_name = self.table.combination_names[combo_idx]
-                progress_callback(combo_idx, num_combos, f"Computing displacement: {combo_name}...")
+                progress_callback(combo_idx, num_combos, f"Computing displacement{cs_info}: {combo_name}...")
             
+            # Compute combination in global Cartesian
             ux, uy, uz = self.compute_combination_numpy(combo_idx)
+            
+            # Apply cylindrical rotation if specified
+            if self.uses_cylindrical_cs:
+                ux, uy, uz = self._rotate_to_cylindrical(ux, uy, uz)
+            
             ux_all[combo_idx, :] = ux
             uy_all[combo_idx, :] = uy
             uz_all[combo_idx, :] = uz
             magnitude_all[combo_idx, :] = self.compute_magnitude(ux, uy, uz)
         
         if progress_callback:
-            progress_callback(num_combos, num_combos, "Displacement computation complete.")
+            msg = "Displacement computation complete."
+            if self.uses_cylindrical_cs:
+                msg = f"Cylindrical displacement computation complete (CS {self.cylindrical_cs_id})."
+            progress_callback(num_combos, num_combos, msg)
         
         return (ux_all, uy_all, uz_all, magnitude_all)
     

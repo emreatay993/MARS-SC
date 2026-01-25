@@ -44,7 +44,7 @@ from utils.tooltips import (
     TOOLTIP_NODAL_FORCES, TOOLTIP_NODAL_FORCES_CSYS, TOOLTIP_COMBINATION_HISTORY,
     TOOLTIP_PLASTICITY_CORRECTION, TOOLTIP_PLASTICITY_METHOD, TOOLTIP_MAX_ITERATIONS,
     TOOLTIP_TOLERANCE, TOOLTIP_EXTRAPOLATION, TOOLTIP_IMPORT_CSV, TOOLTIP_EXPORT_CSV,
-    TOOLTIP_DEFORMATION
+    TOOLTIP_DEFORMATION, TOOLTIP_DEFORMATION_CYLINDRICAL_CS
 )
 from ui.styles.style_constants import (
     BUTTON_STYLE, GROUP_BOX_STYLE, TAB_STYLE, READONLY_INPUT_STYLE,
@@ -289,6 +289,26 @@ class SolverTabUIBuilder:
         deformation_checkbox.setStyleSheet(CHECKBOX_STYLE)
         deformation_checkbox.setToolTip(TOOLTIP_DEFORMATION)
         
+        # Coordinate system dropdown for deformation output (hidden by default)
+        deformation_csys_combo = QComboBox()
+        deformation_csys_combo.addItems(["Cartesian (Global)", "Cylindrical"])
+        deformation_csys_combo.setToolTip(TOOLTIP_DEFORMATION_CYLINDRICAL_CS)
+        deformation_csys_combo.setMaximumWidth(140)
+        deformation_csys_combo.setVisible(False)
+        
+        # CS ID input for cylindrical option (hidden by default)
+        deformation_cs_id_label = QLabel("CS ID:")
+        deformation_cs_id_label.setToolTip("Enter the cylindrical coordinate system ID from your ANSYS model")
+        deformation_cs_id_label.setVisible(False)
+        
+        deformation_cs_input = QLineEdit()
+        deformation_cs_input.setPlaceholderText("e.g. 5")
+        deformation_cs_input.setMaximumWidth(60)
+        deformation_cs_input.setToolTip("Enter the cylindrical coordinate system ID from your ANSYS model")
+        deformation_cs_input.setVisible(False)
+        # Only allow integer input
+        deformation_cs_input.setValidator(QIntValidator(0, 999999, deformation_cs_input))
+        
         plasticity_correction_checkbox = QCheckBox('Enable Plasticity Correction')
         plasticity_correction_checkbox.setStyleSheet(CHECKBOX_STYLE)
         plasticity_correction_checkbox.setToolTip(TOOLTIP_PLASTICITY_CORRECTION)
@@ -306,8 +326,14 @@ class SolverTabUIBuilder:
         nodal_forces_row.addStretch()
         output_layout.addLayout(nodal_forces_row)
         
-        # Deformation row
-        output_layout.addWidget(deformation_checkbox)
+        # Deformation row with checkbox and coordinate system options
+        deformation_row = QHBoxLayout()
+        deformation_row.addWidget(deformation_checkbox)
+        deformation_row.addWidget(deformation_csys_combo)
+        deformation_row.addWidget(deformation_cs_id_label)
+        deformation_row.addWidget(deformation_cs_input)
+        deformation_row.addStretch()
+        output_layout.addLayout(deformation_row)
         
         output_layout.addWidget(combination_history_checkbox)
         output_layout.addWidget(plasticity_correction_checkbox)
@@ -325,6 +351,9 @@ class SolverTabUIBuilder:
         self.components['nodal_forces_checkbox'] = nodal_forces_checkbox
         self.components['nodal_forces_csys_combo'] = nodal_forces_csys_combo
         self.components['deformation_checkbox'] = deformation_checkbox
+        self.components['deformation_csys_combo'] = deformation_csys_combo
+        self.components['deformation_cs_id_label'] = deformation_cs_id_label
+        self.components['deformation_cs_input'] = deformation_cs_input
         self.components['plasticity_correction_checkbox'] = plasticity_correction_checkbox
         self.components['output_options_group'] = output_group
         

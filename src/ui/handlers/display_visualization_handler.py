@@ -154,6 +154,10 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
             self.state.data_column = active_scalars
             self.tab.data_column = active_scalars
 
+        # Get scalar bar digit format from state
+        digits = getattr(self.state, 'scalar_bar_digits', 4)
+        scalar_bar_fmt = f"%.{digits}f"
+        
         actor = plotter.add_mesh(
             mesh,
             scalars=active_scalars,
@@ -165,7 +169,7 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
             above_color="magenta",
             scalar_bar_args={
                 "title": self.tab.data_column,
-                "fmt": "%.4f",
+                "fmt": scalar_bar_fmt,
                 "position_x": 0.04,
                 "position_y": 0.35,
                 "width": 0.05,
