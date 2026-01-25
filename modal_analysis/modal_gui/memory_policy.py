@@ -13,6 +13,9 @@ class ChunkPolicy:
     max_nodes: int = 50_000
     max_ram_fraction: float = 0.15
     overhead_multiplier: float = 3.0
+    # Maximum modes to process before restarting DPF server to clear internal cache
+    # This prevents DPF server-side memory accumulation that causes access violations
+    max_modes_per_server_session: int = 50
 
 
 def estimate_bytes_per_node(n_modes: int, n_components: int, include_coords: bool = True) -> int:
@@ -58,3 +61,16 @@ def compute_chunk_count(n_nodes: int, chunk_size: int) -> int:
     if n_nodes <= 0:
         return 0
     return (n_nodes + chunk_size - 1) // chunk_size
+
+
+def should_restart_server(mode_index: int, policy: ChunkPolicy | None = None) -> bool:
+    """Check if DPF server should be restarted to clear internal cache.
+    
+    DPF servers accumulate internal state/cache that can cause access violations
+    after processing many modes. This function determines when to restart.
+    """
+    if policy is None:
+        policy = ChunkPolicy()
+    max_modes = policy.max_modes_per_server_session
+    # Restart every max_modes_per_server_session modes (but not at mode 0)
+    return mode_index > 0 and mode_index % max_modes == 0

@@ -21,6 +21,8 @@ class ExtractionJob:
     do_strain: bool
     do_displacement: bool
     chunk_size: Optional[int] = None
+    specific_mode: Optional[int] = None  # If set, extract only this mode
+    backend: Optional[str] = None  # "auto", "dpf", or "pymapdl"
 
 
 class ModalExtractionWorker(QThread):
@@ -56,6 +58,13 @@ class ModalExtractionWorker(QThread):
     def _run_extraction(self) -> None:
         job = self._job
         mode_count = max(1, int(job.mode_count))
+        
+        # Determine if extracting specific mode or range
+        mode_ids = None
+        if job.specific_mode is not None:
+            mode_ids = [job.specific_mode]
+            self.log.emit(f"Extracting specific mode: {job.specific_mode}")
+        
         outputs = []
 
         if job.do_stress:
@@ -90,15 +99,30 @@ class ModalExtractionWorker(QThread):
             def progress_cb(current: int, total: int) -> None:
                 self.progress.emit(current, total)
 
-            func(
-                rst_path=job.rst_path,
-                output_csv_path=output_path,
-                named_selection=job.named_selection,
-                mode_count=mode_count,
-                chunk_size=job.chunk_size,
-                log_cb=self.log.emit,
-                progress_cb=progress_cb,
-                should_cancel=self._should_cancel,
-            )
+            # Use mode_ids if specific mode, otherwise use mode_count
+            if mode_ids is not None:
+                func(
+                    rst_path=job.rst_path,
+                    output_csv_path=output_path,
+                    named_selection=job.named_selection,
+                    mode_ids=mode_ids,
+                    chunk_size=job.chunk_size,
+                    log_cb=self.log.emit,
+                    progress_cb=progress_cb,
+                    should_cancel=self._should_cancel,
+                    backend=job.backend,
+                )
+            else:
+                func(
+                    rst_path=job.rst_path,
+                    output_csv_path=output_path,
+                    named_selection=job.named_selection,
+                    mode_count=mode_count,
+                    chunk_size=job.chunk_size,
+                    log_cb=self.log.emit,
+                    progress_cb=progress_cb,
+                    should_cancel=self._should_cancel,
+                    backend=job.backend,
+                )
 
             self.log.emit(f"Finished {label} extraction.")

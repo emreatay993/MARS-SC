@@ -111,12 +111,27 @@ class ModalMainWindow(QMainWindow):
         self.mode_count_spin.setMinimum(1)
         self.mode_count_spin.setMaximum(1)
         self.mode_count_spin.setValue(1)
+        
+        self.specific_mode_check = QCheckBox("Extract specific mode:")
+        self.specific_mode_spin = QSpinBox()
+        self.specific_mode_spin.setMinimum(1)
+        self.specific_mode_spin.setMaximum(1)
+        self.specific_mode_spin.setValue(1)
+        self.specific_mode_spin.setEnabled(False)
+        self.specific_mode_check.toggled.connect(self._toggle_specific_mode)
 
         layout.addWidget(self.mode_count_label)
         layout.addWidget(QLabel("Export first N modes:"))
         layout.addWidget(self.mode_count_spin)
+        layout.addSpacing(20)
+        layout.addWidget(self.specific_mode_check)
+        layout.addWidget(self.specific_mode_spin)
         layout.addStretch(1)
         return box
+    
+    def _toggle_specific_mode(self, checked: bool) -> None:
+        self.specific_mode_spin.setEnabled(checked)
+        self.mode_count_spin.setEnabled(not checked)
 
     def _build_extract_group(self) -> QGroupBox:
         box = QGroupBox("Results")
@@ -127,10 +142,21 @@ class ModalMainWindow(QMainWindow):
         self.disp_check = QCheckBox("Directional deformation")
         self.stress_check.setChecked(True)
         self.disp_check.setChecked(True)
+        
+        self.backend_combo = QComboBox()
+        self.backend_combo.addItems(["Auto (DPF with fallback)", "DPF only", "PyMAPDL Reader"])
+        self.backend_combo.setToolTip(
+            "Auto: Uses DPF, falls back to PyMAPDL Reader on access violations\n"
+            "DPF only: Uses only DPF (may fail on large models)\n"
+            "PyMAPDL Reader: Direct RST file reading, more stable for many modes"
+        )
 
         layout.addWidget(self.stress_check)
         layout.addWidget(self.strain_check)
         layout.addWidget(self.disp_check)
+        layout.addSpacing(20)
+        layout.addWidget(QLabel("Backend:"))
+        layout.addWidget(self.backend_combo)
         layout.addStretch(1)
         return box
 
@@ -202,7 +228,7 @@ class ModalMainWindow(QMainWindow):
             if box:
                 box.setStyleSheet(GROUP_BOX_STYLE)
 
-        for checkbox in (self.stress_check, self.strain_check, self.disp_check):
+        for checkbox in (self.stress_check, self.strain_check, self.disp_check, self.specific_mode_check):
             checkbox.setStyleSheet(CHECKBOX_STYLE)
 
     def _find_group(self, title: str) -> Optional[QGroupBox]:
@@ -249,6 +275,8 @@ class ModalMainWindow(QMainWindow):
         self.mode_count_label.setText(f"Detected modes: {n_sets}")
         self.mode_count_spin.setMaximum(max(1, n_sets))
         self.mode_count_spin.setValue(min(10, max(1, n_sets)))
+        self.specific_mode_spin.setMaximum(max(1, n_sets))
+        self.specific_mode_spin.setValue(1)
 
         self.model_info_label.setText(
             f"Nodes: {n_nodes} | Elements: {n_elems} | Units: {units}"
@@ -265,6 +293,10 @@ class ModalMainWindow(QMainWindow):
             QMessageBox.warning(self, "Missing output", "Select a valid output folder.")
             return
 
+        specific_mode = self.specific_mode_spin.value() if self.specific_mode_check.isChecked() else None
+        backend_map = {0: "auto", 1: "dpf", 2: "pymapdl"}
+        backend = backend_map.get(self.backend_combo.currentIndex(), "auto")
+        
         job = ExtractionJob(
             rst_path=rst_path,
             output_dir=output_dir,
@@ -273,6 +305,8 @@ class ModalMainWindow(QMainWindow):
             do_stress=self.stress_check.isChecked(),
             do_strain=self.strain_check.isChecked(),
             do_displacement=self.disp_check.isChecked(),
+            specific_mode=specific_mode,
+            backend=backend,
         )
 
         self.worker = ModalExtractionWorker(job)
@@ -296,10 +330,18 @@ class ModalMainWindow(QMainWindow):
         self.rst_browse_btn.setEnabled(not running)
         self.output_browse_btn.setEnabled(not running)
         self.named_selection_combo.setEnabled(not running)
-        self.mode_count_spin.setEnabled(not running)
+        self.specific_mode_check.setEnabled(not running)
+        # Enable/disable spinboxes based on specific mode checkbox state
+        if not running:
+            self.mode_count_spin.setEnabled(not self.specific_mode_check.isChecked())
+            self.specific_mode_spin.setEnabled(self.specific_mode_check.isChecked())
+        else:
+            self.mode_count_spin.setEnabled(False)
+            self.specific_mode_spin.setEnabled(False)
         self.stress_check.setEnabled(not running)
         self.strain_check.setEnabled(not running)
         self.disp_check.setEnabled(not running)
+        self.backend_combo.setEnabled(not running)
         if not running:
             self.progress_bar.setValue(0)
             self.progress_status.setText("Idle")
