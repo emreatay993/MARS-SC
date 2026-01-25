@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import time
+from datetime import datetime
 from typing import Optional
 
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
@@ -327,6 +328,13 @@ class ModalMainWindow(QMainWindow):
         self.worker.finished.connect(self._handle_finished)
         self.worker.canceled.connect(self._handle_canceled)
 
+        # Store start time and log
+        self._extraction_start_time = time.perf_counter()
+        self._extraction_start_datetime = datetime.now()
+        self._append_log("=" * 55)
+        self._append_log(f"EXTRACTION STARTED: {self._extraction_start_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+        self._append_log("=" * 55)
+
         self._set_running(True)
         self.worker.start()
 
@@ -377,14 +385,61 @@ class ModalMainWindow(QMainWindow):
         self.progress_status.setText(f"{current}/{total} chunks")
 
     def _handle_error(self, message: str) -> None:
+        end_datetime = datetime.now()
+        
+        if hasattr(self, '_extraction_start_time'):
+            duration = time.perf_counter() - self._extraction_start_time
+            duration_str = f"{duration:.1f} seconds"
+        else:
+            duration_str = "unknown"
+        
+        self._append_log("=" * 55)
+        self._append_log(f"EXTRACTION FAILED: {end_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+        self._append_log(f"TIME ELAPSED: {duration_str}")
+        self._append_log(f"ERROR: {message}")
+        self._append_log("=" * 55)
+        
         self._set_running(False)
         QMessageBox.critical(self, "Extraction error", message)
 
     def _handle_finished(self) -> None:
+        end_time = time.perf_counter()
+        end_datetime = datetime.now()
+        
+        # Calculate duration
+        if hasattr(self, '_extraction_start_time'):
+            duration = end_time - self._extraction_start_time
+            if duration < 60:
+                duration_str = f"{duration:.1f} seconds"
+            elif duration < 3600:
+                duration_str = f"{duration / 60:.1f} minutes ({duration:.1f}s)"
+            else:
+                duration_str = f"{duration / 3600:.1f} hours ({duration:.1f}s)"
+        else:
+            duration_str = "unknown"
+        
+        self._append_log("=" * 55)
+        self._append_log(f"EXTRACTION FINISHED: {end_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+        self._append_log(f"TOTAL DURATION: {duration_str}")
+        self._append_log("=" * 55)
+        
         self._set_running(False)
-        QMessageBox.information(self, "Done", "Extraction finished.")
+        QMessageBox.information(self, "Done", f"Extraction finished.\n\nDuration: {duration_str}")
 
     def _handle_canceled(self) -> None:
+        end_datetime = datetime.now()
+        
+        if hasattr(self, '_extraction_start_time'):
+            duration = time.perf_counter() - self._extraction_start_time
+            duration_str = f"{duration:.1f} seconds"
+        else:
+            duration_str = "unknown"
+        
+        self._append_log("=" * 55)
+        self._append_log(f"EXTRACTION CANCELED: {end_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+        self._append_log(f"TIME ELAPSED: {duration_str}")
+        self._append_log("=" * 55)
+        
         self._set_running(False)
         QMessageBox.information(self, "Canceled", "Extraction canceled.")
 
@@ -407,11 +462,11 @@ class ModalMainWindow(QMainWindow):
     def _estimate_extraction_time(self) -> None:
         """Run quick test extractions to estimate total time.
         
-        Uses two tests (1 mode and 3 modes) to calculate:
-        - Base overhead (RST loading, setup, writing)
-        - Per-mode cost (loading each mode's data)
+        Tests each selected result type separately with 1 and 3 modes to calculate:
+        - Base overhead per result type
+        - Per-mode cost per result type
         
-        Formula: total = (base_overhead + per_mode * modes) * result_types
+        Shows breakdown per result type and total.
         """
         rst_path = self.rst_path_edit.text().strip()
         if not rst_path or not os.path.exists(rst_path):
@@ -438,13 +493,16 @@ class ModalMainWindow(QMainWindow):
         else:
             total_modes = self.mode_count_spin.value()
         
-        # Count result types
-        result_count = sum([
-            self.stress_check.isChecked(),
-            self.strain_check.isChecked(),
-            self.disp_check.isChecked(),
-        ])
-        if result_count == 0:
+        # Collect selected result types
+        result_types = []
+        if self.stress_check.isChecked():
+            result_types.append(("stress", "Stress (6 comp)", dpf_modal_extractor.extract_modal_stress_csv))
+        if self.strain_check.isChecked():
+            result_types.append(("strain", "Strain (6 comp)", dpf_modal_extractor.extract_modal_strain_csv))
+        if self.disp_check.isChecked():
+            result_types.append(("displacement", "Displacement (3 comp)", dpf_modal_extractor.extract_modal_displacement_csv))
+        
+        if not result_types:
             QMessageBox.warning(self, "Error", "Select at least one result type.")
             return
         
@@ -452,10 +510,11 @@ class ModalMainWindow(QMainWindow):
         backend_map = {0: "auto", 1: "dpf", 2: "pymapdl"}
         backend = backend_map.get(self.backend_combo.currentIndex(), "auto")
         
-        self._append_log("=" * 50)
+        self._append_log("=" * 55)
         self._append_log("Running time estimation...")
         self._append_log(f"Selection: {named_selection} ({total_nodes:,} nodes)")
-        self._append_log(f"Modes: {total_modes}, Result types: {result_count}")
+        self._append_log(f"Modes: {total_modes}, Backend: {backend}")
+        self._append_log("-" * 55)
         
         # Disable UI during estimation
         self.estimate_btn.setEnabled(False)
@@ -468,91 +527,80 @@ class ModalMainWindow(QMainWindow):
             temp_dir = tempfile.gettempdir()
             temp_csv = os.path.join(temp_dir, "_modal_estimate_test.csv")
             
-            # Test 1: Extract 1 mode
-            self._append_log("  Test 1: 1 mode...")
-            QApplication.processEvents()
+            estimates = []
+            total_estimated = 0.0
             
-            start1 = time.perf_counter()
-            dpf_modal_extractor.extract_modal_stress_csv(
-                rst_path=rst_path,
-                output_csv_path=temp_csv,
-                mode_count=1,
-                named_selection=named_selection,
-                backend=backend,
-                log_cb=lambda msg: None,
-            )
-            t1 = time.perf_counter() - start1
+            for kind, label, extract_fn in result_types:
+                self._append_log(f"  Testing {label}...")
+                QApplication.processEvents()
+                
+                # Test 1: 1 mode
+                start1 = time.perf_counter()
+                extract_fn(
+                    rst_path=rst_path,
+                    output_csv_path=temp_csv,
+                    mode_count=1,
+                    named_selection=named_selection,
+                    backend=backend,
+                    log_cb=lambda msg: None,
+                )
+                t1 = time.perf_counter() - start1
+                
+                try:
+                    os.remove(temp_csv)
+                except Exception:
+                    pass
+                
+                # Test 2: 3 modes
+                start2 = time.perf_counter()
+                extract_fn(
+                    rst_path=rst_path,
+                    output_csv_path=temp_csv,
+                    mode_count=3,
+                    named_selection=named_selection,
+                    backend=backend,
+                    log_cb=lambda msg: None,
+                )
+                t2 = time.perf_counter() - start2
+                
+                try:
+                    os.remove(temp_csv)
+                except Exception:
+                    pass
+                
+                # Calculate timing model
+                per_mode = max(0, (t2 - t1) / 2.0)
+                base = max(0.1, t1 - per_mode)
+                
+                # Estimate for requested modes
+                est_time = base + per_mode * total_modes
+                total_estimated += est_time
+                
+                estimates.append((label, est_time, base, per_mode))
+                self._append_log(f"    {label}: {est_time:.1f}s (base={base:.1f}s + {per_mode:.2f}s/mode)")
             
-            try:
-                os.remove(temp_csv)
-            except Exception:
-                pass
-            
-            # Test 2: Extract 3 modes (to calculate per-mode cost)
-            self._append_log("  Test 2: 3 modes...")
-            QApplication.processEvents()
-            
-            start2 = time.perf_counter()
-            dpf_modal_extractor.extract_modal_stress_csv(
-                rst_path=rst_path,
-                output_csv_path=temp_csv,
-                mode_count=3,
-                named_selection=named_selection,
-                backend=backend,
-                log_cb=lambda msg: None,
-            )
-            t2 = time.perf_counter() - start2
-            
-            try:
-                os.remove(temp_csv)
-            except Exception:
-                pass
-            
-            # Calculate timing model:
-            # t1 = base_overhead + 1 * per_mode
-            # t2 = base_overhead + 3 * per_mode
-            # t2 - t1 = 2 * per_mode
-            per_mode_time = (t2 - t1) / 2.0
-            base_overhead = t1 - per_mode_time
-            
-            # Ensure non-negative values
-            if per_mode_time < 0:
-                per_mode_time = 0
-                base_overhead = (t1 + t2) / 4.0  # Fallback average
-            if base_overhead < 0:
-                base_overhead = 0.1
-            
-            # Estimate total time
-            # Formula: (base_overhead + per_mode * modes) * result_types
-            estimated_seconds = (base_overhead + per_mode_time * total_modes) * result_count
-            
-            # Format time
-            if estimated_seconds < 60:
-                time_str = f"{estimated_seconds:.1f} seconds"
-            elif estimated_seconds < 3600:
-                minutes = estimated_seconds / 60
-                time_str = f"{minutes:.1f} minutes"
+            # Format total time
+            if total_estimated < 60:
+                time_str = f"{total_estimated:.1f} seconds"
+            elif total_estimated < 3600:
+                time_str = f"{total_estimated / 60:.1f} minutes"
             else:
-                hours = estimated_seconds / 3600
-                time_str = f"{hours:.1f} hours"
+                time_str = f"{total_estimated / 3600:.1f} hours"
             
-            self._append_log(f"  Test results: 1 mode = {t1:.2f}s, 3 modes = {t2:.2f}s")
-            self._append_log(f"  Timing model: base={base_overhead:.2f}s + {per_mode_time:.2f}s/mode")
-            self._append_log("-" * 50)
+            self._append_log("-" * 55)
             self._append_log(f"ESTIMATED TOTAL TIME: {time_str}")
-            self._append_log(f"  ({total_modes} modes × {result_count} result types)")
-            self._append_log("=" * 50)
+            self._append_log("=" * 55)
             
-            QMessageBox.information(
-                self, 
-                "Time Estimate",
-                f"Estimated extraction time: {time_str}\n\n"
-                f"Nodes: {total_nodes:,}\n"
-                f"Modes: {total_modes}\n"
-                f"Result types: {result_count}\n"
-                f"Backend: {backend}\n\n"
-                f"Timing model: {base_overhead:.1f}s base + {per_mode_time:.2f}s/mode"
-            )
+            # Build message box content
+            msg_lines = [f"Estimated extraction time: {time_str}\n"]
+            msg_lines.append(f"Nodes: {total_nodes:,}")
+            msg_lines.append(f"Modes: {total_modes}")
+            msg_lines.append(f"Backend: {backend}\n")
+            msg_lines.append("Breakdown:")
+            for label, est_time, base, per_mode in estimates:
+                msg_lines.append(f"  {label}: {est_time:.1f}s")
+            
+            QMessageBox.information(self, "Time Estimate", "\n".join(msg_lines))
             
         except Exception as e:
             self._append_log(f"Estimation failed: {e}")
