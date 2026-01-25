@@ -1010,6 +1010,29 @@ class SolverAnalysisHandler:
         uy = metadata.get('uy', result.all_combo_uy[:, 0] if result.all_combo_uy is not None else np.array([]))
         uz = metadata.get('uz', result.all_combo_uz[:, 0] if result.all_combo_uz is not None else np.array([]))
         magnitude = metadata.get('magnitude', np.sqrt(ux**2 + uy**2 + uz**2))
+
+        # Update combination history plot for deformation
+        combo_names = self.tab.combination_table.combination_names if self.tab.combination_table else None
+        deformation_data = {
+            'ux': ux,
+            'uy': uy,
+            'uz': uz,
+            'u_mag': magnitude
+        }
+        self.tab.plot_combo_history_tab.update_combination_history_plot(
+            combo_indices,
+            stress_values=None,
+            node_id=node_id,
+            combination_names=combo_names,
+            deformation_data=deformation_data,
+            displacement_unit=result.displacement_unit
+        )
+
+        # Show the plot tab
+        plot_idx = self.tab.show_output_tab_widget.indexOf(self.tab.plot_combo_history_tab)
+        if plot_idx >= 0:
+            self.tab.show_output_tab_widget.setTabVisible(plot_idx, True)
+            self.tab.show_output_tab_widget.setCurrentIndex(plot_idx)
         
         # Log results
         self.tab.console_textbox.append(

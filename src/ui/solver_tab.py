@@ -809,7 +809,11 @@ class SolverTab(QWidget):
             self.nodal_forces_checkbox.isChecked(),
             self.deformation_checkbox.isChecked()
         ]):
-            QMessageBox.warning(self, "Missing Input", "Please select at least one output type.")
+            QMessageBox.warning(
+                self,
+                "No Output Selected",
+                "Please select at least one output type (stress, deformation, or nodal forces)."
+            )
             return False
         
         # Validate nodal forces availability if selected
@@ -1220,17 +1224,23 @@ class SolverTab(QWidget):
             )
             return
         
-        # Validate that at least one stress output is selected
-        has_output = any([
+        # Validate that at least one output is selected (stress, deformation, or nodal forces)
+        has_stress_output = any([
             self.von_mises_checkbox.isChecked(),
             self.max_principal_stress_checkbox.isChecked(),
             self.min_principal_stress_checkbox.isChecked()
         ])
+        has_deformation_output = self.deformation_checkbox.isChecked()
+        has_nodal_forces_output = self.nodal_forces_checkbox.isChecked()
+        has_output = has_stress_output or has_deformation_output or has_nodal_forces_output
         
         if not has_output:
-            # Default to Von Mises if nothing selected
-            self.von_mises_checkbox.setChecked(True)
-            self.console_textbox.append("Defaulting to Von Mises stress output.")
+            QMessageBox.warning(
+                self,
+                "No Output Selected",
+                "Please select at least one output type (stress, deformation, or nodal forces)."
+            )
+            return
         
         # Validate combination table
         if self.combo_table.rowCount() == 0:

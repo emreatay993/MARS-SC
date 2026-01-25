@@ -136,7 +136,7 @@ class MatplotlibWidget(QWidget):
                 x_coord, y_coord = pos[0], pos[1]
                 
                 self.annot.xy = (x_coord, y_coord)
-                self.annot.set_text(f"Time: {x_coord:.4f}\\nValue: {y_coord:.4f}")
+                self.annot.set_text(f"Time: {x_coord:.4f}\nValue: {y_coord:.4f}")
                 
                 if not visible:
                     self.annot.set_visible(True)
