@@ -279,8 +279,8 @@ class SolverTab(QWidget):
         # Solve button
         self.solve_button.clicked.connect(self._on_solve_clicked)
         
-        # Export
-        self.export_single_btn.clicked.connect(self._export_single_combination)
+        # Export - DEPRECATED: Export functionality moved to Display tab's Export Output CSV button
+        # self.export_single_btn.clicked.connect(self._export_single_combination)
     
     # ========== RST File Loading Callbacks ==========
     
@@ -992,14 +992,14 @@ class SolverTab(QWidget):
         """Handle stress analysis completion."""
         self.combination_result = result
         
-        # Update export controls
-        self.single_combo_dropdown.clear()
-        if result.all_combo_results is not None:
-            for name in self.combination_table.combination_names:
-                self.single_combo_dropdown.addItem(name)
-            self.single_combo_dropdown.setEnabled(True)
-            self.export_single_btn.setEnabled(True)
-            self.export_group.setVisible(True)
+        # Update export controls - DEPRECATED: Export functionality moved to Display tab
+        # self.single_combo_dropdown.clear()
+        # if result.all_combo_results is not None:
+        #     for name in self.combination_table.combination_names:
+        #         self.single_combo_dropdown.addItem(name)
+        #     self.single_combo_dropdown.setEnabled(True)
+        #     self.export_single_btn.setEnabled(True)
+        #     self.export_group.setVisible(True)
         
         # Create a PyVista mesh for display tab
         mesh = self._create_mesh_from_result(result)
@@ -1023,14 +1023,14 @@ class SolverTab(QWidget):
         """Handle nodal forces analysis completion."""
         self.nodal_forces_result = result
         
-        # Update export controls for forces (same as stress results)
-        self.single_combo_dropdown.clear()
-        if result.all_combo_fx is not None:
-            for name in self.combination_table.combination_names:
-                self.single_combo_dropdown.addItem(name)
-            self.single_combo_dropdown.setEnabled(True)
-            self.export_single_btn.setEnabled(True)
-            self.export_group.setVisible(True)
+        # Update export controls for forces - DEPRECATED: Export functionality moved to Display tab
+        # self.single_combo_dropdown.clear()
+        # if result.all_combo_fx is not None:
+        #     for name in self.combination_table.combination_names:
+        #         self.single_combo_dropdown.addItem(name)
+        #     self.single_combo_dropdown.setEnabled(True)
+        #     self.export_single_btn.setEnabled(True)
+        #     self.export_group.setVisible(True)
         
         # Create a PyVista mesh for display tab with force magnitude
         mesh = self._create_mesh_from_forces_result(result)

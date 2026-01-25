@@ -175,14 +175,21 @@ class DisplayTabUIBuilder:
         displacement_component_label.setVisible(False)  # Hidden until deformation is available
         displacement_component_combo.setVisible(False)
         
-        # Export deformation CSV button
-        export_deformation_button = QPushButton("Export Deformation CSV")
-        export_deformation_button.setStyleSheet(BUTTON_STYLE)
-        export_deformation_button.setToolTip(
-            "Export displacement results for the currently selected combination to CSV.\n"
-            "Includes UX, UY, UZ components and magnitude."
+        # Export output CSV button (comprehensive export for all result types)
+        export_output_button = QPushButton("Export Output CSV")
+        export_output_button.setStyleSheet(BUTTON_STYLE)
+        export_output_button.setToolTip(
+            "Export results to CSV files.\n\n"
+            "Envelope View:\n"
+            "  - Exports envelope data based on Display dropdown selection\n"
+            "  - 'Max Value' or 'Combo # of Max' → exports max envelope\n"
+            "  - 'Min Value' or 'Combo # of Min' → exports min envelope\n\n"
+            "Single Combination:\n"
+            "  - Exports results for the selected combination\n\n"
+            "Exports all available result types (stress, forces, deformation).\n"
+            "Note: Deformation results are always exported to a separate file."
         )
-        export_deformation_button.setVisible(False)  # Hidden until deformation is available
+        export_output_button.setVisible(False)  # Hidden until results are available
         
         # Layout
         graphics_control_layout = QHBoxLayout()
@@ -200,7 +207,7 @@ class DisplayTabUIBuilder:
         graphics_control_layout.addWidget(export_forces_button)
         graphics_control_layout.addWidget(displacement_component_label)
         graphics_control_layout.addWidget(displacement_component_combo)
-        graphics_control_layout.addWidget(export_deformation_button)
+        graphics_control_layout.addWidget(export_output_button)
         graphics_control_layout.addWidget(deformation_scale_label)
         graphics_control_layout.addWidget(deformation_scale_edit)
         graphics_control_layout.addWidget(absolute_deformation_checkbox)
@@ -223,7 +230,7 @@ class DisplayTabUIBuilder:
         self.components['export_forces_button'] = export_forces_button
         self.components['displacement_component_label'] = displacement_component_label
         self.components['displacement_component_combo'] = displacement_component_combo
-        self.components['export_deformation_button'] = export_deformation_button
+        self.components['export_output_button'] = export_output_button
         self.components['deformation_scale_label'] = deformation_scale_label
         self.components['deformation_scale_edit'] = deformation_scale_edit
         self.components['absolute_deformation_checkbox'] = absolute_deformation_checkbox

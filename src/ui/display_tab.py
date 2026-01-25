@@ -172,7 +172,7 @@ class DisplayTab(QWidget):
         # Displacement component controls (for deformation visualization)
         self.displacement_component_label = self.components.get('displacement_component_label')
         self.displacement_component_combo = self.components.get('displacement_component_combo')
-        self.export_deformation_button = self.components.get('export_deformation_button')
+        self.export_output_button = self.components.get('export_output_button')
         
         # Combination/Time point controls (MARS-SC: uses combination_combo)
         self.combination_combo = self.components.get('combination_combo')
@@ -240,9 +240,9 @@ class DisplayTab(QWidget):
             self.displacement_component_combo.currentIndexChanged.connect(
                 self._on_displacement_component_changed
             )
-        if self.export_deformation_button is not None:
-            self.export_deformation_button.clicked.connect(
-                self._on_export_deformation_clicked
+        if self.export_output_button is not None:
+            self.export_output_button.clicked.connect(
+                self._on_export_output_clicked
             )
         
         self.deformation_scale_edit.editingFinished.connect(
@@ -870,10 +870,10 @@ class DisplayTab(QWidget):
         
         print(f"DisplayTab: Switched to displacement component '{array_name}'")
     
-    def _on_export_deformation_clicked(self):
-        """Handle click on Export Deformation CSV button."""
+    def _on_export_output_clicked(self):
+        """Handle click on Export Output CSV button."""
         # Delegate to export handler
-        self.export_handler.export_deformation_csv()
+        self.export_handler.export_output_csv()
     
     def _show_displacement_component_controls(self, show: bool):
         """
@@ -886,8 +886,36 @@ class DisplayTab(QWidget):
             self.displacement_component_label.setVisible(show)
         if self.displacement_component_combo is not None:
             self.displacement_component_combo.setVisible(show)
-        if self.export_deformation_button is not None:
-            self.export_deformation_button.setVisible(show)
+        # Note: export_output_button visibility is managed separately by _update_export_output_button_visibility()
+    
+    def _update_export_output_button_visibility(self):
+        """
+        Update visibility of Export Output CSV button.
+        
+        The button should be visible when ANY result type is available:
+        - Stress results (combination_result from solver tab)
+        - Nodal forces results
+        - Deformation results
+        """
+        if self.export_output_button is None:
+            return
+        
+        # Check for any available results
+        has_stress = False
+        has_forces = self.nodal_forces_result is not None
+        has_deformation = self.deformation_result is not None
+        
+        # Check stress result from solver tab
+        try:
+            solver_tab = self.window().solver_tab
+            if solver_tab and solver_tab.combination_result is not None:
+                has_stress = True
+        except (AttributeError, RuntimeError):
+            pass
+        
+        # Show button if any result type is available
+        show_button = has_stress or has_forces or has_deformation
+        self.export_output_button.setVisible(show_button)
     
     @pyqtSlot(object)
     def _setup_initial_view(self, initial_data):
@@ -1294,6 +1322,9 @@ class DisplayTab(QWidget):
             self.extract_ic_button.setVisible(True)
         else:
             self.extract_ic_button.setVisible(False)
+        
+        # Update Export Output CSV button visibility
+        self._update_export_output_button_visibility()
     
     @pyqtSlot(object)
     def on_animation_data_ready(self, precomputed_data):
@@ -1460,6 +1491,7 @@ class DisplayTab(QWidget):
         # Clear combination data
         self.all_combo_results = None
         self.nodal_forces_result = None
+        self.deformation_result = None
         self.combination_names = []
         
         # Reset and hide view combination controls
@@ -1472,6 +1504,10 @@ class DisplayTab(QWidget):
         
         # Hide force component controls
         self._show_force_component_controls(False)
+        
+        # Hide export output button
+        if self.export_output_button is not None:
+            self.export_output_button.setVisible(False)
         
         # Re-enable scalar display controls
         self.scalar_display_combo.setEnabled(True)
