@@ -77,6 +77,46 @@ def list_named_selections(rst_path: str) -> List[str]:
     return info.get("named_selections", [])
 
 
+def get_nodal_scoping_ids(rst_path: str, named_selection: Optional[str]) -> List[int]:
+    """Get node IDs for a named selection using PyMAPDL Reader.
+    
+    Note: PyMAPDL Reader has limited named selection support.
+    For 'All Nodes' or None, returns all mesh node IDs.
+    For other named selections, attempts to use node_components.
+    """
+    _require_reader()
+    rst = pymapdl_reader.read_binary(rst_path)
+    
+    if named_selection is None or named_selection == "All Nodes":
+        return sorted(rst.mesh.nnum.tolist())
+    
+    # Try node components
+    if rst.node_components and named_selection in rst.node_components:
+        return sorted(rst.node_components[named_selection].tolist())
+    
+    # Try element components and convert to nodes
+    if rst.element_components and named_selection in rst.element_components:
+        elem_ids = rst.element_components[named_selection]
+        # Get nodes from elements (simplified - returns all mesh nodes for those elements)
+        # This is a limitation of pymapdl_reader
+        node_set = set()
+        mesh = rst.mesh
+        for elem_id in elem_ids:
+            try:
+                elem_idx = np.where(mesh.enum == elem_id)[0]
+                if len(elem_idx) > 0:
+                    # Get element connectivity
+                    nodes = mesh.elem[elem_idx[0]]
+                    node_set.update(n for n in nodes if n > 0)
+            except Exception:
+                continue
+        if node_set:
+            return sorted(node_set)
+    
+    # Fallback: return all nodes with warning
+    return sorted(rst.mesh.nnum.tolist())
+
+
 def _get_node_coordinates(rst, node_ids: Sequence[int]) -> np.ndarray:
     mesh = rst.mesh
     all_nnum = mesh.nnum

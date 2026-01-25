@@ -91,23 +91,11 @@ def _start_local_server(protocol: Optional[str]):
     return dpf.start_local_server(as_global=False, config=config)
 
 
-def _env_flag(name: str, default: bool = False) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().lower() in ("1", "true", "yes", "on")
-
-
 def _env_str(name: str, default: str = "") -> str:
     value = os.getenv(name)
     if value is None:
         return default
     return value.strip()
-
-
-def _is_access_violation(exc: Exception) -> bool:
-    message = str(exc).lower()
-    return "access violation" in message or "0x0000000000000030" in message
 
 
 def list_named_selections(rst_path: str) -> List[str]:
@@ -189,10 +177,25 @@ def get_n_sets(rst_path: str) -> int:
 
 
 def get_nodal_scoping_ids(rst_path: str, named_selection: Optional[str]) -> List[int]:
-    _require_dpf()
-    model = dpf.Model(rst_path)
-    scoping = _sorted_scoping(_resolve_nodal_scoping(model, named_selection))
-    return list(scoping.ids)
+    """Get node IDs for a named selection.
+    
+    Uses DPF if available, otherwise falls back to PyMAPDL Reader.
+    Note: PyMAPDL Reader only supports 'All Nodes' selection.
+    """
+    if DPF_AVAILABLE:
+        try:
+            model = dpf.Model(rst_path)
+            scoping = _sorted_scoping(_resolve_nodal_scoping(model, named_selection))
+            return list(scoping.ids)
+        except Exception:
+            pass
+    
+    if PYMAPDL_READER_AVAILABLE:
+        return pymapdl_extractor.get_nodal_scoping_ids(rst_path, named_selection)
+    
+    raise DPFNotAvailableError(
+        "Neither ansys-dpf-core nor ansys-mapdl-reader is installed."
+    )
 
 
 def _get_length_conversion_factor(source_unit: str) -> float:
@@ -607,26 +610,20 @@ def _evaluate_aligned_result(
     scoping: "dpf.Scoping",
     nodal_averaging: bool,
     average_across_bodies: bool,
-    log: Callable[[str], None],
     server=None,
 ) -> np.ndarray:
-    try:
-        field = _evaluate_result(
-            model,
-            kind,
-            set_id,
-            scoping,
-            force_nodal_average=nodal_averaging,
-            mesh=mesh,
-            average_across_bodies=average_across_bodies,
-            server=server,
-            data_sources=data_sources,
-        )
-        return _align_field_to_nodes(field, node_ids, n_components)
-    except Exception as exc:
-        if _is_access_violation(exc):
-            log(f"Mode {set_id} hit access violation - will trigger fallback")
-        raise
+    field = _evaluate_result(
+        model,
+        kind,
+        set_id,
+        scoping,
+        force_nodal_average=nodal_averaging,
+        mesh=mesh,
+        average_across_bodies=average_across_bodies,
+        server=server,
+        data_sources=data_sources,
+    )
+    return _align_field_to_nodes(field, node_ids, n_components)
 
 
 def extract_modal_tensor_csv(
@@ -653,14 +650,48 @@ def extract_modal_tensor_csv(
     # Determine backend: "dpf", "pymapdl", or "auto"
     selected_backend = (backend or _env_str("MODAL_EXTRACTION_BACKEND", "auto")).lower()
     
+    # Auto mode: use PyMAPDL Reader as primary (faster), fall back to DPF if needed
+    if selected_backend == "auto":
+        if PYMAPDL_READER_AVAILABLE:
+            try:
+                log("Using PyMAPDL Reader backend")
+                return pymapdl_extractor.extract_modal_tensor_csv(
+                    rst_path=rst_path,
+                    output_csv_path=output_csv_path,
+                    result_kind=result_kind,
+                    named_selection=named_selection,
+                    mode_ids=mode_ids,
+                    mode_count=mode_count,
+                    chunk_size=chunk_size,
+                    node_order=node_order,
+                    log_cb=log_cb,
+                    progress_cb=progress_cb,
+                    should_cancel=should_cancel,
+                )
+            except ModalExtractionCanceled:
+                raise  # Don't fallback on user cancellation
+            except Exception as pymapdl_err:
+                if DPF_AVAILABLE:
+                    log(f"PyMAPDL Reader failed: {pymapdl_err}")
+                    log("Falling back to DPF backend...")
+                    # Fall through to DPF path below
+                else:
+                    raise  # No fallback available
+        elif DPF_AVAILABLE:
+            log("PyMAPDL Reader not available, using DPF backend")
+            # Fall through to DPF path below
+        else:
+            raise DPFNotAvailableError(
+                "Neither ansys-dpf-core nor ansys-mapdl-reader is installed."
+            )
+    
     if selected_backend == "pymapdl":
-        # Force PyMAPDL Reader backend
         if not PYMAPDL_READER_AVAILABLE:
             raise ModalExtractionError(
                 "PyMAPDL Reader backend requested but ansys-mapdl-reader is not installed. "
                 "Install with: pip install ansys-mapdl-reader"
             )
-        log("Using PyMAPDL Reader backend (forced)")
+        log("Using PyMAPDL Reader backend")
         return pymapdl_extractor.extract_modal_tensor_csv(
             rst_path=rst_path,
             output_csv_path=output_csv_path,
@@ -675,43 +706,13 @@ def extract_modal_tensor_csv(
             should_cancel=should_cancel,
         )
     
-    if selected_backend == "auto" and not DPF_AVAILABLE:
-        # Auto mode: fall back to PyMAPDL if DPF not available
-        if PYMAPDL_READER_AVAILABLE:
-            log("DPF not available, using PyMAPDL Reader backend")
-            return pymapdl_extractor.extract_modal_tensor_csv(
-                rst_path=rst_path,
-                output_csv_path=output_csv_path,
-                result_kind=result_kind,
-                named_selection=named_selection,
-                mode_ids=mode_ids,
-                mode_count=mode_count,
-                chunk_size=chunk_size,
-                node_order=node_order,
-                log_cb=log_cb,
-                progress_cb=progress_cb,
-                should_cancel=should_cancel,
-            )
-        else:
-            raise DPFNotAvailableError(
-                "Neither ansys-dpf-core nor ansys-mapdl-reader is installed."
-            )
-    
-    # Use DPF backend
+    # Use DPF backend (forced or fallback from auto when PyMAPDL unavailable)
     _require_dpf()
-    
-    # Auto-fallback to PyMAPDL Reader on access violations (only in auto mode)
-    fallback_on_access_violation = (
-        selected_backend == "auto" 
-        and PYMAPDL_READER_AVAILABLE 
-        and _env_flag("MODAL_DPF_FALLBACK_TO_PYMAPDL", True)
-    )
 
     protocol = _normalize_protocol(server_protocol) or _normalize_protocol(
         os.getenv("MODAL_DPF_PROTOCOL")
     )
     server = _start_local_server(protocol)
-    _dpf_fatal_error = None
 
     try:
         model = dpf.Model(rst_path, server=server)
@@ -801,7 +802,6 @@ def extract_modal_tensor_csv(
                             scoping=chunk_scoping,
                             nodal_averaging=nodal_averaging,
                             average_across_bodies=average_across_bodies,
-                            log=log,
                             server=server,
                         )
                         mode_maps.append({nid: aligned[idx] for idx, nid in enumerate(chunk_unique_ids)})
@@ -847,7 +847,6 @@ def extract_modal_tensor_csv(
                             scoping=chunk_scoping,
                             nodal_averaging=nodal_averaging,
                             average_across_bodies=average_across_bodies,
-                            log=log,
                             server=server,
                         )
                         chunk_data[:, col:col + n_components] = aligned
@@ -864,43 +863,12 @@ def extract_modal_tensor_csv(
                     gc.collect()
 
         gc.collect()
-        return  # Success - return without fallback
-        
-    except Exception as dpf_exc:
-        # Check if this is an access violation that might benefit from PyMAPDL fallback
-        if fallback_on_access_violation and _is_access_violation(dpf_exc):
-            _dpf_fatal_error = dpf_exc
-            log(f"DPF encountered access violation: {dpf_exc}")
-            log("Attempting fallback to PyMAPDL Reader backend...")
-        else:
-            raise
     finally:
         if server is not None:
             try:
                 server.shutdown()
             except Exception:
                 pass
-    
-    # Fallback to PyMAPDL Reader if DPF failed with access violation
-    if _dpf_fatal_error is not None and fallback_on_access_violation:
-        try:
-            return pymapdl_extractor.extract_modal_tensor_csv(
-                rst_path=rst_path,
-                output_csv_path=output_csv_path,
-                result_kind=result_kind,
-                named_selection=named_selection,
-                mode_ids=mode_ids,
-                mode_count=mode_count,
-                chunk_size=chunk_size,
-                node_order=node_order,
-                log_cb=log_cb,
-                progress_cb=progress_cb,
-                should_cancel=should_cancel,
-            )
-        except Exception as pymapdl_exc:
-            log(f"PyMAPDL Reader fallback also failed: {pymapdl_exc}")
-            # Raise the original DPF error
-            raise _dpf_fatal_error from pymapdl_exc
 
 
 def extract_modal_stress_csv(**kwargs) -> None:

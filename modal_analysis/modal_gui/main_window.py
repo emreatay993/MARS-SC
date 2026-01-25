@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Optional
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QTextCursor
 from PyQt5.QtWidgets import (
     QApplication,
@@ -96,9 +97,14 @@ class ModalMainWindow(QMainWindow):
 
         self.named_selection_combo = QComboBox()
         self.named_selection_combo.addItem("All Nodes")
+        self.named_selection_combo.currentTextChanged.connect(self._on_named_selection_changed)
+        
+        self.selection_node_count_label = QLabel("")
         self.model_info_label = QLabel("No model loaded")
 
         layout.addWidget(self.named_selection_combo, 1)
+        layout.addWidget(self.selection_node_count_label)
+        layout.addWidget(QLabel(" | "))
         layout.addWidget(self.model_info_label)
         return box
 
@@ -144,11 +150,11 @@ class ModalMainWindow(QMainWindow):
         self.disp_check.setChecked(True)
         
         self.backend_combo = QComboBox()
-        self.backend_combo.addItems(["Auto (DPF with fallback)", "DPF only", "PyMAPDL Reader"])
+        self.backend_combo.addItems(["Auto (PyMAPDL)", "DPF only", "PyMAPDL Reader"])
         self.backend_combo.setToolTip(
-            "Auto: Uses DPF, falls back to PyMAPDL Reader on access violations\n"
-            "DPF only: Uses only DPF (may fail on large models)\n"
-            "PyMAPDL Reader: Direct RST file reading, more stable for many modes"
+            "Auto: Uses PyMAPDL Reader (faster, stable for many modes)\n"
+            "DPF only: Uses ANSYS DPF (slower, may crash on large mode counts)\n"
+            "PyMAPDL Reader: Direct RST file reading, recommended"
         )
 
         layout.addWidget(self.stress_check)
@@ -195,14 +201,18 @@ class ModalMainWindow(QMainWindow):
     def _build_actions(self) -> QHBoxLayout:
         layout = QHBoxLayout()
 
+        self.estimate_btn = QPushButton("Estimate Time")
+        self.estimate_btn.setToolTip("Run a quick test to estimate extraction time")
         self.extract_btn = QPushButton("Extract")
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.setEnabled(False)
 
+        self.estimate_btn.clicked.connect(self._estimate_extraction_time)
         self.extract_btn.clicked.connect(self._start_extraction)
         self.cancel_btn.clicked.connect(self._cancel_extraction)
 
         layout.addStretch(1)
+        layout.addWidget(self.estimate_btn)
         layout.addWidget(self.extract_btn)
         layout.addWidget(self.cancel_btn)
         return layout
@@ -211,6 +221,7 @@ class ModalMainWindow(QMainWindow):
         self.rst_path_edit.setStyleSheet(READONLY_INPUT_STYLE)
         self.rst_browse_btn.setStyleSheet(BUTTON_STYLE)
         self.output_browse_btn.setStyleSheet(BUTTON_STYLE)
+        self.estimate_btn.setStyleSheet(BUTTON_STYLE)
         self.extract_btn.setStyleSheet(BUTTON_STYLE)
         self.cancel_btn.setStyleSheet(BUTTON_STYLE)
         self.console.setStyleSheet(CONSOLE_STYLE)
@@ -326,6 +337,7 @@ class ModalMainWindow(QMainWindow):
 
     def _set_running(self, running: bool) -> None:
         self.extract_btn.setEnabled(not running)
+        self.estimate_btn.setEnabled(not running)
         self.cancel_btn.setEnabled(running)
         self.rst_browse_btn.setEnabled(not running)
         self.output_browse_btn.setEnabled(not running)
@@ -375,6 +387,180 @@ class ModalMainWindow(QMainWindow):
     def _handle_canceled(self) -> None:
         self._set_running(False)
         QMessageBox.information(self, "Canceled", "Extraction canceled.")
+
+    def _on_named_selection_changed(self, selection_name: str) -> None:
+        """Update node count label when named selection changes."""
+        rst_path = self.rst_path_edit.text().strip()
+        if not rst_path or not os.path.exists(rst_path):
+            self.selection_node_count_label.setText("")
+            return
+        
+        try:
+            node_ids = dpf_modal_extractor.get_nodal_scoping_ids(rst_path, selection_name)
+            count = len(node_ids)
+            self.selection_node_count_label.setText(f"Nodes in selection: {count:,}")
+            self._current_selection_node_count = count
+        except Exception as e:
+            self.selection_node_count_label.setText("(node count unavailable)")
+            self._current_selection_node_count = 0
+
+    def _estimate_extraction_time(self) -> None:
+        """Run quick test extractions to estimate total time.
+        
+        Uses two tests (1 mode and 3 modes) to calculate:
+        - Base overhead (RST loading, setup, writing)
+        - Per-mode cost (loading each mode's data)
+        
+        Formula: total = (base_overhead + per_mode * modes) * result_types
+        """
+        rst_path = self.rst_path_edit.text().strip()
+        if not rst_path or not os.path.exists(rst_path):
+            QMessageBox.warning(self, "Missing file", "Select a valid RST file first.")
+            return
+        
+        named_selection = self.named_selection_combo.currentText()
+        
+        # Get node count for selection (for display only)
+        try:
+            node_ids = dpf_modal_extractor.get_nodal_scoping_ids(rst_path, named_selection)
+            total_nodes = len(node_ids)
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Cannot get node count: {e}")
+            return
+        
+        if total_nodes == 0:
+            QMessageBox.warning(self, "Error", "No nodes in selection.")
+            return
+        
+        # Determine mode count
+        if self.specific_mode_check.isChecked():
+            total_modes = 1
+        else:
+            total_modes = self.mode_count_spin.value()
+        
+        # Count result types
+        result_count = sum([
+            self.stress_check.isChecked(),
+            self.strain_check.isChecked(),
+            self.disp_check.isChecked(),
+        ])
+        if result_count == 0:
+            QMessageBox.warning(self, "Error", "Select at least one result type.")
+            return
+        
+        # Get backend
+        backend_map = {0: "auto", 1: "dpf", 2: "pymapdl"}
+        backend = backend_map.get(self.backend_combo.currentIndex(), "auto")
+        
+        self._append_log("=" * 50)
+        self._append_log("Running time estimation...")
+        self._append_log(f"Selection: {named_selection} ({total_nodes:,} nodes)")
+        self._append_log(f"Modes: {total_modes}, Result types: {result_count}")
+        
+        # Disable UI during estimation
+        self.estimate_btn.setEnabled(False)
+        self.extract_btn.setEnabled(False)
+        self.progress_status.setText("Estimating...")
+        QApplication.processEvents()
+        
+        try:
+            import tempfile
+            temp_dir = tempfile.gettempdir()
+            temp_csv = os.path.join(temp_dir, "_modal_estimate_test.csv")
+            
+            # Test 1: Extract 1 mode
+            self._append_log("  Test 1: 1 mode...")
+            QApplication.processEvents()
+            
+            start1 = time.perf_counter()
+            dpf_modal_extractor.extract_modal_stress_csv(
+                rst_path=rst_path,
+                output_csv_path=temp_csv,
+                mode_count=1,
+                named_selection=named_selection,
+                backend=backend,
+                log_cb=lambda msg: None,
+            )
+            t1 = time.perf_counter() - start1
+            
+            try:
+                os.remove(temp_csv)
+            except Exception:
+                pass
+            
+            # Test 2: Extract 3 modes (to calculate per-mode cost)
+            self._append_log("  Test 2: 3 modes...")
+            QApplication.processEvents()
+            
+            start2 = time.perf_counter()
+            dpf_modal_extractor.extract_modal_stress_csv(
+                rst_path=rst_path,
+                output_csv_path=temp_csv,
+                mode_count=3,
+                named_selection=named_selection,
+                backend=backend,
+                log_cb=lambda msg: None,
+            )
+            t2 = time.perf_counter() - start2
+            
+            try:
+                os.remove(temp_csv)
+            except Exception:
+                pass
+            
+            # Calculate timing model:
+            # t1 = base_overhead + 1 * per_mode
+            # t2 = base_overhead + 3 * per_mode
+            # t2 - t1 = 2 * per_mode
+            per_mode_time = (t2 - t1) / 2.0
+            base_overhead = t1 - per_mode_time
+            
+            # Ensure non-negative values
+            if per_mode_time < 0:
+                per_mode_time = 0
+                base_overhead = (t1 + t2) / 4.0  # Fallback average
+            if base_overhead < 0:
+                base_overhead = 0.1
+            
+            # Estimate total time
+            # Formula: (base_overhead + per_mode * modes) * result_types
+            estimated_seconds = (base_overhead + per_mode_time * total_modes) * result_count
+            
+            # Format time
+            if estimated_seconds < 60:
+                time_str = f"{estimated_seconds:.1f} seconds"
+            elif estimated_seconds < 3600:
+                minutes = estimated_seconds / 60
+                time_str = f"{minutes:.1f} minutes"
+            else:
+                hours = estimated_seconds / 3600
+                time_str = f"{hours:.1f} hours"
+            
+            self._append_log(f"  Test results: 1 mode = {t1:.2f}s, 3 modes = {t2:.2f}s")
+            self._append_log(f"  Timing model: base={base_overhead:.2f}s + {per_mode_time:.2f}s/mode")
+            self._append_log("-" * 50)
+            self._append_log(f"ESTIMATED TOTAL TIME: {time_str}")
+            self._append_log(f"  ({total_modes} modes × {result_count} result types)")
+            self._append_log("=" * 50)
+            
+            QMessageBox.information(
+                self, 
+                "Time Estimate",
+                f"Estimated extraction time: {time_str}\n\n"
+                f"Nodes: {total_nodes:,}\n"
+                f"Modes: {total_modes}\n"
+                f"Result types: {result_count}\n"
+                f"Backend: {backend}\n\n"
+                f"Timing model: {base_overhead:.1f}s base + {per_mode_time:.2f}s/mode"
+            )
+            
+        except Exception as e:
+            self._append_log(f"Estimation failed: {e}")
+            QMessageBox.warning(self, "Estimation Error", f"Could not estimate time: {e}")
+        finally:
+            self.estimate_btn.setEnabled(True)
+            self.extract_btn.setEnabled(True)
+            self.progress_status.setText("Idle")
 
 
 def run() -> None:
