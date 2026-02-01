@@ -304,6 +304,35 @@ class NodalForcesResult:
     has_beam_nodes: bool = False
     coordinate_system: str = "Global"
 
+    @property
+    def num_nodes(self) -> int:
+        """Number of nodes in the result."""
+        return len(self.node_ids)
+
+    @property
+    def num_combinations(self) -> int:
+        """Number of combinations (if full results available)."""
+        if self.all_combo_fx is not None:
+            return self.all_combo_fx.shape[0]
+        return 0
+
+    def get_force_magnitude(self, combo_idx: int) -> np.ndarray:
+        """
+        Compute force magnitude for a specific combination.
+        
+        Args:
+            combo_idx: Index of the combination.
+            
+        Returns:
+            Array of force magnitudes, shape (num_nodes,).
+        """
+        if self.all_combo_fx is None or self.all_combo_fy is None or self.all_combo_fz is None:
+            raise ValueError("Force components not available.")
+        fx = self.all_combo_fx[combo_idx, :]
+        fy = self.all_combo_fy[combo_idx, :]
+        fz = self.all_combo_fz[combo_idx, :]
+        return np.sqrt(fx**2 + fy**2 + fz**2)
+
 
 @dataclass
 class DeformationResult:

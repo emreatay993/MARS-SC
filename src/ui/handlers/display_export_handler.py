@@ -192,10 +192,10 @@ class DisplayExportHandler(DisplayBaseHandler):
                 combination_index=combo_idx,
                 combination_name=combo_name,
                 force_unit=result.force_unit,
-                coordinate_system=result.coordinate_system,
-                node_element_types=result.node_element_types,
-                include_shear=result.has_beam_nodes
-            )
+                    coordinate_system=result.coordinate_system,
+                    node_element_types=result.node_element_types,
+                    include_shear=True
+                )
             
             QMessageBox.information(
                 self.tab, "Export Successful",
@@ -490,7 +490,13 @@ class DisplayExportHandler(DisplayBaseHandler):
                     combo_of_max=forces_result.combo_of_max if export_max else None,
                     combo_of_min=forces_result.combo_of_min if export_min else None,
                     combination_names=combination_names,
-                    force_unit=forces_result.force_unit
+                    force_unit=forces_result.force_unit,
+                    all_combo_fx=forces_result.all_combo_fx,
+                    all_combo_fy=forces_result.all_combo_fy,
+                    all_combo_fz=forces_result.all_combo_fz,
+                    include_shear_variants=True,
+                    include_component_envelopes=True,
+                    include_component_combo_indices=True
                 )
                 exported_files.append(os.path.basename(filename))
             except Exception as e:
@@ -660,7 +666,7 @@ class DisplayExportHandler(DisplayBaseHandler):
                     force_unit=forces_result.force_unit,
                     coordinate_system=forces_result.coordinate_system,
                     node_element_types=forces_result.node_element_types,
-                    include_shear=forces_result.has_beam_nodes
+                    include_shear=True
                 )
                 exported_files.append(os.path.basename(filename))
             except Exception as e:

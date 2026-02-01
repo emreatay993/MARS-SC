@@ -1302,7 +1302,13 @@ class SolverAnalysisHandler:
                 combo_of_max=result.combo_of_max,
                 combo_of_min=result.combo_of_min,
                 combination_names=combo_names,
-                force_unit=result.force_unit
+                force_unit=result.force_unit,
+                all_combo_fx=result.all_combo_fx,
+                all_combo_fy=result.all_combo_fy,
+                all_combo_fz=result.all_combo_fz,
+                include_shear_variants=True,
+                include_component_envelopes=True,
+                include_component_combo_indices=True
             )
             
             self.tab.console_textbox.append(f"  Exported nodal forces envelope to: {filename}\n")

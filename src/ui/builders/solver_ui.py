@@ -283,6 +283,12 @@ class SolverTabUIBuilder:
         nodal_forces_csys_combo.setToolTip(TOOLTIP_NODAL_FORCES_CSYS)
         nodal_forces_csys_combo.setMaximumWidth(120)
         nodal_forces_csys_combo.setVisible(False)  # Hidden until nodal forces is checked
+        # Disable "Global" for now (known issues) and default to Local
+        model = nodal_forces_csys_combo.model()
+        if model is not None and model.item(0) is not None:
+            model.item(0).setEnabled(False)
+            model.item(0).setToolTip("Global option temporarily disabled")
+        nodal_forces_csys_combo.setCurrentIndex(1)
         
         # Deformation (displacement) checkbox - can be selected with stress outputs
         deformation_checkbox = QCheckBox('Deformation (Displacement)')

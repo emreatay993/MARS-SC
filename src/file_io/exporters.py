@@ -435,7 +435,13 @@ def export_nodal_forces_envelope(
     combo_of_max: Optional[np.ndarray] = None,
     combo_of_min: Optional[np.ndarray] = None,
     combination_names: Optional[List[str]] = None,
-    force_unit: str = "N"
+    force_unit: str = "N",
+    all_combo_fx: Optional[np.ndarray] = None,
+    all_combo_fy: Optional[np.ndarray] = None,
+    all_combo_fz: Optional[np.ndarray] = None,
+    include_shear_variants: bool = False,
+    include_component_envelopes: bool = False,
+    include_component_combo_indices: bool = False
 ) -> None:
     """
     Export nodal forces envelope results (max/min magnitude over combinations) to CSV.
@@ -450,6 +456,12 @@ def export_nodal_forces_envelope(
         combo_of_min: Array of combination indices where min occurred.
         combination_names: Optional list of combination names for labeling.
         force_unit: Force unit string (e.g., "N").
+        all_combo_fx: Optional FX array (n_combinations, n_nodes) for shear envelope export.
+        all_combo_fy: Optional FY array (n_combinations, n_nodes) for shear envelope export.
+        all_combo_fz: Optional FZ array (n_combinations, n_nodes) for shear envelope export.
+        include_shear_variants: If True, include shear XY/XZ/YZ envelope columns.
+        include_component_envelopes: If True, include FX/FY/FZ max/min envelope columns.
+        include_component_combo_indices: If True, include combo indices/names for component envelopes.
     """
     df = pd.DataFrame()
     
@@ -484,6 +496,117 @@ def export_nodal_forces_envelope(
                     for idx in combo_of_min
                 ]
     
+    # Add component envelopes if requested and data available
+    has_component_data = all_combo_fx is not None and all_combo_fy is not None and all_combo_fz is not None
+    if include_component_envelopes and has_component_data:
+        if max_magnitude is not None:
+            df[f'Max FX [{force_unit}]'] = np.max(all_combo_fx, axis=0)
+            df[f'Max FY [{force_unit}]'] = np.max(all_combo_fy, axis=0)
+            df[f'Max FZ [{force_unit}]'] = np.max(all_combo_fz, axis=0)
+        if min_magnitude is not None:
+            df[f'Min FX [{force_unit}]'] = np.min(all_combo_fx, axis=0)
+            df[f'Min FY [{force_unit}]'] = np.min(all_combo_fy, axis=0)
+            df[f'Min FZ [{force_unit}]'] = np.min(all_combo_fz, axis=0)
+
+        if include_component_combo_indices:
+            if max_magnitude is not None:
+                fx_max_idx = np.argmax(all_combo_fx, axis=0)
+                fy_max_idx = np.argmax(all_combo_fy, axis=0)
+                fz_max_idx = np.argmax(all_combo_fz, axis=0)
+                df['Combo of Max FX (#)'] = fx_max_idx.astype(int) + 1
+                df['Combo of Max FY (#)'] = fy_max_idx.astype(int) + 1
+                df['Combo of Max FZ (#)'] = fz_max_idx.astype(int) + 1
+                if combination_names is not None:
+                    df['Combo of Max FX (Name)'] = [
+                        combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
+                        for idx in fx_max_idx
+                    ]
+                    df['Combo of Max FY (Name)'] = [
+                        combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
+                        for idx in fy_max_idx
+                    ]
+                    df['Combo of Max FZ (Name)'] = [
+                        combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
+                        for idx in fz_max_idx
+                    ]
+            if min_magnitude is not None:
+                fx_min_idx = np.argmin(all_combo_fx, axis=0)
+                fy_min_idx = np.argmin(all_combo_fy, axis=0)
+                fz_min_idx = np.argmin(all_combo_fz, axis=0)
+                df['Combo of Min FX (#)'] = fx_min_idx.astype(int) + 1
+                df['Combo of Min FY (#)'] = fy_min_idx.astype(int) + 1
+                df['Combo of Min FZ (#)'] = fz_min_idx.astype(int) + 1
+                if combination_names is not None:
+                    df['Combo of Min FX (Name)'] = [
+                        combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
+                        for idx in fx_min_idx
+                    ]
+                    df['Combo of Min FY (Name)'] = [
+                        combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
+                        for idx in fy_min_idx
+                    ]
+                    df['Combo of Min FZ (Name)'] = [
+                        combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
+                        for idx in fz_min_idx
+                    ]
+
+    # Add shear envelope columns if requested and data available
+    if include_shear_variants and has_component_data:
+        shear_xy_all = np.sqrt(all_combo_fx**2 + all_combo_fy**2)
+        shear_xz_all = np.sqrt(all_combo_fx**2 + all_combo_fz**2)
+        shear_yz_all = np.sqrt(all_combo_fy**2 + all_combo_fz**2)
+        
+        if max_magnitude is not None:
+            df[f'Max Shear XY [{force_unit}]'] = np.max(shear_xy_all, axis=0)
+            df[f'Max Shear XZ [{force_unit}]'] = np.max(shear_xz_all, axis=0)
+            df[f'Max Shear YZ [{force_unit}]'] = np.max(shear_yz_all, axis=0)
+        if min_magnitude is not None:
+            df[f'Min Shear XY [{force_unit}]'] = np.min(shear_xy_all, axis=0)
+            df[f'Min Shear XZ [{force_unit}]'] = np.min(shear_xz_all, axis=0)
+            df[f'Min Shear YZ [{force_unit}]'] = np.min(shear_yz_all, axis=0)
+
+        if include_component_combo_indices:
+            if max_magnitude is not None:
+                shear_xy_max_idx = np.argmax(shear_xy_all, axis=0)
+                shear_xz_max_idx = np.argmax(shear_xz_all, axis=0)
+                shear_yz_max_idx = np.argmax(shear_yz_all, axis=0)
+                df['Combo of Max Shear XY (#)'] = shear_xy_max_idx.astype(int) + 1
+                df['Combo of Max Shear XZ (#)'] = shear_xz_max_idx.astype(int) + 1
+                df['Combo of Max Shear YZ (#)'] = shear_yz_max_idx.astype(int) + 1
+                if combination_names is not None:
+                    df['Combo of Max Shear XY (Name)'] = [
+                        combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
+                        for idx in shear_xy_max_idx
+                    ]
+                    df['Combo of Max Shear XZ (Name)'] = [
+                        combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
+                        for idx in shear_xz_max_idx
+                    ]
+                    df['Combo of Max Shear YZ (Name)'] = [
+                        combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
+                        for idx in shear_yz_max_idx
+                    ]
+            if min_magnitude is not None:
+                shear_xy_min_idx = np.argmin(shear_xy_all, axis=0)
+                shear_xz_min_idx = np.argmin(shear_xz_all, axis=0)
+                shear_yz_min_idx = np.argmin(shear_yz_all, axis=0)
+                df['Combo of Min Shear XY (#)'] = shear_xy_min_idx.astype(int) + 1
+                df['Combo of Min Shear XZ (#)'] = shear_xz_min_idx.astype(int) + 1
+                df['Combo of Min Shear YZ (#)'] = shear_yz_min_idx.astype(int) + 1
+                if combination_names is not None:
+                    df['Combo of Min Shear XY (Name)'] = [
+                        combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
+                        for idx in shear_xy_min_idx
+                    ]
+                    df['Combo of Min Shear XZ (Name)'] = [
+                        combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
+                        for idx in shear_xz_min_idx
+                    ]
+                    df['Combo of Min Shear YZ (Name)'] = [
+                        combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
+                        for idx in shear_yz_min_idx
+                    ]
+    
     df.to_csv(filename, index=False)
 
 
@@ -514,7 +637,7 @@ def export_nodal_forces_single_combination(
         force_unit: Force unit string.
         coordinate_system: Coordinate system used ('Global' or 'Local').
         node_element_types: Optional array of element types per node ('beam' or 'solid_shell').
-        include_shear: If True, include shear force column (sqrt(FY^2 + FZ^2)).
+        include_shear: If True, include shear force columns for XY/XZ/YZ pairs.
     """
     df = pd.DataFrame()
     
@@ -536,10 +659,16 @@ def export_nodal_forces_single_combination(
     magnitude = np.sqrt(fx**2 + fy**2 + fz**2)
     df[f'Force Magnitude [{force_unit}]'] = magnitude
     
-    # Add shear force if requested (useful for beam elements)
+    # Add shear variants if requested
     if include_shear:
-        shear = np.sqrt(fy**2 + fz**2)
-        df[f'Shear Force [{force_unit}]'] = shear
+        shear_xy = np.sqrt(fx**2 + fy**2)
+        shear_xz = np.sqrt(fx**2 + fz**2)
+        shear_yz = np.sqrt(fy**2 + fz**2)
+        df[f'Shear XY [{force_unit}]'] = shear_xy
+        df[f'Shear XZ [{force_unit}]'] = shear_xz
+        df[f'Shear YZ [{force_unit}]'] = shear_yz
+        # Legacy column name for backwards compatibility
+        df[f'Shear Force [{force_unit}]'] = shear_yz
     
     # Add element type column if provided
     if node_element_types is not None:

@@ -1139,10 +1139,42 @@ class SolverTab(QWidget):
             mesh['FX'] = fx_at_max
             mesh['FY'] = fy_at_max
             mesh['FZ'] = fz_at_max
-            
-            # Add shear force if beam nodes present
-            if result.has_beam_nodes:
-                mesh['Shear_Force'] = np.sqrt(fy_at_max**2 + fz_at_max**2)
+            # Add shear variants for different axis pairs
+            mesh['Shear_XY'] = np.sqrt(fx_at_max**2 + fy_at_max**2)
+            mesh['Shear_XZ'] = np.sqrt(fx_at_max**2 + fz_at_max**2)
+            mesh['Shear_YZ'] = np.sqrt(fy_at_max**2 + fz_at_max**2)
+            # Backward-compatible alias for legacy shear (FY/FZ)
+            mesh['Shear_Force'] = mesh['Shear_YZ']
+
+            # Add per-component envelope arrays (max/min over combinations)
+            mesh['Max_FX'] = np.max(result.all_combo_fx, axis=0)
+            mesh['Min_FX'] = np.min(result.all_combo_fx, axis=0)
+            mesh['Max_FY'] = np.max(result.all_combo_fy, axis=0)
+            mesh['Min_FY'] = np.min(result.all_combo_fy, axis=0)
+            mesh['Max_FZ'] = np.max(result.all_combo_fz, axis=0)
+            mesh['Min_FZ'] = np.min(result.all_combo_fz, axis=0)
+            mesh['Combo_of_Max_FX'] = np.argmax(result.all_combo_fx, axis=0)
+            mesh['Combo_of_Min_FX'] = np.argmin(result.all_combo_fx, axis=0)
+            mesh['Combo_of_Max_FY'] = np.argmax(result.all_combo_fy, axis=0)
+            mesh['Combo_of_Min_FY'] = np.argmin(result.all_combo_fy, axis=0)
+            mesh['Combo_of_Max_FZ'] = np.argmax(result.all_combo_fz, axis=0)
+            mesh['Combo_of_Min_FZ'] = np.argmin(result.all_combo_fz, axis=0)
+
+            shear_xy_all = np.sqrt(result.all_combo_fx**2 + result.all_combo_fy**2)
+            shear_xz_all = np.sqrt(result.all_combo_fx**2 + result.all_combo_fz**2)
+            shear_yz_all = np.sqrt(result.all_combo_fy**2 + result.all_combo_fz**2)
+            mesh['Max_Shear_XY'] = np.max(shear_xy_all, axis=0)
+            mesh['Min_Shear_XY'] = np.min(shear_xy_all, axis=0)
+            mesh['Max_Shear_XZ'] = np.max(shear_xz_all, axis=0)
+            mesh['Min_Shear_XZ'] = np.min(shear_xz_all, axis=0)
+            mesh['Max_Shear_YZ'] = np.max(shear_yz_all, axis=0)
+            mesh['Min_Shear_YZ'] = np.min(shear_yz_all, axis=0)
+            mesh['Combo_of_Max_Shear_XY'] = np.argmax(shear_xy_all, axis=0)
+            mesh['Combo_of_Min_Shear_XY'] = np.argmin(shear_xy_all, axis=0)
+            mesh['Combo_of_Max_Shear_XZ'] = np.argmax(shear_xz_all, axis=0)
+            mesh['Combo_of_Min_Shear_XZ'] = np.argmin(shear_xz_all, axis=0)
+            mesh['Combo_of_Max_Shear_YZ'] = np.argmax(shear_yz_all, axis=0)
+            mesh['Combo_of_Min_Shear_YZ'] = np.argmin(shear_yz_all, axis=0)
         
         return mesh
     

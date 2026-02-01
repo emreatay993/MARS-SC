@@ -627,7 +627,7 @@ class DisplayTab(QWidget):
     
     def _update_force_component_options(self, has_beam_nodes: bool):
         """
-        Update force component dropdown options based on beam presence.
+        Update force component dropdown options.
         
         Args:
             has_beam_nodes: True if selection contains nodes attached to beam elements.
@@ -638,9 +638,12 @@ class DisplayTab(QWidget):
         # Base options always available
         items = ["Magnitude", "FX", "FY", "FZ"]
         
-        # Add Shear option only if beam nodes are present
-        if has_beam_nodes:
-            items.append("Shear (FY²+FZ²)^½")
+        # Add shear options for different axis pairs
+        items.extend([
+            "Shear XY (FX^2+FY^2)^1/2",
+            "Shear XZ (FX^2+FZ^2)^1/2",
+            "Shear YZ (FY^2+FZ^2)^1/2",
+        ])
         
         self.force_component_combo.addItems(items)
         self.force_component_combo.setCurrentIndex(0)  # Default to Magnitude
@@ -650,7 +653,7 @@ class DisplayTab(QWidget):
         """
         Add force component arrays to mesh for the selected combination.
         
-        This sets up FX, FY, FZ, Magnitude, and optionally Shear arrays
+        This sets up FX, FY, FZ, Magnitude, and shear arrays
         on the current mesh for the specified combination.
         
         Args:
@@ -672,9 +675,12 @@ class DisplayTab(QWidget):
         self.current_mesh['FZ'] = fz
         self.current_mesh['Force_Magnitude'] = np.sqrt(fx**2 + fy**2 + fz**2)
         
-        # Add shear force if beam nodes present
-        if result.has_beam_nodes:
-            self.current_mesh['Shear_Force'] = np.sqrt(fy**2 + fz**2)
+        # Add shear variants for different axis pairs
+        self.current_mesh['Shear_XY'] = np.sqrt(fx**2 + fy**2)
+        self.current_mesh['Shear_XZ'] = np.sqrt(fx**2 + fz**2)
+        self.current_mesh['Shear_YZ'] = np.sqrt(fy**2 + fz**2)
+        # Backward-compatible alias for legacy shear (FY/FZ)
+        self.current_mesh['Shear_Force'] = self.current_mesh['Shear_YZ']
     
     def _setup_displacement_component_arrays(self, combo_idx: int):
         """
@@ -726,15 +732,35 @@ class DisplayTab(QWidget):
             1: 'FX',
             2: 'FY',
             3: 'FZ',
-            4: 'Shear_Force'  # Only present if beam nodes exist
+            4: 'Shear_XY',
+            5: 'Shear_XZ',
+            6: 'Shear_YZ'
         }
         
         array_name = component_map.get(index, 'Force_Magnitude')
+
+        # In envelope view, map to max/min component envelopes based on display selection
+        is_envelope_view = self.view_combination_combo is not None and self.view_combination_combo.currentIndex() == 0
+        wants_min = "Min" in self.scalar_display_combo.currentText()
+        if is_envelope_view:
+            if array_name == 'Force_Magnitude':
+                candidate = 'Min_Force_Magnitude' if wants_min else 'Max_Force_Magnitude'
+                if candidate in self.current_mesh.array_names:
+                    array_name = candidate
+            elif array_name in ('FX', 'FY', 'FZ', 'Shear_XY', 'Shear_XZ', 'Shear_YZ'):
+                prefix = 'Min_' if wants_min else 'Max_'
+                candidate = f"{prefix}{array_name}"
+                if candidate in self.current_mesh.array_names:
+                    array_name = candidate
         
         # For envelope view, Force_Magnitude might be stored as Max_Force_Magnitude
         if array_name == 'Force_Magnitude' and 'Force_Magnitude' not in self.current_mesh.array_names:
             if 'Max_Force_Magnitude' in self.current_mesh.array_names:
                 array_name = 'Max_Force_Magnitude'
+        # Backward-compatible fallback for legacy shear naming
+        if array_name == 'Shear_YZ' and array_name not in self.current_mesh.array_names:
+            if 'Shear_Force' in self.current_mesh.array_names:
+                array_name = 'Shear_Force'
         
         # Check if array exists in mesh
         if array_name not in self.current_mesh.array_names:
@@ -751,16 +777,32 @@ class DisplayTab(QWidget):
         
         # Use display-friendly names for legend
         display_name = array_name
-        if array_name == 'Max_Force_Magnitude':
+        if array_name in ('Max_Force_Magnitude', 'Min_Force_Magnitude'):
             display_name = 'Force_Magnitude'
         
         component_labels = {
             'Force_Magnitude': f'Force_Magnitude [{force_unit}]',
             'Max_Force_Magnitude': f'Force_Magnitude [{force_unit}]',
+            'Min_Force_Magnitude': f'Force_Magnitude [{force_unit}]',
             'FX': f'FX [{force_unit}]',
             'FY': f'FY [{force_unit}]',
             'FZ': f'FZ [{force_unit}]',
-            'Shear_Force': f'Shear_Force [{force_unit}]'
+            'Max_FX': f'Max_FX [{force_unit}]',
+            'Min_FX': f'Min_FX [{force_unit}]',
+            'Max_FY': f'Max_FY [{force_unit}]',
+            'Min_FY': f'Min_FY [{force_unit}]',
+            'Max_FZ': f'Max_FZ [{force_unit}]',
+            'Min_FZ': f'Min_FZ [{force_unit}]',
+            'Shear_XY': f'Shear_XY [{force_unit}]',
+            'Shear_XZ': f'Shear_XZ [{force_unit}]',
+            'Shear_YZ': f'Shear_YZ [{force_unit}]',
+            'Max_Shear_XY': f'Max_Shear_XY [{force_unit}]',
+            'Min_Shear_XY': f'Min_Shear_XY [{force_unit}]',
+            'Max_Shear_XZ': f'Max_Shear_XZ [{force_unit}]',
+            'Min_Shear_XZ': f'Min_Shear_XZ [{force_unit}]',
+            'Max_Shear_YZ': f'Max_Shear_YZ [{force_unit}]',
+            'Min_Shear_YZ': f'Min_Shear_YZ [{force_unit}]',
+            'Shear_Force': f'Shear_YZ [{force_unit}]'
         }
         
         self.data_column = component_labels.get(array_name, f'{array_name} [{force_unit}]')

@@ -139,14 +139,21 @@ class DisplayTabUIBuilder:
         force_component_label = QLabel("Force Component:")
         force_component_combo = QComboBox()
         force_component_combo.setMinimumWidth(150)
-        force_component_combo.addItems(["Magnitude", "FX", "FY", "FZ"])
+        force_component_combo.addItems([
+            "Magnitude", "FX", "FY", "FZ",
+            "Shear XY (FX^2+FY^2)^1/2",
+            "Shear XZ (FX^2+FZ^2)^1/2",
+            "Shear YZ (FY^2+FZ^2)^1/2",
+        ])
         force_component_combo.setToolTip(
             "Select which force component to display:\n"
-            "- Magnitude: Total force magnitude sqrt(FX²+FY²+FZ²)\n"
+            "- Magnitude: Total force magnitude sqrt(FX^2+FY^2+FZ^2)\n"
             "- FX: Force in X direction\n"
             "- FY: Force in Y direction\n"
             "- FZ: Force in Z direction\n"
-            "- Shear: Transverse force sqrt(FY²+FZ²) (beam elements only)"
+            "- Shear XY: sqrt(FX^2+FY^2)\n"
+            "- Shear XZ: sqrt(FX^2+FZ^2)\n"
+            "- Shear YZ: sqrt(FY^2+FZ^2)"
         )
         force_component_label.setVisible(False)  # Hidden until nodal forces are loaded
         force_component_combo.setVisible(False)
@@ -156,7 +163,7 @@ class DisplayTabUIBuilder:
         export_forces_button.setStyleSheet(BUTTON_STYLE)
         export_forces_button.setToolTip(
             "Export nodal forces for the currently selected combination to CSV.\n"
-            "Includes FX, FY, FZ components, magnitude, element type, and coordinate system."
+            "Includes FX, FY, FZ components, magnitude, shear variants, element type, and coordinate system."
         )
         export_forces_button.setVisible(False)  # Hidden until nodal forces are loaded
         

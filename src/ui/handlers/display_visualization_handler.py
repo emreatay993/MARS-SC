@@ -151,8 +151,12 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
         if not active_scalars and mesh.array_names:
             active_scalars = mesh.array_names[0]
         if active_scalars:
-            self.state.data_column = active_scalars
-            self.tab.data_column = active_scalars
+            # Preserve display labels with units when available
+            if not self.tab.data_column or self.tab.data_column == "Result" or self.tab.data_column == active_scalars:
+                self.state.data_column = active_scalars
+                self.tab.data_column = active_scalars
+            else:
+                self.state.data_column = self.tab.data_column
 
         # Get scalar bar digit format from state
         digits = getattr(self.state, 'scalar_bar_digits', 4)
@@ -288,6 +292,7 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
                 has_min_stress = "Min_Stress" in current_mesh.array_names
                 has_combo_of_max = "Combo_of_Max" in current_mesh.array_names
                 has_combo_of_min = "Combo_of_Min" in current_mesh.array_names
+                has_force_envelope = "Max_Force_Magnitude" in current_mesh.array_names
                 
                 if has_max_stress or has_min_stress:
                     # This is batch solve result - show enhanced information
@@ -296,18 +301,19 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
                     combo_names = getattr(self.tab, 'combination_names', [])
                     result_type = getattr(self.tab, 'current_result_type', None)
                     
+                    stress_unit = "MPa"
                     # Show max value with combination info
                     if has_max_stress:
                         max_val = current_mesh["Max_Stress"][point_id]
                         if has_combo_of_max and combo_names:
                             combo_idx = int(current_mesh["Combo_of_Max"][point_id])
                             combo_name = combo_names[combo_idx] if combo_idx < len(combo_names) else f"#{combo_idx + 1}"
-                            lines.append(f"Max: {max_val:.5f} ({combo_name})")
+                            lines.append(f"Max: {max_val:.5f} {stress_unit} ({combo_name})")
                         elif has_combo_of_max:
                             combo_idx = int(current_mesh["Combo_of_Max"][point_id])
-                            lines.append(f"Max: {max_val:.5f} (Combo #{combo_idx + 1})")
+                            lines.append(f"Max: {max_val:.5f} {stress_unit} (Combo #{combo_idx + 1})")
                         else:
-                            lines.append(f"Max: {max_val:.5f}")
+                            lines.append(f"Max: {max_val:.5f} {stress_unit}")
                     
                     # Show min value with combination info (only for min_principal stress)
                     if has_min_stress and result_type == "min_principal":
@@ -315,16 +321,124 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
                         if has_combo_of_min and combo_names:
                             combo_idx = int(current_mesh["Combo_of_Min"][point_id])
                             combo_name = combo_names[combo_idx] if combo_idx < len(combo_names) else f"#{combo_idx + 1}"
-                            lines.append(f"Min: {min_val:.5f} ({combo_name})")
+                            lines.append(f"Min: {min_val:.5f} {stress_unit} ({combo_name})")
                         elif has_combo_of_min:
                             combo_idx = int(current_mesh["Combo_of_Min"][point_id])
-                            lines.append(f"Min: {min_val:.5f} (Combo #{combo_idx + 1})")
+                            lines.append(f"Min: {min_val:.5f} {stress_unit} (Combo #{combo_idx + 1})")
                         else:
-                            lines.append(f"Min: {min_val:.5f}")
+                            lines.append(f"Min: {min_val:.5f} {stress_unit}")
+                elif has_force_envelope:
+                    # Force envelope visualization - show current scalar and combo info if available
+                    combo_names = getattr(self.tab, 'combination_names', [])
+                    force_unit = "N"
+                    if getattr(self.tab, 'nodal_forces_result', None) is not None:
+                        force_unit = self.tab.nodal_forces_result.force_unit
+                    active_name = current_mesh.active_scalars_name or self.tab.data_column
+                    if active_name in current_mesh.array_names:
+                        value = current_mesh[active_name][point_id]
+                        if active_name.startswith("Combo_of_"):
+                            lines.append(f"{active_name}: Combo #{int(value) + 1}")
+                        else:
+                            lines.append(f"{active_name} [{force_unit}]: {value:.5f}")
+                        # Map active scalar to combo index array and also show the opposite envelope combo
+                        def _append_combo_line(label, field):
+                            if field in current_mesh.array_names:
+                                combo_idx = int(current_mesh[field][point_id])
+                                if combo_names and 0 <= combo_idx < len(combo_names):
+                                    lines.append(f"{label}: {combo_names[combo_idx]}")
+                                else:
+                                    lines.append(f"{label}: Combo #{combo_idx + 1}")
+
+                        combo_field = None
+                        if active_name == "Max_Force_Magnitude":
+                            combo_field = "Combo_of_Max"
+                        elif active_name == "Min_Force_Magnitude":
+                            combo_field = "Combo_of_Min"
+                        elif active_name.startswith("Max_") or active_name.startswith("Min_"):
+                            combo_field = f"Combo_of_{active_name}"
+
+                        # Show both max and min combos when available
+                        def _append_value_line(label, field):
+                            if field in current_mesh.array_names:
+                                val = current_mesh[field][point_id]
+                                lines.append(f"{label} [{force_unit}]: {val:.5f}")
+
+                        if active_name in ("Combo_of_Max", "Combo_of_Min"):
+                            _append_value_line("Max", "Max_Force_Magnitude")
+                            _append_combo_line("Combo of Max", "Combo_of_Max")
+                            _append_value_line("Min", "Min_Force_Magnitude")
+                            _append_combo_line("Combo of Min", "Combo_of_Min")
+                        elif active_name.startswith("Combo_of_Max_"):
+                            suffix = active_name.replace("Combo_of_Max_", "", 1)
+                            _append_value_line("Max", f"Max_{suffix}")
+                            _append_combo_line("Combo of Max", active_name)
+                            _append_value_line("Min", f"Min_{suffix}")
+                            _append_combo_line("Combo of Min", f"Combo_of_Min_{suffix}")
+                        elif active_name.startswith("Combo_of_Min_"):
+                            suffix = active_name.replace("Combo_of_Min_", "", 1)
+                            _append_value_line("Min", f"Min_{suffix}")
+                            _append_combo_line("Combo of Min", active_name)
+                            _append_value_line("Max", f"Max_{suffix}")
+                            _append_combo_line("Combo of Max", f"Combo_of_Max_{suffix}")
+                        elif active_name == "Max_Force_Magnitude":
+                            _append_value_line("Max", "Max_Force_Magnitude")
+                            _append_combo_line("Combo of Max", "Combo_of_Max")
+                            _append_value_line("Min", "Min_Force_Magnitude")
+                            _append_combo_line("Combo of Min", "Combo_of_Min")
+                        elif active_name == "Min_Force_Magnitude":
+                            _append_value_line("Min", "Min_Force_Magnitude")
+                            _append_combo_line("Combo of Min", "Combo_of_Min")
+                            _append_value_line("Max", "Max_Force_Magnitude")
+                            _append_combo_line("Combo of Max", "Combo_of_Max")
+                        elif active_name.startswith("Max_"):
+                            _append_value_line("Max", active_name)
+                            _append_combo_line("Combo of Max", combo_field)
+                            if combo_field:
+                                min_field = active_name.replace("Max_", "Min_", 1)
+                                _append_value_line("Min", min_field)
+                                _append_combo_line("Combo of Min", combo_field.replace("Combo_of_Max_", "Combo_of_Min_"))
+                        elif active_name.startswith("Min_"):
+                            _append_value_line("Min", active_name)
+                            _append_combo_line("Combo of Min", combo_field)
+                            if combo_field:
+                                max_field = active_name.replace("Min_", "Max_", 1)
+                                _append_value_line("Max", max_field)
+                                _append_combo_line("Combo of Max", combo_field.replace("Combo_of_Min_", "Combo_of_Max_"))
+                        else:
+                            if combo_field:
+                                _append_combo_line(combo_field, combo_field)
+                    else:
+                        # Fallback to standard display value if active array not found
+                        value = current_mesh[self.tab.data_column][point_id]
+                        lines.append(f"{self.tab.data_column}: {value:.5f}")
                 else:
-                    # Standard visualization - show current data column value
-                    value = current_mesh[self.tab.data_column][point_id]
-                    lines.append(f"{self.tab.data_column}: {value:.5f}")
+                    # Standard visualization - show current data column value with units when applicable
+                    active_name = current_mesh.active_scalars_name or self.tab.data_column
+                    value = current_mesh[active_name][point_id]
+                    if active_name.startswith("Combo_of_"):
+                        lines.append(f"{active_name}: Combo #{int(value) + 1}")
+                    else:
+                        unit = ""
+                        if "Stress" in active_name or active_name.endswith("_Stress"):
+                            unit = "MPa"
+                        elif active_name in ("U_mag", "UX", "UY", "UZ", "Max_U_mag", "Min_U_mag"):
+                            disp_unit = "mm"
+                            if getattr(self.tab, 'deformation_result', None) is not None:
+                                disp_unit = self.tab.deformation_result.displacement_unit
+                            unit = disp_unit
+                        elif active_name in (
+                            "Force_Magnitude", "Max_Force_Magnitude", "Min_Force_Magnitude",
+                            "FX", "FY", "FZ", "Shear_XY", "Shear_XZ", "Shear_YZ",
+                            "Max_FX", "Min_FX", "Max_FY", "Min_FY", "Max_FZ", "Min_FZ",
+                            "Max_Shear_XY", "Min_Shear_XY", "Max_Shear_XZ", "Min_Shear_XZ",
+                            "Max_Shear_YZ", "Min_Shear_YZ", "Shear_Force"
+                        ):
+                            if getattr(self.tab, 'nodal_forces_result', None) is not None:
+                                unit = self.tab.nodal_forces_result.force_unit
+                        if unit:
+                            lines.append(f"{active_name} [{unit}]: {value:.5f}")
+                        else:
+                            lines.append(f"{active_name}: {value:.5f}")
                 
                 annotation.SetText(2, "\n".join(lines))
             else:
