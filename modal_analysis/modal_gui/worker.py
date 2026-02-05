@@ -8,7 +8,7 @@ from typing import Optional
 
 from PyQt5.QtCore import QThread, pyqtSignal
 
-from modal_gui import dpf_modal_extractor
+from modal_gui import csv_writer, dpf_modal_extractor
 
 
 @dataclass
@@ -22,7 +22,6 @@ class ExtractionJob:
     do_displacement: bool
     chunk_size: Optional[int] = None
     specific_mode: Optional[int] = None  # If set, extract only this mode
-    backend: Optional[str] = None  # "auto", "dpf", or "pymapdl"
 
 
 class ModalExtractionWorker(QThread):
@@ -110,7 +109,6 @@ class ModalExtractionWorker(QThread):
                     log_cb=self.log.emit,
                     progress_cb=progress_cb,
                     should_cancel=self._should_cancel,
-                    backend=job.backend,
                 )
             else:
                 func(
@@ -122,7 +120,24 @@ class ModalExtractionWorker(QThread):
                     log_cb=self.log.emit,
                     progress_cb=progress_cb,
                     should_cancel=self._should_cancel,
-                    backend=job.backend,
                 )
 
             self.log.emit(f"Finished {label} extraction.")
+            
+            # Validate output for zero value issues
+            self.log.emit(f"Validating {label} output...")
+            validation = csv_writer.validate_csv_for_zeros(
+                output_path, 
+                log_cb=self.log.emit
+            )
+            if not validation['valid']:
+                if validation.get('all_zeros'):
+                    self.log.emit(
+                        f"CRITICAL WARNING: {label} output contains ALL ZEROS! "
+                        "This indicates a node ID mismatch between the mesh and results."
+                    )
+                else:
+                    self.log.emit(
+                        f"WARNING: {label} output has {len(validation.get('high_zero_cols', []))} "
+                        "columns with >50% zeros. Please verify results."
+                    )

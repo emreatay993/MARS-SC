@@ -16,13 +16,6 @@ except ImportError:
     dpf = None
     DPF_AVAILABLE = False
 
-try:
-    from . import pymapdl_extractor
-    PYMAPDL_READER_AVAILABLE = pymapdl_extractor.PYMAPDL_READER_AVAILABLE
-except ImportError:
-    pymapdl_extractor = None
-    PYMAPDL_READER_AVAILABLE = False
-
 from . import csv_writer, memory_policy
 
 
@@ -91,80 +84,65 @@ def _start_local_server(protocol: Optional[str]):
     return dpf.start_local_server(as_global=False, config=config)
 
 
-def _env_str(name: str, default: str = "") -> str:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip()
-
-
 def list_named_selections(rst_path: str) -> List[str]:
     """List named selections in RST file.
     
-    Uses DPF if available, otherwise falls back to PyMAPDL Reader.
+    Uses DPF.
     """
-    if DPF_AVAILABLE:
-        try:
-            model = dpf.Model(rst_path)
-            names = model.metadata.available_named_selections
-            return list(names) if names else []
-        except Exception:
-            pass
-    
-    if PYMAPDL_READER_AVAILABLE:
-        return pymapdl_extractor.list_named_selections(rst_path)
-    
-    raise DPFNotAvailableError(
-        "Neither ansys-dpf-core nor ansys-mapdl-reader is installed."
-    )
+    _require_dpf()
+    model = dpf.Model(rst_path)
+    names = model.metadata.available_named_selections
+    return list(names) if names else []
 
 
 def get_model_info(rst_path: str) -> dict:
     """Get model information from RST file.
     
-    Uses DPF if available, otherwise falls back to PyMAPDL Reader.
+    Uses DPF.
     """
-    # Try DPF first
-    if DPF_AVAILABLE:
-        try:
-            model = dpf.Model(rst_path)
-            info = {
-                "num_nodes": 0,
-                "num_elements": 0,
-                "n_sets": 0,
-                "unit_system": "Unknown",
-                "named_selections": [],
-            }
-            try:
-                mesh = model.metadata.meshed_region
-                info["num_nodes"] = mesh.nodes.n_nodes
-                info["num_elements"] = mesh.elements.n_elements
-            except Exception:
-                pass
-            try:
-                info["n_sets"] = model.metadata.time_freq_support.n_sets
-            except Exception:
-                pass
-            try:
-                info["unit_system"] = str(model.metadata.result_info.unit_system)
-            except Exception:
-                pass
-            try:
-                names = model.metadata.available_named_selections
-                info["named_selections"] = list(names) if names else []
-            except Exception:
-                pass
-            return info
-        except Exception:
-            pass  # Fall through to PyMAPDL Reader
-    
-    # Fallback to PyMAPDL Reader
-    if PYMAPDL_READER_AVAILABLE:
-        return pymapdl_extractor.get_model_info(rst_path)
-    
-    raise DPFNotAvailableError(
-        "Neither ansys-dpf-core nor ansys-mapdl-reader is installed."
-    )
+    _require_dpf()
+    model = dpf.Model(rst_path)
+    info = {
+        "num_nodes": 0,
+        "num_elements": 0,
+        "n_sets": 0,
+        "unit_system": "Unknown",
+        "named_selections": [],
+        "available_results": [],
+    }
+    try:
+        mesh = model.metadata.meshed_region
+        info["num_nodes"] = mesh.nodes.n_nodes
+        info["num_elements"] = mesh.elements.n_elements
+    except Exception:
+        pass
+    try:
+        info["n_sets"] = model.metadata.time_freq_support.n_sets
+    except Exception:
+        pass
+    try:
+        info["unit_system"] = str(model.metadata.result_info.unit_system)
+    except Exception:
+        pass
+    try:
+        names = model.metadata.available_named_selections
+        info["named_selections"] = list(names) if names else []
+    except Exception:
+        pass
+    try:
+        avail = model.metadata.result_info.available_results
+        info["available_results"] = [res.name for res in avail] if avail else []
+    except Exception:
+        pass
+    return info
+
+
+def _available_result_names(model: "dpf.Model") -> set[str]:
+    try:
+        avail = model.metadata.result_info.available_results
+        return {res.name.lower() for res in avail} if avail else set()
+    except Exception:
+        return set()
 
 
 def get_n_sets(rst_path: str) -> int:
@@ -179,23 +157,12 @@ def get_n_sets(rst_path: str) -> int:
 def get_nodal_scoping_ids(rst_path: str, named_selection: Optional[str]) -> List[int]:
     """Get node IDs for a named selection.
     
-    Uses DPF if available, otherwise falls back to PyMAPDL Reader.
-    Note: PyMAPDL Reader only supports 'All Nodes' selection.
+    Uses DPF.
     """
-    if DPF_AVAILABLE:
-        try:
-            model = dpf.Model(rst_path)
-            scoping = _sorted_scoping(_resolve_nodal_scoping(model, named_selection))
-            return list(scoping.ids)
-        except Exception:
-            pass
-    
-    if PYMAPDL_READER_AVAILABLE:
-        return pymapdl_extractor.get_nodal_scoping_ids(rst_path, named_selection)
-    
-    raise DPFNotAvailableError(
-        "Neither ansys-dpf-core nor ansys-mapdl-reader is installed."
-    )
+    _require_dpf()
+    model = dpf.Model(rst_path)
+    scoping = _sorted_scoping(_resolve_nodal_scoping(model, named_selection))
+    return list(scoping.ids)
 
 
 def _get_length_conversion_factor(source_unit: str) -> float:
@@ -342,7 +309,14 @@ def _align_field_to_nodes(
     field: "dpf.Field",
     requested_node_ids: Sequence[int],
     expected_components: int,
+    mesh_node_ids: Optional[Sequence[int]] = None,
+    log_cb: Optional[Callable[[str], None]] = None,
 ) -> np.ndarray:
+    """Align DPF field data to the requested node order.
+    
+    Returns an array of shape (len(requested_node_ids), expected_components).
+    Nodes not found in field.scoping will have zero values.
+    """
     data = np.array(field.data)
     if data.ndim == 1:
         if expected_components == 1:
@@ -363,12 +337,48 @@ def _align_field_to_nodes(
     if len(dpf_node_ids) == len(requested) and np.array_equal(dpf_node_ids, requested):
         return data
 
-    id_to_idx = {nid: idx for idx, nid in enumerate(dpf_node_ids)}
-    aligned = np.zeros((len(requested), expected_components), dtype=float)
-    for out_idx, node_id in enumerate(requested):
-        src_idx = id_to_idx.get(node_id)
-        if src_idx is not None:
-            aligned[out_idx, :] = data[src_idx, :]
+    def _align_with_ids(source_ids: np.ndarray) -> tuple[np.ndarray, int]:
+        id_to_idx = {nid: idx for idx, nid in enumerate(source_ids)}
+        aligned_local = np.zeros((len(requested), expected_components), dtype=float)
+        matched_local = 0
+        for out_idx, node_id in enumerate(requested):
+            src_idx = id_to_idx.get(node_id)
+            if src_idx is not None:
+                aligned_local[out_idx, :] = data[src_idx, :]
+                matched_local += 1
+        return aligned_local, matched_local
+
+    aligned, matched_count = _align_with_ids(dpf_node_ids)
+
+    # Fallback: some result providers may return 0-based or 1-based indices
+    # instead of true node IDs. If overlap is very low, attempt remap.
+    if mesh_node_ids is not None and matched_count < max(1, int(0.01 * len(requested))):
+        mesh_node_ids_arr = np.array(mesh_node_ids, dtype=int)
+        remapped = None
+        if dpf_node_ids.min(initial=0) >= 0 and dpf_node_ids.max(initial=-1) < len(mesh_node_ids_arr):
+            remapped = mesh_node_ids_arr[dpf_node_ids]
+        elif dpf_node_ids.min(initial=0) >= 1 and dpf_node_ids.max(initial=0) <= len(mesh_node_ids_arr):
+            remapped = mesh_node_ids_arr[dpf_node_ids - 1]
+        if remapped is not None:
+            remapped_aligned, remapped_matched = _align_with_ids(remapped)
+            if remapped_matched > matched_count:
+                aligned = remapped_aligned
+                matched_count = remapped_matched
+                if log_cb:
+                    log_cb(
+                        "    Detected index-based scoping ids; remapped to mesh node IDs "
+                        f"({remapped_matched}/{len(requested)} matched)."
+                    )
+    
+    # Warn if significant mismatch
+    if matched_count < len(requested):
+        mismatch_pct = 100 * (len(requested) - matched_count) / len(requested)
+        if log_cb and mismatch_pct > 1.0:
+            log_cb(
+                f"    Warning: {mismatch_pct:.1f}% of requested nodes not found in DPF results "
+                f"({len(requested) - matched_count}/{len(requested)} nodes)"
+            )
+    
     return aligned
 
 
@@ -611,6 +621,7 @@ def _evaluate_aligned_result(
     nodal_averaging: bool,
     average_across_bodies: bool,
     server=None,
+    log_cb: Optional[Callable[[str], None]] = None,
 ) -> np.ndarray:
     field = _evaluate_result(
         model,
@@ -623,7 +634,18 @@ def _evaluate_aligned_result(
         server=server,
         data_sources=data_sources,
     )
-    return _align_field_to_nodes(field, node_ids, n_components)
+    mesh_node_ids = None
+    try:
+        mesh_node_ids = mesh.nodes.scoping.ids
+    except Exception:
+        mesh_node_ids = None
+    return _align_field_to_nodes(
+        field,
+        node_ids,
+        n_components,
+        mesh_node_ids=mesh_node_ids,
+        log_cb=log_cb,
+    )
 
 
 def extract_modal_tensor_csv(
@@ -641,72 +663,12 @@ def extract_modal_tensor_csv(
     log_cb: Optional[Callable[[str], None]] = None,
     progress_cb: Optional[Callable[[int, int], None]] = None,
     should_cancel: Optional[Callable[[], bool]] = None,
-    backend: Optional[str] = None,  # "dpf", "pymapdl", or "auto" (default)
 ) -> None:
     log = _ensure_callback(log_cb)
     progress = _ensure_callback(progress_cb)
     cancel_check = _ensure_callback(should_cancel, False)
     
-    # Determine backend: "dpf", "pymapdl", or "auto"
-    selected_backend = (backend or _env_str("MODAL_EXTRACTION_BACKEND", "auto")).lower()
-    
-    # Auto mode: use PyMAPDL Reader as primary (faster), fall back to DPF if needed
-    if selected_backend == "auto":
-        if PYMAPDL_READER_AVAILABLE:
-            try:
-                log("Using PyMAPDL Reader backend")
-                return pymapdl_extractor.extract_modal_tensor_csv(
-                    rst_path=rst_path,
-                    output_csv_path=output_csv_path,
-                    result_kind=result_kind,
-                    named_selection=named_selection,
-                    mode_ids=mode_ids,
-                    mode_count=mode_count,
-                    chunk_size=chunk_size,
-                    node_order=node_order,
-                    log_cb=log_cb,
-                    progress_cb=progress_cb,
-                    should_cancel=should_cancel,
-                )
-            except ModalExtractionCanceled:
-                raise  # Don't fallback on user cancellation
-            except Exception as pymapdl_err:
-                if DPF_AVAILABLE:
-                    log(f"PyMAPDL Reader failed: {pymapdl_err}")
-                    log("Falling back to DPF backend...")
-                    # Fall through to DPF path below
-                else:
-                    raise  # No fallback available
-        elif DPF_AVAILABLE:
-            log("PyMAPDL Reader not available, using DPF backend")
-            # Fall through to DPF path below
-        else:
-            raise DPFNotAvailableError(
-                "Neither ansys-dpf-core nor ansys-mapdl-reader is installed."
-            )
-    
-    if selected_backend == "pymapdl":
-        if not PYMAPDL_READER_AVAILABLE:
-            raise ModalExtractionError(
-                "PyMAPDL Reader backend requested but ansys-mapdl-reader is not installed. "
-                "Install with: pip install ansys-mapdl-reader"
-            )
-        log("Using PyMAPDL Reader backend")
-        return pymapdl_extractor.extract_modal_tensor_csv(
-            rst_path=rst_path,
-            output_csv_path=output_csv_path,
-            result_kind=result_kind,
-            named_selection=named_selection,
-            mode_ids=mode_ids,
-            mode_count=mode_count,
-            chunk_size=chunk_size,
-            node_order=node_order,
-            log_cb=log_cb,
-            progress_cb=progress_cb,
-            should_cancel=should_cancel,
-        )
-    
-    # Use DPF backend (forced or fallback from auto when PyMAPDL unavailable)
+    # Use DPF backend only.
     _require_dpf()
 
     protocol = _normalize_protocol(server_protocol) or _normalize_protocol(
@@ -718,6 +680,12 @@ def extract_modal_tensor_csv(
         model = dpf.Model(rst_path, server=server)
         data_sources = dpf.DataSources(rst_path, server=server)
         mesh = model.metadata.meshed_region
+        if result_kind == "strain":
+            available = _available_result_names(model)
+            if not {"elastic_strain", "total_strain", "strain"} & available:
+                raise ModalExtractionError(
+                    "Strain results are not available in this RST file."
+                )
         if node_order is not None:
             output_order = list(node_order)
             unique_ids = list(dict.fromkeys(output_order))
@@ -803,6 +771,7 @@ def extract_modal_tensor_csv(
                             nodal_averaging=nodal_averaging,
                             average_across_bodies=average_across_bodies,
                             server=server,
+                            log_cb=log,
                         )
                         mode_maps.append({nid: aligned[idx] for idx, nid in enumerate(chunk_unique_ids)})
                         del aligned
@@ -848,6 +817,7 @@ def extract_modal_tensor_csv(
                             nodal_averaging=nodal_averaging,
                             average_across_bodies=average_across_bodies,
                             server=server,
+                            log_cb=log,
                         )
                         chunk_data[:, col:col + n_components] = aligned
                         col += n_components

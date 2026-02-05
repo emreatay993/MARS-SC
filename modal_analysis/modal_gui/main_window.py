@@ -149,21 +149,10 @@ class ModalMainWindow(QMainWindow):
         self.disp_check = QCheckBox("Directional deformation")
         self.stress_check.setChecked(True)
         self.disp_check.setChecked(True)
-        
-        self.backend_combo = QComboBox()
-        self.backend_combo.addItems(["Auto (PyMAPDL)", "DPF only", "PyMAPDL Reader"])
-        self.backend_combo.setToolTip(
-            "Auto: Uses PyMAPDL Reader (faster, stable for many modes)\n"
-            "DPF only: Uses ANSYS DPF (slower, may crash on large mode counts)\n"
-            "PyMAPDL Reader: Direct RST file reading, recommended"
-        )
 
         layout.addWidget(self.stress_check)
         layout.addWidget(self.strain_check)
         layout.addWidget(self.disp_check)
-        layout.addSpacing(20)
-        layout.addWidget(QLabel("Backend:"))
-        layout.addWidget(self.backend_combo)
         layout.addStretch(1)
         return box
 
@@ -278,6 +267,7 @@ class ModalMainWindow(QMainWindow):
         n_nodes = info.get("num_nodes", 0)
         n_elems = info.get("num_elements", 0)
         units = info.get("unit_system", "Unknown")
+        available_results = {name.lower() for name in info.get("available_results", [])}
 
         self.named_selection_combo.clear()
         self.named_selection_combo.addItem("All Nodes")
@@ -294,6 +284,16 @@ class ModalMainWindow(QMainWindow):
             f"Nodes: {n_nodes} | Elements: {n_elems} | Units: {units}"
         )
 
+        # Enable/disable strain checkbox based on availability
+        has_strain = bool({"elastic_strain", "total_strain", "strain"} & available_results)
+        if has_strain:
+            self.strain_check.setEnabled(True)
+            self.strain_check.setToolTip("")
+        else:
+            self.strain_check.setChecked(False)
+            self.strain_check.setEnabled(False)
+            self.strain_check.setToolTip("Strain results are not available in this RST file.")
+
     def _start_extraction(self) -> None:
         rst_path = self.rst_path_edit.text().strip()
         output_dir = self.output_dir_edit.text().strip()
@@ -306,8 +306,6 @@ class ModalMainWindow(QMainWindow):
             return
 
         specific_mode = self.specific_mode_spin.value() if self.specific_mode_check.isChecked() else None
-        backend_map = {0: "auto", 1: "dpf", 2: "pymapdl"}
-        backend = backend_map.get(self.backend_combo.currentIndex(), "auto")
         
         job = ExtractionJob(
             rst_path=rst_path,
@@ -318,7 +316,6 @@ class ModalMainWindow(QMainWindow):
             do_strain=self.strain_check.isChecked(),
             do_displacement=self.disp_check.isChecked(),
             specific_mode=specific_mode,
-            backend=backend,
         )
 
         self.worker = ModalExtractionWorker(job)
@@ -361,7 +358,6 @@ class ModalMainWindow(QMainWindow):
         self.stress_check.setEnabled(not running)
         self.strain_check.setEnabled(not running)
         self.disp_check.setEnabled(not running)
-        self.backend_combo.setEnabled(not running)
         if not running:
             self.progress_bar.setValue(0)
             self.progress_status.setText("Idle")
@@ -506,14 +502,10 @@ class ModalMainWindow(QMainWindow):
             QMessageBox.warning(self, "Error", "Select at least one result type.")
             return
         
-        # Get backend
-        backend_map = {0: "auto", 1: "dpf", 2: "pymapdl"}
-        backend = backend_map.get(self.backend_combo.currentIndex(), "auto")
-        
         self._append_log("=" * 55)
         self._append_log("Running time estimation...")
         self._append_log(f"Selection: {named_selection} ({total_nodes:,} nodes)")
-        self._append_log(f"Modes: {total_modes}, Backend: {backend}")
+        self._append_log(f"Modes: {total_modes}, Backend: dpf")
         self._append_log("-" * 55)
         
         # Disable UI during estimation
@@ -541,7 +533,6 @@ class ModalMainWindow(QMainWindow):
                     output_csv_path=temp_csv,
                     mode_count=1,
                     named_selection=named_selection,
-                    backend=backend,
                     log_cb=lambda msg: None,
                 )
                 t1 = time.perf_counter() - start1
@@ -558,7 +549,6 @@ class ModalMainWindow(QMainWindow):
                     output_csv_path=temp_csv,
                     mode_count=3,
                     named_selection=named_selection,
-                    backend=backend,
                     log_cb=lambda msg: None,
                 )
                 t2 = time.perf_counter() - start2
@@ -595,7 +585,7 @@ class ModalMainWindow(QMainWindow):
             msg_lines = [f"Estimated extraction time: {time_str}\n"]
             msg_lines.append(f"Nodes: {total_nodes:,}")
             msg_lines.append(f"Modes: {total_modes}")
-            msg_lines.append(f"Backend: {backend}\n")
+            msg_lines.append("Backend: dpf\n")
             msg_lines.append("Breakdown:")
             for label, est_time, base, per_mode in estimates:
                 msg_lines.append(f"  {label}: {est_time:.1f}s")
