@@ -19,6 +19,7 @@ if str(BASE_DIR) not in sys.path:
 RST_PATH = BASE_DIR / "example_rst_file_modal" / "file.rst"
 STRESS_REF = BASE_DIR / "example_tensor_outputs" / "modal_stress_tensor_w_coords_2.csv"
 DISP_REF = BASE_DIR / "example_tensor_outputs" / "modal_directional_deformation_w_coords_2.csv"
+RST_WITH_ENF = BASE_DIR.parent / "example_dataset" / "file_analysis1_.rst"
 
 
 def require_dpf() -> None:

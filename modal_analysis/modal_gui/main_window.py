@@ -62,6 +62,8 @@ class ModalMainWindow(QMainWindow):
 
         self.worker: Optional[ModalExtractionWorker] = None
         self.stdout_logger = None
+        self._strain_available = True
+        self._enf_available = True
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -147,12 +149,19 @@ class ModalMainWindow(QMainWindow):
         self.stress_check = QCheckBox("Stress tensor")
         self.strain_check = QCheckBox("Strain tensor")
         self.disp_check = QCheckBox("Directional deformation")
+        self.element_nodal_check = QCheckBox("Element nodal forces/moments (ENFO/ENMO)")
         self.stress_check.setChecked(True)
         self.disp_check.setChecked(True)
+        self.element_nodal_check.setChecked(False)
+        self.element_nodal_check.setToolTip(
+            "Extract ENFO and ENMO into one CSV. ENMO is added automatically when "
+            "rotational ENF components exist (beam/line-type contributions)."
+        )
 
         layout.addWidget(self.stress_check)
         layout.addWidget(self.strain_check)
         layout.addWidget(self.disp_check)
+        layout.addWidget(self.element_nodal_check)
         layout.addStretch(1)
         return box
 
@@ -229,7 +238,13 @@ class ModalMainWindow(QMainWindow):
             if box:
                 box.setStyleSheet(GROUP_BOX_STYLE)
 
-        for checkbox in (self.stress_check, self.strain_check, self.disp_check, self.specific_mode_check):
+        for checkbox in (
+            self.stress_check,
+            self.strain_check,
+            self.disp_check,
+            self.element_nodal_check,
+            self.specific_mode_check,
+        ):
             checkbox.setStyleSheet(CHECKBOX_STYLE)
 
     def _find_group(self, title: str) -> Optional[QGroupBox]:
@@ -286,6 +301,7 @@ class ModalMainWindow(QMainWindow):
 
         # Enable/disable strain checkbox based on availability
         has_strain = bool({"elastic_strain", "total_strain", "strain"} & available_results)
+        self._strain_available = has_strain
         if has_strain:
             self.strain_check.setEnabled(True)
             self.strain_check.setToolTip("")
@@ -293,6 +309,21 @@ class ModalMainWindow(QMainWindow):
             self.strain_check.setChecked(False)
             self.strain_check.setEnabled(False)
             self.strain_check.setToolTip("Strain results are not available in this RST file.")
+
+        has_enf = "element_nodal_forces" in available_results
+        self._enf_available = has_enf
+        if has_enf:
+            self.element_nodal_check.setEnabled(True)
+            self.element_nodal_check.setToolTip(
+                "Extract ENFO and ENMO into one CSV. ENMO is added automatically when "
+                "rotational ENF components exist (beam/line-type contributions)."
+            )
+        else:
+            self.element_nodal_check.setChecked(False)
+            self.element_nodal_check.setEnabled(False)
+            self.element_nodal_check.setToolTip(
+                "Element nodal force results are not available in this RST file."
+            )
 
     def _start_extraction(self) -> None:
         rst_path = self.rst_path_edit.text().strip()
@@ -315,6 +346,7 @@ class ModalMainWindow(QMainWindow):
             do_stress=self.stress_check.isChecked(),
             do_strain=self.strain_check.isChecked(),
             do_displacement=self.disp_check.isChecked(),
+            do_element_nodal=self.element_nodal_check.isChecked(),
             specific_mode=specific_mode,
         )
 
@@ -355,9 +387,16 @@ class ModalMainWindow(QMainWindow):
         else:
             self.mode_count_spin.setEnabled(False)
             self.specific_mode_spin.setEnabled(False)
-        self.stress_check.setEnabled(not running)
-        self.strain_check.setEnabled(not running)
-        self.disp_check.setEnabled(not running)
+        if running:
+            self.stress_check.setEnabled(False)
+            self.strain_check.setEnabled(False)
+            self.disp_check.setEnabled(False)
+            self.element_nodal_check.setEnabled(False)
+        else:
+            self.stress_check.setEnabled(True)
+            self.disp_check.setEnabled(True)
+            self.strain_check.setEnabled(self._strain_available)
+            self.element_nodal_check.setEnabled(self._enf_available)
         if not running:
             self.progress_bar.setValue(0)
             self.progress_status.setText("Idle")
@@ -497,6 +536,12 @@ class ModalMainWindow(QMainWindow):
             result_types.append(("strain", "Strain (6 comp)", dpf_modal_extractor.extract_modal_strain_csv))
         if self.disp_check.isChecked():
             result_types.append(("displacement", "Displacement (3 comp)", dpf_modal_extractor.extract_modal_displacement_csv))
+        if self.element_nodal_check.isChecked():
+            result_types.append((
+                "element_nodal_force_moment",
+                "Element Nodal ENFO+ENMO (6 comp)",
+                dpf_modal_extractor.extract_modal_element_nodal_forces_moments_csv,
+            ))
         
         if not result_types:
             QMessageBox.warning(self, "Error", "Select at least one result type.")

@@ -145,6 +145,54 @@ def _available_result_names(model: "dpf.Model") -> set[str]:
         return set()
 
 
+def check_element_nodal_moments_available(
+    rst_path: str,
+    mode_id: Optional[int] = None,
+    server_protocol: Optional[str] = None,
+) -> bool:
+    """Check whether ENMOX/ENMOY/ENMOZ can be extracted from this RST."""
+    _require_dpf()
+
+    protocol = _normalize_protocol(server_protocol) or _normalize_protocol(
+        os.getenv("MODAL_DPF_PROTOCOL")
+    )
+    server = _start_local_server(protocol)
+
+    try:
+        model = dpf.Model(rst_path, server=server)
+        available = _available_result_names(model)
+        has_enf = "element_nodal_forces" in available or any("enf" in name for name in available)
+        if not has_enf:
+            return False
+
+        n_sets = int(model.metadata.time_freq_support.n_sets)
+        if n_sets <= 0:
+            return False
+
+        if mode_id is None:
+            set_id = 1
+        else:
+            set_id = int(mode_id)
+        set_id = max(1, min(set_id, n_sets))
+
+        data_sources = dpf.DataSources(rst_path, server=server)
+        return _element_nodal_dofs_available(
+            model,
+            set_id=set_id,
+            dofs_value=1,
+            server=server,
+            data_sources=data_sources,
+        )
+    except Exception:
+        return False
+    finally:
+        if server is not None:
+            try:
+                server.shutdown()
+            except Exception:
+                pass
+
+
 def get_n_sets(rst_path: str) -> int:
     _require_dpf()
     model = dpf.Model(rst_path)
@@ -302,7 +350,61 @@ def _connect_label(obj, label: str) -> None:
 def _get_first_field(fields_container) -> "dpf.Field":
     if fields_container is None or len(fields_container) == 0:
         raise ModalExtractionError("DPF returned empty fields container.")
+    for idx in range(len(fields_container)):
+        field = fields_container[idx]
+        try:
+            if np.array(field.data).size > 0:
+                return field
+        except Exception:
+            continue
     return fields_container[0]
+
+
+def _is_force_result_kind(kind: str) -> bool:
+    return kind in ("element_nodal_force", "element_nodal_moment", "element_nodal_force_moment")
+
+
+def _field_data_size(field: "dpf.Field") -> int:
+    try:
+        return int(np.array(field.data).size)
+    except Exception:
+        return 0
+
+
+def _field_label_space(fields_container, index: int) -> dict:
+    try:
+        return fields_container.get_label_space(index)
+    except Exception:
+        return {}
+
+
+def _select_element_nodal_field(fields_container, dofs_value: int) -> Optional["dpf.Field"]:
+    best_match = None
+    best_size = -1
+    fallback = None
+    fallback_size = -1
+
+    for idx in range(len(fields_container)):
+        field = fields_container[idx]
+        size = _field_data_size(field)
+        if size <= 0:
+            continue
+        label_space = _field_label_space(fields_container, idx)
+        dofs = label_space.get("dofs")
+        if dofs is None:
+            if dofs_value == 0 and size > fallback_size:
+                fallback = field
+                fallback_size = size
+            continue
+        if int(dofs) == int(dofs_value) and size > best_size:
+            best_match = field
+            best_size = size
+
+    if best_match is not None:
+        return best_match
+    if fallback is not None:
+        return fallback
+    return None
 
 
 def _align_field_to_nodes(
@@ -420,6 +522,21 @@ def _result_operator(
                 except Exception:
                     continue
         raise ModalExtractionError("No strain operator available in this DPF build.")
+    if kind in ("element_nodal_force", "element_nodal_moment"):
+        op_factory = getattr(ops_result, "element_nodal_forces", None)
+        if op_factory is not None:
+            try:
+                return op_factory(server=server)
+            except Exception:
+                pass
+        if model is not None:
+            op_factory = getattr(model.results, "element_nodal_forces", None)
+            if op_factory is not None:
+                try:
+                    return op_factory()
+                except Exception:
+                    pass
+        raise ModalExtractionError("No element_nodal_forces operator available in this DPF build.")
     raise ModalExtractionError(f"Unknown result kind '{kind}'.")
 
 
@@ -430,6 +547,12 @@ def _result_components(kind: str) -> Tuple[str, ...]:
         return ("ex", "ey", "ez", "exy", "eyz", "exz")
     if kind == "displacement":
         return ("ux", "uy", "uz")
+    if kind == "element_nodal_force":
+        return ("enfox", "enfoy", "enfoz")
+    if kind == "element_nodal_moment":
+        return ("enmox", "enmoy", "enmoz")
+    if kind == "element_nodal_force_moment":
+        return ("enfox", "enfoy", "enfoz", "enmox", "enmoy", "enmoz")
     raise ModalExtractionError(f"Unknown result kind '{kind}'.")
 
 
@@ -535,6 +658,103 @@ def _average_across_bodies_field(
     return _get_first_field(merged_fc)
 
 
+def _evaluate_element_nodal_result(
+    model: "dpf.Model",
+    kind: str,
+    set_id: int,
+    mesh_scoping: "dpf.Scoping",
+    mesh: Optional["dpf.MeshedRegion"] = None,
+    server=None,
+    data_sources=None,
+    log_cb: Optional[Callable[[str], None]] = None,
+) -> Optional["dpf.Field"]:
+    target_dofs = 0 if kind == "element_nodal_force" else 1
+
+    last_error = None
+    for rotate_to_global in (True, False):
+        try:
+            op = _result_operator(kind, server=server, model=model)
+
+            time_scoping = dpf.Scoping(server=server)
+            time_scoping.ids = [int(set_id)]
+            _connect_if_present(op, "time_scoping", time_scoping)
+            _connect_mesh_scoping(op, mesh_scoping)
+            if data_sources is not None:
+                _connect_if_present(op, "data_sources", data_sources)
+            _connect_if_present(op, "bool_rotate_to_global", rotate_to_global)
+            _connect_if_present(op, "split_force_components", True)
+            _connect_if_present(op, "read_beams", True)
+            if hasattr(dpf.locations, "elemental_nodal"):
+                _connect_requested_location(op, dpf.locations.elemental_nodal)
+
+            try:
+                outputs = op.outputs
+            except Exception:
+                outputs = op
+            if not hasattr(outputs, "fields_container"):
+                raise ModalExtractionError("DPF result object missing fields_container output.")
+            fields_container = outputs.fields_container()
+            field = _select_element_nodal_field(fields_container, target_dofs)
+            if field is None:
+                return None
+
+            if mesh is not None and hasattr(dpf.locations, "elemental_nodal"):
+                try:
+                    if field.location == dpf.locations.elemental_nodal:
+                        return _average_to_nodal(field, mesh_scoping, mesh, server=server)
+                except Exception:
+                    pass
+
+            return field
+        except Exception as exc:
+            last_error = exc
+            if rotate_to_global and log_cb is not None:
+                log_cb(
+                    "    Element nodal force rotation to global failed; retrying in local coordinates."
+                )
+            continue
+
+    if isinstance(last_error, ModalExtractionError):
+        raise last_error
+    raise ModalExtractionError(
+        f"Failed to evaluate element nodal {'moments' if kind == 'element_nodal_moment' else 'forces'}: {last_error}"
+    )
+
+
+def _element_nodal_dofs_available(
+    model: "dpf.Model",
+    set_id: int,
+    dofs_value: int,
+    *,
+    server=None,
+    data_sources=None,
+) -> bool:
+    for rotate_to_global in (True, False):
+        try:
+            op = _result_operator("element_nodal_force", server=server, model=model)
+            time_scoping = dpf.Scoping(server=server)
+            time_scoping.ids = [int(set_id)]
+            _connect_if_present(op, "time_scoping", time_scoping)
+            if data_sources is not None:
+                _connect_if_present(op, "data_sources", data_sources)
+            _connect_if_present(op, "bool_rotate_to_global", rotate_to_global)
+            _connect_if_present(op, "split_force_components", True)
+            _connect_if_present(op, "read_beams", True)
+            if hasattr(dpf.locations, "elemental_nodal"):
+                _connect_requested_location(op, dpf.locations.elemental_nodal)
+
+            outputs = op.outputs if hasattr(op, "outputs") else op
+            if not hasattr(outputs, "fields_container"):
+                continue
+            fields_container = outputs.fields_container()
+            field = _select_element_nodal_field(fields_container, dofs_value)
+            if field is not None and _field_data_size(field) > 0:
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def _evaluate_result(
     model: "dpf.Model",
     kind: str,
@@ -545,7 +765,20 @@ def _evaluate_result(
     average_across_bodies: bool = True,
     server=None,
     data_sources=None,
-) -> "dpf.Field":
+    log_cb: Optional[Callable[[str], None]] = None,
+) -> Optional["dpf.Field"]:
+    if _is_force_result_kind(kind):
+        return _evaluate_element_nodal_result(
+            model,
+            kind,
+            set_id,
+            mesh_scoping,
+            mesh=mesh,
+            server=server,
+            data_sources=data_sources,
+            log_cb=log_cb,
+        )
+
     if force_nodal_average and kind in ("stress", "strain") and average_across_bodies and mesh is not None:
         try:
             return _average_across_bodies_field(
@@ -633,7 +866,10 @@ def _evaluate_aligned_result(
         average_across_bodies=average_across_bodies,
         server=server,
         data_sources=data_sources,
+        log_cb=log_cb,
     )
+    if field is None:
+        return np.zeros((len(node_ids), n_components), dtype=float)
     mesh_node_ids = None
     try:
         mesh_node_ids = mesh.nodes.scoping.ids
@@ -680,11 +916,19 @@ def extract_modal_tensor_csv(
         model = dpf.Model(rst_path, server=server)
         data_sources = dpf.DataSources(rst_path, server=server)
         mesh = model.metadata.meshed_region
+        available = _available_result_names(model)
         if result_kind == "strain":
-            available = _available_result_names(model)
             if not {"elastic_strain", "total_strain", "strain"} & available:
                 raise ModalExtractionError(
                     "Strain results are not available in this RST file."
+                )
+        if _is_force_result_kind(result_kind):
+            has_enf = "element_nodal_forces" in available or any(
+                "enf" in name for name in available
+            )
+            if not has_enf:
+                raise ModalExtractionError(
+                    "Element nodal force results are not available in this RST file."
                 )
         if node_order is not None:
             output_order = list(node_order)
@@ -706,8 +950,88 @@ def extract_modal_tensor_csv(
         if not mode_ids:
             raise ModalExtractionError("No mode IDs available to extract.")
 
+        combined_moment_available = True
+        if result_kind == "element_nodal_moment":
+            if not _element_nodal_dofs_available(
+                model,
+                set_id=int(mode_ids[0]),
+                dofs_value=1,
+                server=server,
+                data_sources=data_sources,
+            ):
+                raise ModalExtractionError(
+                    "Element nodal moments (ENMOX/ENMOY/ENMOZ) are not available in this RST file."
+                )
+        if result_kind == "element_nodal_force_moment":
+            combined_moment_available = _element_nodal_dofs_available(
+                model,
+                set_id=int(mode_ids[0]),
+                dofs_value=1,
+                server=server,
+                data_sources=data_sources,
+            )
+            if not combined_moment_available:
+                log(
+                    "Element nodal moments are not available for this extraction; "
+                    "ENMO columns will be written as zeros."
+                )
+
         components = _result_components(result_kind)
         n_components = len(components)
+
+        def _evaluate_mode_aligned(
+            set_id_value: int,
+            current_node_ids: Sequence[int],
+            current_scoping: "dpf.Scoping",
+        ) -> np.ndarray:
+            if result_kind != "element_nodal_force_moment":
+                return _evaluate_aligned_result(
+                    result_kind,
+                    set_id_value,
+                    current_node_ids,
+                    n_components,
+                    model=model,
+                    mesh=mesh,
+                    data_sources=data_sources,
+                    scoping=current_scoping,
+                    nodal_averaging=nodal_averaging,
+                    average_across_bodies=average_across_bodies,
+                    server=server,
+                    log_cb=log,
+                )
+
+            force_aligned = _evaluate_aligned_result(
+                "element_nodal_force",
+                set_id_value,
+                current_node_ids,
+                3,
+                model=model,
+                mesh=mesh,
+                data_sources=data_sources,
+                scoping=current_scoping,
+                nodal_averaging=nodal_averaging,
+                average_across_bodies=average_across_bodies,
+                server=server,
+                log_cb=log,
+            )
+            if combined_moment_available:
+                moment_aligned = _evaluate_aligned_result(
+                    "element_nodal_moment",
+                    set_id_value,
+                    current_node_ids,
+                    3,
+                    model=model,
+                    mesh=mesh,
+                    data_sources=data_sources,
+                    scoping=current_scoping,
+                    nodal_averaging=nodal_averaging,
+                    average_across_bodies=average_across_bodies,
+                    server=server,
+                    log_cb=log,
+                )
+            else:
+                moment_aligned = np.zeros((len(current_node_ids), 3), dtype=float)
+            return np.concatenate((force_aligned, moment_aligned), axis=1)
 
         if chunk_size is None:
             chunk_size = memory_policy.compute_chunk_size(len(node_ids), len(mode_ids), n_components)
@@ -759,19 +1083,10 @@ def extract_modal_tensor_csv(
                             f"(set {set_id})"
                         )
                         
-                        aligned = _evaluate_aligned_result(
-                            result_kind,
+                        aligned = _evaluate_mode_aligned(
                             set_id,
                             chunk_unique_ids,
-                            n_components,
-                            model=model,
-                            mesh=mesh,
-                            data_sources=data_sources,
-                            scoping=chunk_scoping,
-                            nodal_averaging=nodal_averaging,
-                            average_across_bodies=average_across_bodies,
-                            server=server,
-                            log_cb=log,
+                            chunk_scoping,
                         )
                         mode_maps.append({nid: aligned[idx] for idx, nid in enumerate(chunk_unique_ids)})
                         del aligned
@@ -805,19 +1120,10 @@ def extract_modal_tensor_csv(
                             f"(set {set_id})"
                         )
                         
-                        aligned = _evaluate_aligned_result(
-                            result_kind,
+                        aligned = _evaluate_mode_aligned(
                             set_id,
                             chunk_output_ids,
-                            n_components,
-                            model=model,
-                            mesh=mesh,
-                            data_sources=data_sources,
-                            scoping=chunk_scoping,
-                            nodal_averaging=nodal_averaging,
-                            average_across_bodies=average_across_bodies,
-                            server=server,
-                            log_cb=log,
+                            chunk_scoping,
                         )
                         chunk_data[:, col:col + n_components] = aligned
                         col += n_components
@@ -851,3 +1157,15 @@ def extract_modal_displacement_csv(**kwargs) -> None:
 
 def extract_modal_strain_csv(**kwargs) -> None:
     extract_modal_tensor_csv(result_kind="strain", **kwargs)
+
+
+def extract_modal_element_nodal_forces_csv(**kwargs) -> None:
+    extract_modal_tensor_csv(result_kind="element_nodal_force", **kwargs)
+
+
+def extract_modal_element_nodal_moments_csv(**kwargs) -> None:
+    extract_modal_tensor_csv(result_kind="element_nodal_moment", **kwargs)
+
+
+def extract_modal_element_nodal_forces_moments_csv(**kwargs) -> None:
+    extract_modal_tensor_csv(result_kind="element_nodal_force_moment", **kwargs)

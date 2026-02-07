@@ -20,6 +20,7 @@ class ExtractionJob:
     do_stress: bool
     do_strain: bool
     do_displacement: bool
+    do_element_nodal: bool = False
     chunk_size: Optional[int] = None
     specific_mode: Optional[int] = None  # If set, extract only this mode
 
@@ -71,24 +72,34 @@ class ModalExtractionWorker(QThread):
                 "stress",
                 "modal_stress_tensor_w_coords.csv",
                 dpf_modal_extractor.extract_modal_stress_csv,
+                False,
             ))
         if job.do_strain:
             outputs.append((
                 "strain",
                 "modal_strain_tensor_w_coords.csv",
                 dpf_modal_extractor.extract_modal_strain_csv,
+                False,
             ))
         if job.do_displacement:
             outputs.append((
                 "displacement",
                 "modal_directional_deformation_w_coords.csv",
                 dpf_modal_extractor.extract_modal_displacement_csv,
+                False,
+            ))
+        if job.do_element_nodal:
+            outputs.append((
+                "element_nodal_force_moment",
+                "modal_element_nodal_forces_moments_w_coords.csv",
+                dpf_modal_extractor.extract_modal_element_nodal_forces_moments_csv,
+                False,
             ))
 
         if not outputs:
             raise ValueError("Select at least one result type to extract.")
 
-        for label, filename, func in outputs:
+        for label, filename, func, optional_if_unavailable in outputs:
             if self._should_cancel():
                 raise dpf_modal_extractor.ModalExtractionCanceled("Canceled by user.")
 
@@ -99,28 +110,34 @@ class ModalExtractionWorker(QThread):
                 self.progress.emit(current, total)
 
             # Use mode_ids if specific mode, otherwise use mode_count
-            if mode_ids is not None:
-                func(
-                    rst_path=job.rst_path,
-                    output_csv_path=output_path,
-                    named_selection=job.named_selection,
-                    mode_ids=mode_ids,
-                    chunk_size=job.chunk_size,
-                    log_cb=self.log.emit,
-                    progress_cb=progress_cb,
-                    should_cancel=self._should_cancel,
-                )
-            else:
-                func(
-                    rst_path=job.rst_path,
-                    output_csv_path=output_path,
-                    named_selection=job.named_selection,
-                    mode_count=mode_count,
-                    chunk_size=job.chunk_size,
-                    log_cb=self.log.emit,
-                    progress_cb=progress_cb,
-                    should_cancel=self._should_cancel,
-                )
+            try:
+                if mode_ids is not None:
+                    func(
+                        rst_path=job.rst_path,
+                        output_csv_path=output_path,
+                        named_selection=job.named_selection,
+                        mode_ids=mode_ids,
+                        chunk_size=job.chunk_size,
+                        log_cb=self.log.emit,
+                        progress_cb=progress_cb,
+                        should_cancel=self._should_cancel,
+                    )
+                else:
+                    func(
+                        rst_path=job.rst_path,
+                        output_csv_path=output_path,
+                        named_selection=job.named_selection,
+                        mode_count=mode_count,
+                        chunk_size=job.chunk_size,
+                        log_cb=self.log.emit,
+                        progress_cb=progress_cb,
+                        should_cancel=self._should_cancel,
+                    )
+            except dpf_modal_extractor.ModalExtractionError as exc:
+                if optional_if_unavailable and "not available" in str(exc).lower():
+                    self.log.emit(f"Skipping {label} extraction: {exc}")
+                    continue
+                raise
 
             self.log.emit(f"Finished {label} extraction.")
             
