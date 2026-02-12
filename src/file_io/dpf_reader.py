@@ -18,6 +18,7 @@ except ImportError:
     dpf = None
 
 from core.data_models import AnalysisData
+from utils.constants import MSG_NODAL_FORCES_ANSYS
 
 
 # Target stress unit for MARS-SC output (MPa = N/mm² = Pa * 1e-6)
@@ -257,20 +258,7 @@ class DPFAnalysisReader:
             return []
     
     def get_last_substep_ids(self) -> List[int]:
-        """
-        Return list of set IDs corresponding to the last substep of each load step.
-        
-        This method identifies load steps and returns only the final substep
-        of each, which is useful for reducing the number of result sets when
-        the RST file contains many intermediate substeps.
-        
-        Uses multiple strategies:
-        1. DPF's get_cumulative_index(step, substep) API
-        2. Time value analysis to detect load step boundaries
-        
-        Returns:
-            List of set IDs representing the last substep of each load step.
-        """
+        """Set IDs for the last substep of each load step (reduces sets when RST has many substeps)."""
         try:
             tf_support = self.time_freq_support
             n_sets = tf_support.n_sets
@@ -928,23 +916,7 @@ class DPFAnalysisReader:
         nodal_scoping: Optional['dpf.Scoping'] = None,
         convert_to_mpa: bool = True
     ) -> 'dpf.Field':
-        """
-        Read stress field for a load step (returns DPF Field object).
-        
-        This method returns the DPF Field, useful for direct DPF operations
-        like scaling and adding fields.
-        
-        Stress values are converted to MPa (N/mm²) by default for consistent
-        reporting in MARS-SC millimeter-Newton standard units.
-        
-        Args:
-            load_step: Load step/set ID (1-based).
-            nodal_scoping: Optional DPF Scoping to filter nodes.
-            convert_to_mpa: If True, convert stress values to MPa. Default True.
-            
-        Returns:
-            DPF Field object containing the stress tensor (in MPa if convert_to_mpa=True).
-        """
+        """Read stress field for one load step; returns DPF Field (MPa by default)."""
         # Create stress operator
         stress_op = self.model.results.stress()
         
@@ -974,20 +946,7 @@ class DPFAnalysisReader:
         return stress_field
     
     def get_node_coordinates(self, nodal_scoping: Optional['dpf.Scoping'] = None) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Get XYZ coordinates for scoped nodes, converted to millimeters.
-        
-        MARS-SC uses the mm-N-MPa unit system throughout. This method converts
-        coordinates from DPF's native unit (typically meters) to millimeters.
-        
-        Args:
-            nodal_scoping: Optional DPF Scoping to filter nodes. If None,
-                          returns coordinates for all nodes.
-            
-        Returns:
-            Tuple of (node_ids, coordinates) where coordinates has shape (num_nodes, 3).
-            Coordinates are in millimeters.
-        """
+        """(node_ids, coords) for scoped nodes; coords in mm (DPF native is usually m)."""
         mesh = self.mesh
         
         if nodal_scoping is not None:
@@ -1225,7 +1184,7 @@ class DPFAnalysisReader:
             if not fields_container or len(fields_container) == 0:
                 raise NodalForcesNotAvailableError(
                     f"No nodal forces data available for load step {load_step}. "
-                    "Ensure 'Write element nodal forces' is enabled in ANSYS Output Controls."
+                    + MSG_NODAL_FORCES_ANSYS
                 )
             
             force_field = fields_container[0]

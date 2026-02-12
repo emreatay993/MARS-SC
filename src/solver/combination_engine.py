@@ -483,22 +483,7 @@ class CombinationEngine:
         node_id: int,
         stress_type: str = "von_mises"
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Compute stress history for a single node across all combinations.
-        
-        This method is useful for plotting stress vs combination number
-        for a specific node.
-        
-        Note: This method is SLOW because it computes all nodes then extracts one.
-        Use compute_single_node_history_fast() for better performance.
-        
-        Args:
-            node_id: Node ID to analyze.
-            stress_type: One of "von_mises", "max_principal", "min_principal".
-            
-        Returns:
-            Tuple of (combination_indices, stress_values) arrays.
-        """
+        """Stress vs combo index for one node. Slow (computes all nodes then slices); use compute_single_node_history_fast for big models."""
         # Find node index
         node_idx = np.where(self.node_ids == node_id)[0]
         if len(node_idx) == 0:

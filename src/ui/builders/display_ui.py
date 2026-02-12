@@ -1,8 +1,5 @@
 """
-UI Builder for the Display Tab.
-
-This module contains builder functions that construct UI components for the
-display tab, organizing the 3D visualization controls.
+Builds the Display tab UI: 3D view controls, result dropdowns, export buttons, etc.
 """
 
 from PyQt5.QtCore import Qt
@@ -23,12 +20,7 @@ from utils.constants import (
 
 
 class DisplayTabUIBuilder:
-    """
-    Builder class for constructing Display Tab UI components.
-    
-    This class breaks down the UI construction into logical sections
-    for better maintainability.
-    """
+    """Assembles the Display tab in sections: file/graphics, results, export."""
     
     def __init__(self):
         """Initialize the builder."""
@@ -182,7 +174,7 @@ class DisplayTabUIBuilder:
         displacement_component_label.setVisible(False)  # Hidden until deformation is available
         displacement_component_combo.setVisible(False)
         
-        # Export output CSV button (comprehensive export for all result types)
+        # Export output CSV (stress, forces, deformation)
         export_output_button = QPushButton("Export Output CSV")
         export_output_button.setStyleSheet(BUTTON_STYLE)
         export_output_button.setToolTip(

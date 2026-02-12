@@ -26,6 +26,7 @@ from file_io.dpf_reader import (
     DPF_AVAILABLE,
 )
 from core.data_models import CombinationTableData, NodalForcesResult
+from utils.constants import MSG_NODAL_FORCES_ANSYS
 
 if DPF_AVAILABLE:
     from ansys.dpf import core as dpf
@@ -146,7 +147,7 @@ class NodalForcesCombinationEngine:
             if not self.reader1.check_nodal_forces_available():
                 errors.append(
                     "Analysis 1 RST file does not contain nodal forces.\n"
-                    "Ensure 'Write element nodal forces' is enabled in ANSYS Output Controls."
+                    + MSG_NODAL_FORCES_ANSYS
                 )
             else:
                 # Check only active load steps
@@ -163,7 +164,7 @@ class NodalForcesCombinationEngine:
             if not self.reader2.check_nodal_forces_available():
                 errors.append(
                     "Analysis 2 RST file does not contain nodal forces.\n"
-                    "Ensure 'Write element nodal forces' is enabled in ANSYS Output Controls."
+                    + MSG_NODAL_FORCES_ANSYS
                 )
             else:
                 # Check only active load steps
@@ -180,22 +181,7 @@ class NodalForcesCombinationEngine:
         return True, ""
     
     def preload_force_data(self, progress_callback: Optional[Callable[[int, int, str], None]] = None):
-        """
-        Cache nodal forces for load steps with non-zero coefficients.
-        
-        This method reads force data upfront to avoid repeated file I/O
-        during combination calculations. Only steps that have at least one
-        non-zero coefficient across all combinations are loaded, which can
-        dramatically reduce I/O time when only a subset of steps are used.
-        
-        Note: Only numpy arrays are cached (not DPF fields) to minimize memory usage.
-        
-        Args:
-            progress_callback: Optional callback(current, total, message) for progress updates.
-            
-        Raises:
-            NodalForcesNotAvailableError: If nodal forces are not available.
-        """
+        """Load and cache nodal forces for active load steps (avoids repeated I/O). Caches numpy only."""
         # Get only active steps (those with non-zero coefficients)
         a1_steps, a2_steps = self.table.get_active_step_ids()
         total_steps = len(a1_steps) + len(a2_steps)

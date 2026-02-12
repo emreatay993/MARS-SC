@@ -1,8 +1,5 @@
 """
-UI Builder for the Solver Tab (MARS-SC Solution Combination).
-
-This module contains builder functions that construct UI components for the
-solver tab, including RST file inputs, combination table, and output options.
+Builds the Solver tab UI: RST inputs, combination table, output options, plasticity, console.
 """
 
 from PyQt5.QtCore import Qt
@@ -16,24 +13,13 @@ from PyQt5.QtWidgets import (
 
 
 class ClearableSelectionTableWidget(QTableWidget):
-    """
-    A QTableWidget that clears selection when clicking on empty space.
-    
-    This provides better UX by allowing users to deselect rows by clicking
-    on areas of the table that don't contain cells/items.
-    """
-    
+    """Table that clears selection when you click empty space (no cell under cursor)."""
+
     def mousePressEvent(self, event):
-        """Handle mouse press events to clear selection on empty space click."""
-        # Get the item at the click position
         item = self.itemAt(event.pos())
-        
-        # If clicked on empty space (no item), clear selection
         if item is None:
             self.clearSelection()
             self.setCurrentItem(None)
-        
-        # Call the parent implementation for normal behavior
         super().mousePressEvent(event)
 
 from utils.constants import (
@@ -55,17 +41,8 @@ from ui.widgets.collapsible_group import CollapsibleGroupBoxStyled
 
 
 class SolverTabUIBuilder:
-    """
-    Builder class for constructing Solver Tab UI components.
-    
-    This class builds the MARS-SC combination analysis interface with:
-    - RST file inputs for two static analyses
-    - Named selection dropdown
-    - Combination coefficients table
-    - Output options (von Mises, principal stresses)
-    - Plasticity correction options
-    """
-    
+    """Assembles the Solver tab: RST inputs, named selection, combo table, outputs, plasticity."""
+
     def __init__(self):
         """Initialize the builder."""
         self.components = {}
@@ -649,16 +626,7 @@ class SolverTabUIBuilder:
         widget.setPalette(palette)
     
     def build_complete_layout(self):
-        """
-        Build the complete solver tab layout with all sections.
-        
-        The layout uses stretch factors to ensure that when collapsible
-        groups are collapsed, the console/tabs area expands to use the
-        freed space.
-        
-        Returns:
-            tuple: (main_layout, components_dict)
-        """
+        """Build the full layout; console/tabs get stretch so they grow when sections collapse."""
         main_layout = QVBoxLayout()
         main_layout.setSpacing(6)
         

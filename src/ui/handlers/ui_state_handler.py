@@ -1,8 +1,5 @@
 """
-UI State Handler for the SolverTab.
-
-This class encapsulates all logic related to managing the state of UI components
-(enabling/disabling, showing/hiding, etc.) based on user interaction.
+Tracks Solver tab UI state: what’s enabled/disabled, visible/hidden, based on user input.
 """
 
 import math

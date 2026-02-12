@@ -1,8 +1,5 @@
 """
-Log Handler for the SolverTab.
-
-This class encapsulates all logic related to formatting log messages
-and appending them to the UI's console.
+Formats and writes log lines to the Solver tab console.
 """
 
 import os

@@ -1,8 +1,6 @@
 """
-Solver tab implementation for MARS-SC (Solution Combination).
-
-Provides the main solver interface for combining stress results from two
-static analysis RST files using linear combination coefficients.
+Solver tab: combine stress (and optionally forces/deformation) from two static RST files
+via linear combination coefficients.
 """
 
 import os
@@ -21,12 +19,7 @@ from ui.styles.style_constants import NONZERO_COEFFICIENT_BG_COLOR
 
 
 class NumericDelegate(QStyledItemDelegate):
-    """
-    Custom delegate that enforces numeric (float/integer) input for table cells.
-    
-    This delegate is applied to coefficient columns in the combination table
-    to ensure only valid numeric values can be entered.
-    """
+    """Delegate for coefficient columns: only numeric (float) input allowed."""
     
     def createEditor(self, parent, option, index):
         """Create a line edit with numeric validation."""
@@ -57,11 +50,7 @@ class NumericDelegate(QStyledItemDelegate):
 
 
 class ReadOnlyDelegate(QStyledItemDelegate):
-    """
-    Custom delegate that makes table cells read-only.
-    
-    This delegate is applied to the Type column since only "Linear" is supported.
-    """
+    """Delegate for the Type column (read-only; only Linear is supported)."""
     
     def createEditor(self, parent, option, index):
         """Return None to prevent editing."""
@@ -80,6 +69,7 @@ from core.data_models import (
     AnalysisData, CombinationTableData, CombinationResult, NodalForcesResult,
     DeformationResult, TemperatureFieldData, MaterialProfileData, SolverConfig
 )
+from utils.constants import MSG_NODAL_FORCES_ANSYS
 
 
 class SolverTab(QWidget):
@@ -478,7 +468,7 @@ class SolverTab(QWidget):
             self.nodal_forces_checkbox.setToolTip(
                 "Nodal forces not available.\n"
                 "At least one RST file does not contain nodal forces.\n"
-                "Ensure 'Write element nodal forces' is enabled in ANSYS Output Controls."
+                + MSG_NODAL_FORCES_ANSYS
             )
         else:
             self.nodal_forces_checkbox.setToolTip(

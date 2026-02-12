@@ -1,14 +1,7 @@
 """
-Analysis Handler for the SolverTab (MARS-SC Solution Combination).
-
-This class encapsulates all logic related to:
-1. Validating UI inputs for combination analysis.
-2. Building the SolverConfig.
-3. Executing the combination analysis via the CombinationEngine.
-4. Handling and displaying the results.
-
-Note: DPF operations are run in the main thread to avoid gRPC threading issues.
-QApplication.processEvents() is used to keep the GUI responsive during computation.
+Runs combination analysis from the Solver tab: validates inputs, builds SolverConfig,
+calls CombinationEngine, and shows results. DPF runs in the main thread (gRPC doesn't
+play nice with threads); processEvents() keeps the GUI responsive.
 """
 
 import os
@@ -28,9 +21,10 @@ from file_io.dpf_reader import (
     NodalForcesNotAvailableError, DisplacementNotAvailableError
 )
 from core.data_models import (
-    SolverConfig, CombinationResult, CombinationTableData, PlasticityConfig, 
+    SolverConfig, CombinationResult, CombinationTableData, PlasticityConfig,
     NodalForcesResult, DeformationResult
 )
+from utils.constants import MSG_NODAL_FORCES_ANSYS
 
 
 class SolverAnalysisHandler:
@@ -40,12 +34,7 @@ class SolverAnalysisHandler:
     MEMORY_THRESHOLD_GB = 2.0
 
     def __init__(self, tab):
-        """
-        Initialize the analysis handler.
-
-        Args:
-            tab (SolverTab): The parent SolverTab instance.
-        """
+        """tab: the SolverTab we're attached to."""
         self.tab = tab
         self._solve_start_time: Optional[datetime] = None
         self._combination_engine: Optional[CombinationEngine] = None
@@ -134,7 +123,7 @@ class SolverAnalysisHandler:
             error_msg = (
                 f"Nodal Forces Not Available\n\n"
                 f"{str(e)}\n\n"
-                f"Ensure 'Write element nodal forces' is enabled in ANSYS Output Controls."
+                f"{MSG_NODAL_FORCES_ANSYS}"
             )
             QMessageBox.critical(self.tab, "Nodal Forces Error", error_msg)
             

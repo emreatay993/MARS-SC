@@ -1,10 +1,4 @@
-"""
-Centralized style constants for MARS-SC GUI.
-
-This module contains all inline stylesheet strings used throughout the application.
-These styles are applied directly to widgets using setStyleSheet() to match
-the legacy approach, but centralized here for maintainability.
-"""
+"""Qt stylesheet strings for MARS-SC; applied via setStyleSheet()."""
 
 # Button styles
 BUTTON_STYLE = """

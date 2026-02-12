@@ -1,9 +1,6 @@
 """
-File loading handler for the SolverTab (MARS-SC Solution Combination).
-
-This class encapsulates all logic related to opening file dialogs,
-loading RST files using DPF, importing/exporting combination tables,
-and updating the SolverTab's state and UI components.
+Solver tab file I/O: file dialogs, loading RST via DPF, import/export of combination
+tables, and updating the tab state/UI.
 """
 
 import os

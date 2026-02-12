@@ -12,12 +12,7 @@ from typing import Optional, Tuple, List, Dict
 
 
 class VisualizationManager:
-    """
-    Manager for mesh loading and scalar field operations.
-    
-    This class handles PyVista mesh operations including loading,
-    scalar updates, and range computations.
-    """
+    """PyVista mesh creation, scalar updates, and range/percentile helpers."""
     
     @staticmethod
     def create_mesh_from_coords(node_coords: np.ndarray, 
@@ -103,12 +98,7 @@ class VisualizationManager:
 
 
 class AnimationManager:
-    """
-    Manager for animation precomputation and playback.
-    
-    This class handles animation frame precomputation, storage,
-    and export functionality.
-    """
+    """Precomputes animation frames, stores them, and drives playback (export stub only)."""
     
     def __init__(self):
         """Initialize the animation manager."""
@@ -209,27 +199,12 @@ class AnimationManager:
     def save_animation_frames(self, 
                              mesh_generator,
                              output_frames: List[np.ndarray]) -> None:
-        """
-        Placeholder for saving animation frames to file.
-        
-        This would be implemented to save frames as video or GIF.
-        
-        Args:
-            mesh_generator: Function that generates mesh for each frame.
-            output_frames: List to store rendered frames.
-        """
-        # This would contain logic for rendering and saving frames
-        # Implementation depends on the specific requirements
+        """Stub: export precomputed frames to video/GIF. Not wired up yet."""
         pass
 
 
 class HotspotDetector:
-    """
-    Manager for hotspot detection and analysis.
-    
-    This class handles detection of nodes with extreme scalar values
-    and provides filtering capabilities.
-    """
+    """Finds nodes with extreme scalar values and filters them (top N, max/min)."""
     
     @staticmethod
     def detect_hotspots(scalar_data: np.ndarray,

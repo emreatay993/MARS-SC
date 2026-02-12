@@ -39,3 +39,8 @@ DEFAULT_BACKGROUND_COLOR = "#FFFFFF"
 
 DEFAULT_ANIMATION_INTERVAL_MS = 100
 """Default animation frame interval in milliseconds."""
+
+# ----- User-facing messages (single source for repeated text) -----
+MSG_NODAL_FORCES_ANSYS = (
+    "Ensure 'Write element nodal forces' is enabled in ANSYS Output Controls."
+)

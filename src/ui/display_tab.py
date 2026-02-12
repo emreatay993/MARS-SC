@@ -1,9 +1,6 @@
 """
-Refactored Display Tab for 3D visualization.
-
-This module provides the DisplayTab widget that handles 3D visualization of FEA
-results using PyVista. The class has been refactored to use UI builders and
-delegate complex logic to manager classes.
+Display tab: 3D visualization of FEA results (PyVista). UI is built via
+DisplayTabUIBuilder; visualization/animation/hotspots live in handler classes.
 """
 
 import numpy as np
@@ -26,16 +23,11 @@ from ui.handlers.display_results_handler import DisplayResultsHandler
 
 class DisplayTab(QWidget):
     """
-    Refactored Display Tab for 3D visualization of FEA results.
-    
-    This class uses UI builders for construction and delegates complex logic
-    to manager classes (VisualizationManager, AnimationManager, HotspotDetector).
-    
-    Signals:
-        node_picked_signal: Emitted when a node is picked (int: node_id)
-        time_point_update_requested: Emitted when time point update is needed
-        combination_update_requested: Emitted when combination update is needed (MARS-SC)
-        animation_precomputation_requested: Emitted when animation precomputation is needed
+    3D FEA results view. Builders wire up the UI; VisualizationManager, AnimationManager,
+    and HotspotDetector do the heavy lifting.
+
+    Signals: node_picked_signal(int), time_point_update_requested(float, dict),
+    combination_update_requested(int, dict), animation_precomputation_requested(dict).
     """
     
     # Signals
