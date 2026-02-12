@@ -6,10 +6,10 @@ on the header. When collapsed, the content is hidden and the widget takes
 minimal vertical space, allowing other widgets in the layout to expand.
 """
 
-from PyQt5.QtCore import Qt, pyqtSignal, QPropertyAnimation, QEasingCurve
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame, QLabel,
-    QPushButton, QSizePolicy, QScrollArea
+    QSizePolicy
 )
 from PyQt5.QtGui import QFont
 
@@ -20,7 +20,6 @@ class CollapsibleGroupBox(QWidget):
     
     Features:
     - Clickable header to toggle collapse/expand
-    - Smooth animation (optional)
     - Arrow indicator showing state
     - Emits signal when toggled
     - Properly releases space when collapsed
@@ -47,7 +46,6 @@ class CollapsibleGroupBox(QWidget):
         
         self._is_expanded = initially_expanded
         self._title = title
-        self._animation_duration = 150  # ms
         
         self._setup_ui()
         

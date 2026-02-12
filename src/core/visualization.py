@@ -8,7 +8,7 @@ business logic from UI code.
 import numpy as np
 import pandas as pd
 import pyvista as pv
-from typing import Optional, Tuple, List, Dict
+from typing import Optional, Tuple, Dict
 
 
 class VisualizationManager:
@@ -95,112 +95,6 @@ class VisualizationManager:
         new_coords = original_coords + scale_factor * deformation_vectors
         mesh.points = new_coords
         return mesh
-
-
-class AnimationManager:
-    """Precomputes animation frames, stores them, and drives playback (export stub only)."""
-    
-    def __init__(self):
-        """Initialize the animation manager."""
-        self.precomputed_scalars = None
-        self.precomputed_coords = None
-        self.precomputed_anim_times = None
-        self.current_frame_index = 0
-        self.data_column_name = "Stress"
-        self.is_deformation_included = False
-        self.original_node_coords = None
-    
-    def precompute_frames(self, 
-                         time_values: np.ndarray,
-                         scalar_data_over_time: np.ndarray,
-                         scalar_name: str,
-                         deformation_data: Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]] = None,
-                         original_coords: Optional[np.ndarray] = None,
-                         scale_factor: float = 1.0,
-                         time_indices: Optional[List[int]] = None) -> None:
-        """
-        Precompute animation frames for efficient playback.
-        
-        Args:
-            time_values: Array of time values.
-            scalar_data_over_time: Scalar data at each time point (n_nodes, n_times).
-            scalar_name: Name of the scalar field.
-            deformation_data: Optional tuple of (ux, uy, uz) deformation data.
-            original_coords: Original node coordinates for deformation.
-            scale_factor: Scale factor for deformations.
-            time_indices: Optional list of time indices to precompute (default: all).
-        """
-        if time_indices is None:
-            time_indices = list(range(len(time_values)))
-        
-        n_frames = len(time_indices)
-        n_nodes = scalar_data_over_time.shape[0]
-        
-        # Precompute scalars
-        self.precomputed_scalars = scalar_data_over_time[:, time_indices]
-        self.precomputed_anim_times = time_values[time_indices]
-        self.data_column_name = scalar_name
-        
-        # Precompute coordinates if deformation is included
-        if deformation_data is not None and original_coords is not None:
-            ux, uy, uz = deformation_data
-            self.precomputed_coords = np.zeros((n_nodes, 3, n_frames))
-            
-            for i, t_idx in enumerate(time_indices):
-                deformation_vec = np.column_stack([
-                    ux[:, t_idx],
-                    uy[:, t_idx],
-                    uz[:, t_idx]
-                ])
-                self.precomputed_coords[:, :, i] = original_coords + scale_factor * deformation_vec
-            
-            self.is_deformation_included = True
-            self.original_node_coords = original_coords
-        else:
-            self.precomputed_coords = None
-            self.is_deformation_included = False
-    
-    def get_frame_data(self, frame_index: int) -> Tuple[np.ndarray, Optional[np.ndarray], float]:
-        """
-        Get data for a specific animation frame.
-        
-        Args:
-            frame_index: Index of the frame to retrieve.
-        
-        Returns:
-            Tuple of (scalar_data, coords, time_value).
-        """
-        if self.precomputed_scalars is None:
-            raise ValueError("No precomputed animation data available.")
-        
-        scalar_data = self.precomputed_scalars[:, frame_index]
-        time_value = self.precomputed_anim_times[frame_index]
-        
-        coords = None
-        if self.precomputed_coords is not None:
-            coords = self.precomputed_coords[:, :, frame_index]
-        
-        return scalar_data, coords, time_value
-    
-    def get_num_frames(self) -> int:
-        """Get the total number of precomputed frames."""
-        if self.precomputed_scalars is None:
-            return 0
-        return self.precomputed_scalars.shape[1]
-    
-    def reset(self) -> None:
-        """Reset animation data."""
-        self.precomputed_scalars = None
-        self.precomputed_coords = None
-        self.precomputed_anim_times = None
-        self.current_frame_index = 0
-        self.is_deformation_included = False
-    
-    def save_animation_frames(self, 
-                             mesh_generator,
-                             output_frames: List[np.ndarray]) -> None:
-        """Stub: export precomputed frames to video/GIF. Not wired up yet."""
-        pass
 
 
 class HotspotDetector:

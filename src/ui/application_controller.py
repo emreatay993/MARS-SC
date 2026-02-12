@@ -203,18 +203,6 @@ class ApplicationController(QMainWindow):
             if hasattr(self.solver_tab, 'plot_combination_history_for_node'):
                 self.solver_tab.plot_combination_history_for_node(node_id)
 
-    @pyqtSlot(str)
-    def _on_animation_precomputation_failed(self, message: str):
-        """Show failure message for animation precomputation and reset UI controls."""
-        try:
-            from PyQt5.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "Animation Cancelled", message)
-            # Enable play button on display tab if available
-            if hasattr(self.display_tab, 'play_button'):
-                self.display_tab.play_button.setEnabled(True)
-        except Exception:
-            pass
-
     def closeEvent(self, event):
         """Clean up temporary files on application close."""
         self.plotting_handler.cleanup_temp_files()

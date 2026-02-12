@@ -102,21 +102,9 @@ class DisplayInteractionHandler(DisplayBaseHandler):
             self.tab.current_mesh is not None
             and "NodeID" in self.tab.current_mesh.array_names
         )
-        is_animation_running_and_frozen = (
-            self.tab.anim_timer is not None
-            and self.tab.anim_timer.isActive()
-            and self.state.freeze_tracked_node
-        )
-        go_to_node_action.setEnabled(has_mesh_and_node_ids and not is_animation_running_and_frozen)
+        go_to_node_action.setEnabled(has_mesh_and_node_ids)
         go_to_node_action.triggered.connect(self.go_to_node)
         context_menu.addAction(go_to_node_action)
-
-        freeze_action = QAction("Lock Camera for Animation (freeze node)", self.tab)
-        freeze_action.setCheckable(True)
-        freeze_action.setChecked(self.state.freeze_tracked_node)
-        freeze_action.setEnabled(self.state.target_node_index is not None)
-        freeze_action.triggered.connect(self.toggle_freeze_node)
-        context_menu.addAction(freeze_action)
 
         reset_camera_action = QAction("Reset Camera", self.tab)
         reset_camera_action.triggered.connect(self.tab.plotter.reset_camera)
@@ -581,35 +569,6 @@ class DisplayInteractionHandler(DisplayBaseHandler):
         except Exception as exc:
             QMessageBox.critical(self.tab, "Error", f"Could not go to node {node_id}: {exc}")
 
-    def toggle_freeze_node(self, checked: bool) -> None:
-        """Freeze or unfreeze camera tracking for the selected node."""
-        if self.state.target_node_index is None or self.tab.current_mesh is None:
-            QMessageBox.warning(
-                self.tab, "No Tracked Node",
-                "Use 'Go To Node' first, then lock the camera."
-            )
-            return
-
-        self.set_state_attr("freeze_tracked_node", checked)
-        if checked:
-            baseline = self.tab.current_mesh.points[self.state.target_node_index].copy()
-            self.set_state_attr("freeze_baseline", baseline)
-
-            if self.tab.anim_timer is not None and self.tab.anim_timer.isActive():
-                if self.state.target_node_label_actor:
-                    self.state.target_node_label_actor.SetVisibility(False)
-                if self.state.target_node_marker_actor:
-                    self.state.target_node_marker_actor.SetVisibility(False)
-        else:
-            self.set_state_attr("freeze_baseline", None)
-
-            if self.state.target_node_label_actor:
-                self.state.target_node_label_actor.SetVisibility(True)
-            if self.state.target_node_marker_actor:
-                self.state.target_node_marker_actor.SetVisibility(True)
-
-        self.tab.plotter.render()
-
     def clear_goto_node_markers(self) -> None:
         """Remove node markers and reset tracking state."""
         if self.state.target_node_marker_actor:
@@ -630,8 +589,6 @@ class DisplayInteractionHandler(DisplayBaseHandler):
         self.set_state_attr("label_point_data", None)
         self.set_state_attr("target_node_index", None)
         self.set_state_attr("target_node_id", None)
-        self.set_state_attr("freeze_tracked_node", False)
-        self.set_state_attr("freeze_baseline", None)
 
     # ------------------------------------------------------------------
     # Legend (Scalar Bar) context menu

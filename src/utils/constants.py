@@ -37,9 +37,6 @@ DEFAULT_POINT_SIZE = 15
 DEFAULT_BACKGROUND_COLOR = "#FFFFFF"
 """Default background color for PyVista plotter."""
 
-DEFAULT_ANIMATION_INTERVAL_MS = 100
-"""Default animation frame interval in milliseconds."""
-
 # ----- User-facing messages (single source for repeated text) -----
 MSG_NODAL_FORCES_ANSYS = (
     "Ensure 'Write element nodal forces' is enabled in ANSYS Output Controls."

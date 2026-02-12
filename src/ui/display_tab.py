@@ -1,21 +1,20 @@
 """
 Display tab: 3D visualization of FEA results (PyVista). UI is built via
-DisplayTabUIBuilder; visualization/animation/hotspots live in handler classes.
+DisplayTabUIBuilder; visualization/hotspots live in handler classes.
 """
 
 import numpy as np
 import pyvista as pv
 
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
-from PyQt5.QtWidgets import QMessageBox, QWidget, QStyle
+from PyQt5.QtWidgets import QMessageBox, QWidget
 
 # Import builders and managers
 from ui.builders.display_ui import DisplayTabUIBuilder
-from core.visualization import VisualizationManager, AnimationManager, HotspotDetector
+from core.visualization import VisualizationManager, HotspotDetector
 from ui.handlers.display_state import DisplayState
 from ui.handlers.display_file_handler import DisplayFileHandler
 from ui.handlers.display_visualization_handler import DisplayVisualizationHandler
-from ui.handlers.display_animation_handler import DisplayAnimationHandler
 from ui.handlers.display_interaction_handler import DisplayInteractionHandler
 from ui.handlers.display_export_handler import DisplayExportHandler
 from ui.handlers.display_results_handler import DisplayResultsHandler
@@ -23,18 +22,16 @@ from ui.handlers.display_results_handler import DisplayResultsHandler
 
 class DisplayTab(QWidget):
     """
-    3D FEA results view. Builders wire up the UI; VisualizationManager, AnimationManager,
-    and HotspotDetector do the heavy lifting.
+    3D FEA results view. Builders wire up the UI; VisualizationManager and HotspotDetector do the heavy lifting.
 
     Signals: node_picked_signal(int), time_point_update_requested(float, dict),
-    combination_update_requested(int, dict), animation_precomputation_requested(dict).
+    combination_update_requested(int, dict).
     """
     
     # Signals
     node_picked_signal = pyqtSignal(int)
     time_point_update_requested = pyqtSignal(float, dict)
     combination_update_requested = pyqtSignal(int, dict)  # (combo_index, options)
-    animation_precomputation_requested = pyqtSignal(dict)
     
     def __init__(self, parent=None):
         """Initialize the Display Tab."""
@@ -42,14 +39,12 @@ class DisplayTab(QWidget):
         
         # Managers for complex logic
         self.viz_manager = VisualizationManager()
-        self.anim_manager = AnimationManager()
         self.hotspot_detector = HotspotDetector()
 
         # Shared state and handler scaffolding
         self.state = DisplayState()
         self.file_handler = DisplayFileHandler(self, self.state, self.viz_manager)
         self.visual_handler = DisplayVisualizationHandler(self, self.state, self.viz_manager)
-        self.animation_handler = DisplayAnimationHandler(self, self.state, self.anim_manager)
         self.interaction_handler = DisplayInteractionHandler(self, self.state, self.hotspot_detector)
         self.export_handler = DisplayExportHandler(self, self.state)
         self.results_handler = DisplayResultsHandler(self, self.state, self.visual_handler)
@@ -79,18 +74,10 @@ class DisplayTab(QWidget):
         self.all_combo_results = None  # Full results array, shape (num_combinations, num_nodes)
         self.nodal_forces_result = None  # NodalForcesResult for force-based visualization
         self.deformation_result = None  # DeformationResult for displacement visualization
-        self.anim_timer = None
-        self.time_text_actor = None
-        self.current_anim_time = 0.0
-        self.animation_paused = False
         self.temp_solver = None
         self.time_values = None
         self.original_node_coords = None
         self.last_valid_deformation_scale = 1.0
-        self.current_anim_frame_index = 0
-        self.is_deformation_included_in_anim = False
-        self.state.current_anim_frame_index = 0
-        self.state.is_deformation_included_in_anim = False
         
         # Hotspot and picking state
         self.highlight_actor = None
@@ -106,8 +93,6 @@ class DisplayTab(QWidget):
         self.marker_poly = None
         self.target_node_marker_actor = None
         self.last_goto_node_id = None
-        self.freeze_tracked_node = False
-        self.freeze_baseline = None
         
         # Track if camera widget needs to be re-initialized on show
         self._camera_widget_pending = False
@@ -150,7 +135,6 @@ class DisplayTab(QWidget):
         self.scalar_display_combo = self.components['scalar_display_combo']
         self.deformation_scale_label = self.components['deformation_scale_label']
         self.deformation_scale_edit = self.components['deformation_scale_edit']
-        self.absolute_deformation_checkbox = self.components['absolute_deformation_checkbox']
         
         # View specific combination controls
         self.view_combination_label = self.components['view_combination_label']
@@ -173,25 +157,6 @@ class DisplayTab(QWidget):
         self.save_time_button = self.components['save_time_button']
         self.extract_ic_button = self.components['extract_ic_button']
         self.time_point_group = self.components['time_point_group']
-        
-        # Animation controls (hidden in MARS-SC - static combination results)
-        self.anim_interval_spin = self.components['anim_interval_spin']
-        self.anim_start_spin = self.components['anim_start_spin']
-        self.anim_end_spin = self.components['anim_end_spin']
-        self.play_button = self.components['play_button']
-        self.pause_button = self.components['pause_button']
-        self.stop_button = self.components['stop_button']
-        self.time_step_mode_combo = self.components['time_step_mode_combo']
-        self.custom_step_spin = self.components['custom_step_spin']
-        self.actual_interval_spin = self.components['actual_interval_spin']
-        self.save_anim_button = self.components['save_anim_button']
-        self.anim_group = self.components['anim_group']
-
-        # Apply standard media icons so the playback controls are visually recognisable
-        style = self.style()
-        self.play_button.setIcon(style.standardIcon(QStyle.SP_MediaPlay))
-        self.pause_button.setIcon(style.standardIcon(QStyle.SP_MediaPause))
-        self.stop_button.setIcon(style.standardIcon(QStyle.SP_MediaStop))
     
     def set_plotting_handler(self, plotting_handler):
         """Set the plotting handler for this display tab."""
@@ -251,17 +216,6 @@ class DisplayTab(QWidget):
             self.combination_combo.currentIndexChanged.connect(
                 self._on_combination_changed
             )
-        
-        # Animation controls (kept for backwards compatibility, hidden in MARS-SC)
-        self.anim_start_spin.valueChanged.connect(self._update_anim_range_min)
-        self.anim_end_spin.valueChanged.connect(self._update_anim_range_max)
-        self.play_button.clicked.connect(self.start_animation)
-        self.pause_button.clicked.connect(self.pause_animation)
-        self.stop_button.clicked.connect(self.stop_animation)
-        self.time_step_mode_combo.currentTextChanged.connect(
-            self._update_step_spinbox_state
-        )
-        self.save_anim_button.clicked.connect(self.save_animation)
         
         # Context menu
         self.plotter.customContextMenuRequested.connect(self.show_context_menu)
@@ -997,17 +951,6 @@ class DisplayTab(QWidget):
         else:
             avg_dt = 1.0
         self.time_point_spinbox.setSingleStep(avg_dt)
-        
-        # Animation time range (kept for backwards compatibility, hidden in MARS-SC)
-        self.anim_start_spin.setRange(min_time, max_time)
-        self.anim_end_spin.setRange(min_time, max_time)
-        self.anim_start_spin.setValue(min_time)
-        self.anim_end_spin.setValue(max_time)
-        self.actual_interval_spin.setMaximum(len(time_values))
-        self.actual_interval_spin.setValue(1)
-        
-        # Show controls - Note: anim_group stays hidden in MARS-SC
-        # self.anim_group.setVisible(True)  # Hidden for MARS-SC
         self.time_point_group.setVisible(True)
         # Note: Deformation controls visibility is managed by _update_deformation_controls()
     
@@ -1056,14 +999,12 @@ class DisplayTab(QWidget):
             self.deformation_scale_edit.setText(
                 str(self.last_valid_deformation_scale)
             )
-            self.absolute_deformation_checkbox.setVisible(True)
         else:
             # Hide deformation controls when deformations are not loaded
             self.deformation_scale_label.setVisible(False)
             self.deformation_scale_edit.setVisible(False)
             self.deformation_scale_edit.setEnabled(False)
             self.deformation_scale_edit.setText("0")
-            self.absolute_deformation_checkbox.setVisible(False)
     
     @pyqtSlot(bool)
     def load_file(self, checked=False):
@@ -1089,27 +1030,6 @@ class DisplayTab(QWidget):
     def _validate_deformation_scale(self):
         """Validate deformation scale factor input."""
         self.visual_handler.validate_deformation_scale()
-    
-    @pyqtSlot(float)
-    def _update_anim_range_min(self, value):
-        """Ensure animation end time is not less than start time."""
-        self.anim_end_spin.setMinimum(value)
-    
-    @pyqtSlot(float)
-    def _update_anim_range_max(self, value):
-        """Ensure animation start time does not exceed end time."""
-        self.anim_start_spin.setMaximum(value)
-    
-    @pyqtSlot(str)
-    def _update_step_spinbox_state(self, text):
-        """Toggle between custom and actual time step modes."""
-        if text == "Custom Time Step":
-            self.custom_step_spin.setVisible(True)
-            self.actual_interval_spin.setVisible(False)
-        else:
-            self.custom_step_spin.setVisible(False)
-            self.actual_interval_spin.setVisible(True)
-    
     @pyqtSlot(bool)
     def update_time_point_results(self, checked=False):
         """
@@ -1158,41 +1078,6 @@ class DisplayTab(QWidget):
     def extract_initial_conditions(self, checked=False):
         """Extract velocity initial conditions and export to APDL format."""
         self.export_handler.extract_initial_conditions()
-    
-    @pyqtSlot(bool)
-    def start_animation(self, checked=False):
-        """Start animation playback or resume if paused."""
-        self.animation_handler.start_animation()
-    
-    def _estimate_animation_ram(self, num_nodes, num_anim_steps, include_deformation):
-        """Estimate peak RAM needed for animation precomputation in GB."""
-        return self.animation_handler.estimate_animation_ram(
-            num_nodes, num_anim_steps, include_deformation
-        )
-    
-    @pyqtSlot(bool)
-    def pause_animation(self, checked=False):
-        """Pause animation playback."""
-        self.animation_handler.pause_animation()
-    
-    @pyqtSlot(bool)
-    def stop_animation(self, checked=False):
-        """Stop animation, release precomputed data, and reset state."""
-        self.animation_handler.stop_animation()
-    
-    @pyqtSlot(bool)
-    def save_animation(self, checked=False):
-        """Save animation to file (MP4 or GIF)."""
-        self.animation_handler.save_animation()
-    
-    def _get_save_path_and_format(self):
-        """Delegate to animation handler for backwards compatibility."""
-        return self.animation_handler.get_save_path_and_format()
-
-    def _write_animation_to_file(self, file_path, file_format):
-        """Delegate to animation handler for backwards compatibility."""
-        return self.animation_handler.write_animation_to_file(file_path, file_format)
-    
     @pyqtSlot('QPoint')
     def show_context_menu(self, position):
         """Create and display the right-click context menu."""
@@ -1359,139 +1244,8 @@ class DisplayTab(QWidget):
         
         # Update Export Output CSV button visibility
         self._update_export_output_button_visibility()
-    
-    @pyqtSlot(object)
-    def on_animation_data_ready(self, precomputed_data):
-        """Receive precomputed animation data and start playback."""
-        from PyQt5.QtWidgets import QApplication
-        QApplication.restoreOverrideCursor()
-        
-        if precomputed_data is None:
-            print("Animation precomputation failed. See console for details.")
-            self.stop_animation()
-            return
-        
-        print("DisplayTab: Received precomputed animation data. Starting playback.")
-        
-        # Unpack data
-        (precomputed_scalars, precomputed_coords, precomputed_anim_times, 
-         data_column_name, is_deformation_included) = precomputed_data
-        
-        # Store in animation manager
-        self.anim_manager.precomputed_scalars = precomputed_scalars
-        self.anim_manager.precomputed_coords = precomputed_coords
-        self.anim_manager.precomputed_anim_times = precomputed_anim_times
-        self.anim_manager.data_column_name = data_column_name
-        self.anim_manager.is_deformation_included = is_deformation_included
-        self.animation_handler.set_state_attr(
-            "is_deformation_included_in_anim", is_deformation_included
-        )
-        
-        # Update data column for scalar bar title and hover annotation
-        self.data_column = data_column_name
-        self.state.data_column = data_column_name
-        
-        # Update scalar range spinboxes based on precomputed data
-        data_min = np.min(precomputed_scalars)
-        data_max = np.max(precomputed_scalars)
-        self.scalar_min_spin.blockSignals(True)
-        self.scalar_max_spin.blockSignals(True)
-        self.scalar_min_spin.setRange(data_min, data_max)
-        self.scalar_max_spin.setRange(data_min, 1e30)
-        self.scalar_min_spin.setValue(data_min)
-        self.scalar_max_spin.setValue(data_max)
-        self.scalar_min_spin.blockSignals(False)
-        self.scalar_max_spin.blockSignals(False)
-        
-        # Update the current mesh with first frame data and rebuild visualization
-        # This ensures scalar bar title and range are updated
-        self.animation_handler.set_state_attr("current_anim_frame_index", 0)
-        self.animation_handler.set_state_attr("animation_paused", False)
-        
-        try:
-            # Get first frame data
-            scalars, coords, time_val = self.anim_manager.get_frame_data(0)
-            
-            # Update mesh scalars
-            if self.current_mesh is not None:
-                self.current_mesh[data_column_name] = scalars
-                self.current_mesh.set_active_scalars(data_column_name)
-                
-                # Update coordinates if deformation is included
-                if coords is not None:
-                    self.current_mesh.points = coords.copy()
-                    try:
-                        self.current_mesh.points_modified()
-                    except AttributeError:
-                        self.current_mesh.GetPoints().Modified()
-                
-                # Rebuild visualization with new scalar bar title and range
-                self.update_visualization()
-            
-            # Re-create tracked node markers AFTER update_visualization (which clears the plotter)
-            if self.target_node_index is not None:
-                try:
-                    point_coords = (precomputed_coords[self.target_node_index, :, 0] 
-                                   if precomputed_coords is not None 
-                                   else self.current_mesh.points[self.target_node_index])
-                    
-                    self.marker_poly = pv.PolyData([point_coords])
-                    self.interaction_handler.set_state_attr('marker_poly', self.marker_poly)
-                    self.target_node_marker_actor = self.plotter.add_points(
-                        self.marker_poly,
-                        color='black',
-                        point_size=self.point_size.value() * 2,
-                        render_points_as_spheres=True,
-                        opacity=0.3
-                    )
-                    self.interaction_handler.set_state_attr('target_node_marker_actor', self.target_node_marker_actor)
-                    
-                    self.label_point_data = pv.PolyData([point_coords])
-                    self.interaction_handler.set_state_attr('label_point_data', self.label_point_data)
-                    self.target_node_label_actor = self.plotter.add_point_labels(
-                        self.label_point_data, [f"Node {self.target_node_id}"],
-                        name="target_node_label",
-                        font_size=16, text_color='red',
-                        always_visible=True, show_points=False
-                    )
-                    self.interaction_handler.set_state_attr('target_node_label_actor', self.target_node_label_actor)
-                    
-                    # Hide if frozen
-                    if self.freeze_tracked_node:
-                        if self.target_node_marker_actor:
-                            self.target_node_marker_actor.SetVisibility(False)
-                        if self.target_node_label_actor:
-                            self.target_node_label_actor.SetVisibility(False)
-                        self.plotter.render()
-                        
-                except IndexError:
-                    print("Warning: Could not re-create tracked node marker.")
-                    self.interaction_handler.clear_goto_node_markers()
-            
-            # Now render the first frame with the time text
-            self.animation_handler.animate_frame(update_index=False)
-        except Exception as e:
-            QMessageBox.critical(
-                self, "Animation Error",
-                f"Failed initial frame render: {str(e)}"
-            )
-            self.stop_animation()
-            return
-        
-        self.anim_timer = QTimer(self)
-        self.animation_handler.set_state_attr("anim_timer", self.anim_timer)
-        self.anim_timer.timeout.connect(self.animation_handler.animate_frame)
-        self.anim_timer.start(self.anim_interval_spin.value())
-        
-        # Update UI state
-        self.deformation_scale_edit.setEnabled(False)
-        self.pause_button.setEnabled(True)
-        self.stop_button.setEnabled(True)
-        self.save_anim_button.setEnabled(True)
-    
     def _clear_visualization(self):
         """Properly clear existing visualization."""
-        self.stop_animation()
         self.interaction_handler.clear_goto_node_markers()
         
         # Clear hover elements
@@ -1566,7 +1320,7 @@ class DisplayTab(QWidget):
     
     def __del__(self):
         """Cleanup when widget is destroyed."""
-        if self.anim_timer is not None:
-            self.anim_timer.stop()
         if hasattr(self, 'plotter'):
             self.plotter.close()
+
+
