@@ -168,3 +168,6 @@ Check `View -> Enable Tooltips` is checked.
 - `MARS_SC_USER_ACCEPTANCE_TESTS.csv`
 - `MARS_SC_USER_ACCEPTANCE_TESTS_GROUPED.csv`
 - `MARS_SC_UAT_Consolidated_Tests.csv`
+- `MARS_SC_USER_ACCEPTANCE_TESTS_TR.csv`
+- `MARS_SC_USER_ACCEPTANCE_TESTS_GROUPED_TR.csv`
+- `MARS_SC_UAT_Consolidated_Tests_TR.csv`

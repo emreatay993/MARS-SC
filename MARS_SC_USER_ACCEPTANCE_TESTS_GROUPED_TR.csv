@@ -1,0 +1,27 @@
+Test Grubu,Test Kimliği,Başlık,Ön Koşullar,Adımlar,Beklenen Sonuç
+TEST CASE 1: NAMED SELECTION KAYNAK FİLTRELEME,,,,,
+,UAT-NS-001,Named Selection Source açılır kutusu iki RST yüklendiğinde etkin olur,Uygulama açık; Analysis 1 ve Analysis 2 RST dosyaları hazır,Analysis 1 RST yükle > Analysis 2 RST yükle > Named Selection Source kontrolünü gözle,Named Selection Source açılır kutusu etkinleşir
+,UAT-NS-002,Common modu yalnızca ortak named selection adlarını listeler,İki RST dosyası yüklü; Her ikisinde named selection mevcut,Named Selection Source değerini Common (A1 & A2) yap > Named Selection listesini aç,Liste yalnızca iki analizde ortak olan adları içerir
+,UAT-NS-003,Analysis 1 modu base named selection adlarını listeler,İki RST dosyası yüklü,Named Selection Source değerini Analysis 1 (Base) yap > Listeyi aç,Analysis 1 named selection adları listelenir
+,UAT-NS-004,Analysis 2 modu combine named selection adlarını listeler,İki RST dosyası yüklü,Named Selection Source değerini Analysis 2 (Combine) yap > Listeyi aç,Analysis 2 named selection adları listelenir
+,UAT-NS-005,Refresh düğmesi etkin moda göre listeyi günceller,İki RST dosyası yüklü; Kaynak modu seçili,Refresh düğmesine tıkla,Named Selection listesi aktif kaynak moduna göre güncellenir
+TEST CASE 2: SCOPING PRECEDENCE VE SOLVE DAVRANIŞI,,,,,
+,UAT-NS-006,Aynı isimli selection için scoping Analysis 1 düğümlerini kullanır,İki RST yüklü; Aynı isimli fakat farklı node içeriğine sahip NS mevcut,Aynı isimli NS seç > Solve çalıştır,Scoping Analysis 1 node içeriğini kullanır (base precedence)
+,UAT-NS-007,Sadece Analysis 2 içinde olan NS solve için kullanılabilir,Analysis 2 içinde Analysis 1 de olmayan bir NS mevcut,Kaynak modunu Analysis 2 yap > Bu NS yi seç > Solve çalıştır,Çözüm geçerli scoping ile devam eder
+TEST CASE 3: KULLANILABİLİRLİK VE GENİŞLİK,,,,,
+,UAT-NS-008,Named selection alan genişliği uzun adlarda okunabilirlik sağlar,Uzun named selection adlarına sahip RST dosyaları yüklü,Named Selection açılır listesini aç ve seçili alanı kontrol et,Uzun adlar alan ve popup listede daha okunaklı görünür
+TEST CASE 4: SOLVER TOOLTIP KAPSAMI,,,,,
+,UAT-TT-001,Base Analysis düğmesi tooltip metni referans rolünü açıklar,Uygulama açık,Select Base Analysis RST düğmesi üzerine gel,Tooltip base/reference rolünü steady-state örneğiyle açıklar
+,UAT-TT-002,Analysis 2 düğmesi tooltip metni manevra örneğini içerir,Uygulama açık,Select Analysis to Combine RST düğmesi üzerine gel,Tooltip manevra analizi örnek ifadesini içerir
+,UAT-TT-003,Named Selection Source tooltip üç modu açıklar,Uygulama açık,Named Selection Source etiket/kutu üzerine gel,Tooltip Common Analysis1 Analysis2 davranışlarını açıklar
+,UAT-TT-004,Named Selection tooltip base precedence kuralını açıklar,Uygulama açık,Named Selection etiket/kutu üzerine gel,Tooltip aynı isimli seçimlerde Analysis 1 node içeriğinin kullanıldığını belirtir
+,UAT-TT-005,Import CSV tooltip beklenen başlık ve prefix formatını açıklar,Uygulama açık,Combination table alanında Import CSV düğmesi üzerine gel,HTML tooltip Combination Name Type ve kabul edilen coefficient prefix bilgilerini gösterir
+,UAT-TT-006,Output Options grup tooltip metni exclusivity kurallarını açıklar,Uygulama açık,Output Options grup başlığı üzerine gel,Tooltip karşılıklı dışlama ve history mode etkisini açıklar
+,UAT-TT-008,Add Row ve Delete Row düğmeleri eylem tooltiplerine sahiptir,Uygulama açık,Add Row üzerine gel > Delete Row üzerine gel,Tooltipler satır ekleme ve seçili satır silme davranışını açıklar
+TEST CASE 5: DISPLAY TOOLTIP KAPSAMI,,,,,
+,UAT-TT-007,Display Load Visualization tooltip beklenen CSV formatını açıklar,Display tab açık,Load Visualization File düğmesi üzerine gel,Tooltip gerekli X Y Z sütunlarını opsiyonel NodeID bilgisini ve örnek header ı gösterir
+TEST CASE 6: GLOBAL TOOLTIP AYARI,,,,,
+,UAT-TT-009,View menüsü tooltipleri global olarak kapatabilir,Uygulama açık; Tooltipler açık,View menüsünü aç > Enable Tooltips seçimini kaldır > Herhangi bir kontrol üzerinde hover yap,Tooltip pencereleri kapalıyken görünmez
+,UAT-TT-010,Tooltip açık/kapalı durumu yeniden başlatmada korunur,Tooltip ayarı varsayılandan farklı,Kapat > Uygulamayı yeniden aç > View menüsü ve hover davranışını kontrol et,Enable Tooltips durumu QSettings ile korunur
+TEST CASE 7: TOOLTIP STİL UYUMLULUĞU,,,,,
+,UAT-TT-011,Tooltip görsel stili sibling MARS_ projesi ile uyumludur,Uygulama açık,Herhangi bir tooltip göster > Görsel stili karşılaştır,Arka plan yazı rengi kenarlık ve font değerleri MARS_ stiline uyumludur
