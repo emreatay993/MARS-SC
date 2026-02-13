@@ -78,10 +78,21 @@ class SolverTabUIBuilder:
         combine_info_label = QLabel("Load steps: -")
         combine_info_label.setStyleSheet("color: #666; font-size: 10px;")
         
-        # Named Selection dropdown
+        # Named Selection source and dropdown
+        named_selection_source_label = QLabel("Named Selection Source:")
+        named_selection_source_combo = QComboBox()
+        named_selection_source_combo.addItem("Common (A1 & A2)", "common")
+        named_selection_source_combo.addItem("Analysis 1 (Base)", "analysis1")
+        named_selection_source_combo.addItem("Analysis 2 (Combine)", "analysis2")
+        named_selection_source_combo.setMinimumWidth(170)
+        named_selection_source_combo.setEnabled(False)
+
         named_selection_label = QLabel("Named Selection:")
         named_selection_combo = QComboBox()
-        named_selection_combo.setMinimumWidth(200)
+        named_selection_combo.setMinimumWidth(420)
+        named_selection_combo.setMinimumContentsLength(48)
+        named_selection_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        named_selection_combo.view().setMinimumWidth(520)
         named_selection_combo.setEnabled(False)
         named_selection_combo.addItem("(Load RST files first)")
         
@@ -112,6 +123,8 @@ class SolverTabUIBuilder:
         
         # Named selection row
         ns_row = QHBoxLayout()
+        ns_row.addWidget(named_selection_source_label)
+        ns_row.addWidget(named_selection_source_combo)
         ns_row.addWidget(named_selection_label)
         ns_row.addWidget(named_selection_combo)
         ns_row.addWidget(refresh_ns_button)
@@ -134,6 +147,7 @@ class SolverTabUIBuilder:
         self.components['combine_rst_button'] = combine_rst_button
         self.components['combine_rst_path'] = combine_rst_path
         self.components['combine_info_label'] = combine_info_label
+        self.components['named_selection_source_combo'] = named_selection_source_combo
         self.components['named_selection_combo'] = named_selection_combo
         self.components['refresh_ns_button'] = refresh_ns_button
         self.components['skip_substeps_checkbox'] = skip_substeps_checkbox

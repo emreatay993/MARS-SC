@@ -5,7 +5,7 @@ via linear combination coefficients.
 
 import os
 import sys
-from typing import Optional, List
+from typing import Optional
 
 import numpy as np
 from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot
@@ -161,6 +161,7 @@ class SolverTab(QWidget):
         self.combine_rst_button = self.components['combine_rst_button']
         self.combine_rst_path = self.components['combine_rst_path']
         self.combine_info_label = self.components['combine_info_label']
+        self.named_selection_source_combo = self.components['named_selection_source_combo']
         self.named_selection_combo = self.components['named_selection_combo']
         self.refresh_ns_button = self.components['refresh_ns_button']
         self.skip_substeps_checkbox = self.components['skip_substeps_checkbox']
@@ -229,6 +230,7 @@ class SolverTab(QWidget):
         self.base_rst_button.clicked.connect(self.file_handler.select_base_rst_file)
         self.combine_rst_button.clicked.connect(self.file_handler.select_combine_rst_file)
         self.refresh_ns_button.clicked.connect(self.file_handler.refresh_named_selections)
+        self.named_selection_source_combo.currentIndexChanged.connect(self._on_named_selection_source_changed)
         
         # Combination table controls
         self.import_csv_btn.clicked.connect(self.file_handler.import_combination_table)
@@ -378,27 +380,65 @@ class SolverTab(QWidget):
         self._update_solve_button_state()
         self._enable_output_checkboxes()
     
+    def _on_named_selection_source_changed(self, index: int):
+        """Refresh list when the named selection source filter changes."""
+        if self.analysis1_data and self.analysis2_data:
+            self._update_named_selections()
+
+    def _get_named_selection_source_mode(self) -> str:
+        """Return active source mode for named selection list."""
+        mode = self.named_selection_source_combo.currentData()
+        if mode in ("common", "analysis1", "analysis2"):
+            return mode
+        return "common"
+
+    def _get_named_selection_sets(self):
+        """Get named selection name sets for both analyses."""
+        ns1 = set(self.analysis1_data.named_selections) if self.analysis1_data else set()
+        ns2 = set(self.analysis2_data.named_selections) if self.analysis2_data else set()
+        return ns1, ns2
+
     def _update_named_selections(self):
-        """Update the named selections dropdown with common selections."""
+        """Update named selections dropdown based on current source filter."""
+        previous_selection = self.get_selected_named_selection()
         self.named_selection_combo.clear()
         
-        if self.analysis1_data and self.analysis2_data:
-            # Find common named selections
-            ns1 = set(self.analysis1_data.named_selections)
-            ns2 = set(self.analysis2_data.named_selections)
-            common_ns = sorted(ns1.intersection(ns2))
+        has_analysis1 = self.analysis1_data is not None
+        has_analysis2 = self.analysis2_data is not None
+        self.named_selection_source_combo.setEnabled(has_analysis1 and has_analysis2)
+        self.refresh_ns_button.setEnabled(has_analysis1 or has_analysis2)
+        
+        if has_analysis1 and has_analysis2:
+            ns1, ns2 = self._get_named_selection_sets()
+            source_mode = self._get_named_selection_source_mode()
             
-            if common_ns:
-                self.named_selection_combo.addItems(common_ns)
-                self.named_selection_combo.setEnabled(True)
-                self.refresh_ns_button.setEnabled(True)
+            if source_mode == "analysis1":
+                selections = sorted(ns1)
+                empty_text = "(No named selections in Analysis 1)"
+            elif source_mode == "analysis2":
+                selections = sorted(ns2)
+                empty_text = "(No named selections in Analysis 2)"
             else:
-                self.named_selection_combo.addItem("(No common named selections)")
+                selections = sorted(ns1.intersection(ns2))
+                empty_text = "(No common named selections)"
+            
+            if selections:
+                self.named_selection_combo.addItems(selections)
+                self.named_selection_combo.setEnabled(True)
+                if previous_selection and previous_selection in selections:
+                    self.named_selection_combo.setCurrentText(previous_selection)
+            else:
+                self.named_selection_combo.addItem(empty_text)
                 self.named_selection_combo.setEnabled(False)
-        elif self.analysis1_data:
-            # Only base loaded
+        elif has_analysis1:
             if self.analysis1_data.named_selections:
                 self.named_selection_combo.addItems(self.analysis1_data.named_selections)
+            else:
+                self.named_selection_combo.addItem("(No named selections)")
+            self.named_selection_combo.setEnabled(False)
+        elif has_analysis2:
+            if self.analysis2_data.named_selections:
+                self.named_selection_combo.addItems(self.analysis2_data.named_selections)
             else:
                 self.named_selection_combo.addItem("(No named selections)")
             self.named_selection_combo.setEnabled(False)
@@ -858,13 +898,15 @@ class SolverTab(QWidget):
         
         if stress_outputs_selected:
             ns_name = self.get_selected_named_selection()
-            if ns_name and self.file_handler.base_reader is not None:
+            if ns_name:
                 try:
-                    has_beams = self.file_handler.base_reader.check_named_selection_has_beam_elements(ns_name)
+                    scoping_reader, source_label = self.get_scoping_reader_for_named_selection(ns_name)
+                    has_beams = scoping_reader.check_named_selection_has_beam_elements(ns_name)
                     if has_beams:
                         QMessageBox.warning(
                             self, "Stress Output Not Supported",
                             f"The selected Named Selection '{ns_name}' contains beam elements.\n\n"
+                            f"Scoping source: {source_label}\n\n"
                             "Stress tensor output (Von Mises, Max Principal, Min Principal) is not "
                             "supported for beam elements.\n\n"
                             "Please either:\n"
@@ -903,25 +945,26 @@ class SolverTab(QWidget):
                 return False
             
             # Check if node exists in current scoping (early validation)
-            if self.file_handler.base_reader is not None:
-                ns_name = self.get_selected_named_selection()
-                if ns_name:
-                    try:
-                        scoping = self.file_handler.base_reader.get_nodal_scoping_from_named_selection(ns_name)
-                        scoping_ids = list(scoping.ids)
-                        if node_id not in scoping_ids:
-                            QMessageBox.warning(
-                                self, "Node Not Found",
-                                f"Node ID {node_id} was not found in Named Selection '{ns_name}'.\n\n"
-                                f"The selected Named Selection contains {len(scoping_ids):,} nodes.\n"
-                                f"Please enter a valid Node ID from this selection."
-                            )
-                            return False
-                    except Exception as e:
-                        # Log but don't block - let the engine handle validation
-                        self.console_textbox.append(
-                            f"[Warning] Could not validate node ID: {e}"
+            ns_name = self.get_selected_named_selection()
+            if ns_name:
+                try:
+                    scoping_reader, source_label = self.get_scoping_reader_for_named_selection(ns_name)
+                    scoping = scoping_reader.get_nodal_scoping_from_named_selection(ns_name)
+                    scoping_ids = list(scoping.ids)
+                    if node_id not in scoping_ids:
+                        QMessageBox.warning(
+                            self, "Node Not Found",
+                            f"Node ID {node_id} was not found in Named Selection '{ns_name}'.\n\n"
+                            f"Scoping source: {source_label}\n"
+                            f"The selected Named Selection contains {len(scoping_ids):,} nodes.\n"
+                            f"Please enter a valid Node ID from this selection."
                         )
+                        return False
+                except Exception as e:
+                    # Log but don't block - let the engine handle validation
+                    self.console_textbox.append(
+                        f"[Warning] Could not validate node ID: {e}"
+                    )
         
         return True
     
@@ -972,9 +1015,53 @@ class SolverTab(QWidget):
     def get_selected_named_selection(self) -> Optional[str]:
         """Get the currently selected named selection."""
         text = self.named_selection_combo.currentText()
-        if text.startswith("("):
+        if not text or text.startswith("("):
             return None
         return text
+
+    def get_scoping_reader_for_named_selection(self, ns_name: str):
+        """
+        Resolve which analysis reader should provide named-selection node scoping.
+
+        If the same named selection exists in both analyses, Analysis 1 takes
+        precedence to avoid mismatched node content.
+        """
+        if not ns_name:
+            raise ValueError("Named selection name is required.")
+        
+        base_reader = self.file_handler.base_reader
+        combine_reader = self.file_handler.combine_reader
+        ns1, ns2 = self._get_named_selection_sets()
+        
+        in_analysis1 = ns_name in ns1
+        in_analysis2 = ns_name in ns2
+        
+        if in_analysis1 and base_reader is not None:
+            if in_analysis2:
+                return base_reader, "Analysis 1 (base precedence for common name)"
+            return base_reader, "Analysis 1"
+        
+        if in_analysis2 and combine_reader is not None:
+            return combine_reader, "Analysis 2"
+        
+        source_mode = self._get_named_selection_source_mode()
+        if source_mode == "analysis2" and combine_reader is not None:
+            return combine_reader, "Analysis 2"
+        if base_reader is not None:
+            return base_reader, "Analysis 1"
+        if combine_reader is not None:
+            return combine_reader, "Analysis 2"
+        
+        raise ValueError("DPF readers are not available. Please reload RST files.")
+
+    def get_nodal_scoping_for_selected_named_selection(self):
+        """Get nodal scoping for current selection based on the active source mode."""
+        ns_name = self.get_selected_named_selection()
+        if ns_name is None:
+            raise ValueError("Please select a valid named selection.")
+        
+        reader, _ = self.get_scoping_reader_for_named_selection(ns_name)
+        return reader.get_nodal_scoping_from_named_selection(ns_name)
     
     # ========== Result Handling ==========
     

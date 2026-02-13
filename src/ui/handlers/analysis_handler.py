@@ -17,7 +17,6 @@ from solver.combination_engine import CombinationEngine
 from solver.nodal_forces_engine import NodalForcesCombinationEngine
 from solver.deformation_engine import DeformationCombinationEngine, CylindricalCSNotFoundError
 from file_io.dpf_reader import (
-    DPFAnalysisReader, BeamElementNotSupportedError, 
     NodalForcesNotAvailableError, DisplacementNotAvailableError
 )
 from core.data_models import (
@@ -344,9 +343,8 @@ class SolverAnalysisHandler:
             if reader1 is None or reader2 is None:
                 raise ValueError("DPF readers not available. Please reload RST files.")
             
-            # Get nodal scoping from named selection
-            ns_name = self.tab.get_selected_named_selection()
-            nodal_scoping = reader1.get_nodal_scoping_from_named_selection(ns_name)
+            # Get nodal scoping from selected named selection source
+            nodal_scoping = self.tab.get_nodal_scoping_for_selected_named_selection()
             
             # Get combination table
             combo_table = self.tab.get_combination_table_data()
@@ -476,9 +474,8 @@ class SolverAnalysisHandler:
             if reader1 is None or reader2 is None:
                 raise ValueError("DPF readers not available. Please reload RST files.")
             
-            # Get nodal scoping from named selection
-            ns_name = self.tab.get_selected_named_selection()
-            nodal_scoping = reader1.get_nodal_scoping_from_named_selection(ns_name)
+            # Get nodal scoping from selected named selection source
+            nodal_scoping = self.tab.get_nodal_scoping_for_selected_named_selection()
             
             # Get combination table
             combo_table = self.tab.get_combination_table_data()
@@ -581,9 +578,8 @@ class SolverAnalysisHandler:
             if reader1 is None or reader2 is None:
                 raise ValueError("DPF readers not available. Please reload RST files.")
             
-            # Get nodal scoping from named selection
-            ns_name = self.tab.get_selected_named_selection()
-            nodal_scoping = reader1.get_nodal_scoping_from_named_selection(ns_name)
+            # Get nodal scoping from selected named selection source
+            nodal_scoping = self.tab.get_nodal_scoping_for_selected_named_selection()
             
             # Get combination table
             combo_table = self.tab.get_combination_table_data()
