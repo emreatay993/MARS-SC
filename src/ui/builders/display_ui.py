@@ -17,6 +17,17 @@ from ui.styles.style_constants import (
 from utils.constants import (
     DEFAULT_POINT_SIZE, DEFAULT_BACKGROUND_COLOR
 )
+from utils.tooltips import (
+    TOOLTIP_DISPLAY_LOAD_FILE, TOOLTIP_DISPLAY_FILE_PATH,
+    TOOLTIP_DISPLAY_VISUALIZATION_CONTROLS, TOOLTIP_DISPLAY_POINT_SIZE,
+    TOOLTIP_DISPLAY_LEGEND_RANGE, TOOLTIP_DISPLAY_SCALAR,
+    TOOLTIP_DISPLAY_VIEW_COMBINATION, TOOLTIP_DISPLAY_FORCE_COMPONENT,
+    TOOLTIP_DISPLAY_EXPORT_FORCES, TOOLTIP_DISPLAY_DISPLACEMENT_COMPONENT,
+    TOOLTIP_DISPLAY_EXPORT_OUTPUT, TOOLTIP_DISPLAY_DEFORMATION_SCALE,
+    TOOLTIP_DISPLAY_COMBINATION_POINT_CONTROLS,
+    TOOLTIP_DISPLAY_COMBINATION_SELECTOR, TOOLTIP_DISPLAY_UPDATE_BUTTON,
+    TOOLTIP_DISPLAY_SAVE_BUTTON, TOOLTIP_DISPLAY_EXTRACT_IC
+)
 
 
 class DisplayTabUIBuilder:
@@ -35,10 +46,12 @@ class DisplayTabUIBuilder:
         """
         file_button = QPushButton('Load Visualization File')
         file_button.setStyleSheet(BUTTON_STYLE)
+        file_button.setToolTip(TOOLTIP_DISPLAY_LOAD_FILE)
 
         file_path = QLineEdit()
         file_path.setReadOnly(True)
         file_path.setStyleSheet(READONLY_INPUT_STYLE)
+        file_path.setToolTip(TOOLTIP_DISPLAY_FILE_PATH)
         
         file_layout = QHBoxLayout()
         file_layout.addWidget(file_button)
@@ -62,6 +75,7 @@ class DisplayTabUIBuilder:
         point_size.setRange(1, 100)
         point_size.setValue(DEFAULT_POINT_SIZE)
         point_size.setPrefix("Size: ")
+        point_size.setToolTip(TOOLTIP_DISPLAY_POINT_SIZE)
         
         # Scalar range controls
         scalar_min_spin = QDoubleSpinBox()
@@ -70,6 +84,8 @@ class DisplayTabUIBuilder:
         scalar_max_spin.setPrefix("Max: ")
         scalar_min_spin.setDecimals(3)
         scalar_max_spin.setDecimals(3)
+        scalar_min_spin.setToolTip(TOOLTIP_DISPLAY_LEGEND_RANGE)
+        scalar_max_spin.setToolTip(TOOLTIP_DISPLAY_LEGEND_RANGE)
         
         # Deformation scale factor
         deformation_scale_label = QLabel("Deformation Scale Factor:")
@@ -77,19 +93,16 @@ class DisplayTabUIBuilder:
         validator = QDoubleValidator()
         validator.setNotation(QDoubleValidator.StandardNotation)
         deformation_scale_edit.setValidator(validator)
+        deformation_scale_label.setToolTip(TOOLTIP_DISPLAY_DEFORMATION_SCALE)
+        deformation_scale_edit.setToolTip(TOOLTIP_DISPLAY_DEFORMATION_SCALE)
         deformation_scale_label.setVisible(False)
         deformation_scale_edit.setVisible(False)
         # Scalar display selection combo box (for batch solve results)
         scalar_display_label = QLabel("Display:")
         scalar_display_combo = QComboBox()
         scalar_display_combo.setMinimumWidth(180)
-        scalar_display_combo.setToolTip(
-            "Select which data to display as the contour:\n"
-            "- Max Value: Maximum stress across all combinations\n"
-            "- Min Value: Minimum stress (for Min Principal only)\n"
-            "- Combo # of Max: Which combination produced the max\n"
-            "- Combo # of Min: Which combination produced the min"
-        )
+        scalar_display_label.setToolTip(TOOLTIP_DISPLAY_SCALAR)
+        scalar_display_combo.setToolTip(TOOLTIP_DISPLAY_SCALAR)
         # Default items - will be populated dynamically based on result type
         scalar_display_combo.addItem("Max Value")
         scalar_display_combo.addItem("Combo # of Max")
@@ -100,10 +113,8 @@ class DisplayTabUIBuilder:
         view_combination_label = QLabel("View Combination:")
         view_combination_combo = QComboBox()
         view_combination_combo.setMinimumWidth(200)
-        view_combination_combo.setToolTip(
-            "Select a specific combination to visualize its results.\n"
-            "Choose '(Envelope View)' to see Max/Min across all combinations."
-        )
+        view_combination_label.setToolTip(TOOLTIP_DISPLAY_VIEW_COMBINATION)
+        view_combination_combo.setToolTip(TOOLTIP_DISPLAY_VIEW_COMBINATION)
         view_combination_combo.addItem("(Envelope View)")  # Default option
         view_combination_label.setVisible(False)  # Hidden until batch results are loaded
         view_combination_combo.setVisible(False)
@@ -118,26 +129,15 @@ class DisplayTabUIBuilder:
             "Shear XZ (FX^2+FZ^2)^1/2",
             "Shear YZ (FY^2+FZ^2)^1/2",
         ])
-        force_component_combo.setToolTip(
-            "Select which force component to display:\n"
-            "- Magnitude: Total force magnitude sqrt(FX^2+FY^2+FZ^2)\n"
-            "- FX: Force in X direction\n"
-            "- FY: Force in Y direction\n"
-            "- FZ: Force in Z direction\n"
-            "- Shear XY: sqrt(FX^2+FY^2)\n"
-            "- Shear XZ: sqrt(FX^2+FZ^2)\n"
-            "- Shear YZ: sqrt(FY^2+FZ^2)"
-        )
+        force_component_label.setToolTip(TOOLTIP_DISPLAY_FORCE_COMPONENT)
+        force_component_combo.setToolTip(TOOLTIP_DISPLAY_FORCE_COMPONENT)
         force_component_label.setVisible(False)  # Hidden until nodal forces are loaded
         force_component_combo.setVisible(False)
         
         # Export forces CSV button
         export_forces_button = QPushButton("Export Forces CSV")
         export_forces_button.setStyleSheet(BUTTON_STYLE)
-        export_forces_button.setToolTip(
-            "Export nodal forces for the currently selected combination to CSV.\n"
-            "Includes FX, FY, FZ components, magnitude, shear variants, element type, and coordinate system."
-        )
+        export_forces_button.setToolTip(TOOLTIP_DISPLAY_EXPORT_FORCES)
         export_forces_button.setVisible(False)  # Hidden until nodal forces are loaded
         
         # Displacement component selection controls (for deformation results)
@@ -145,37 +145,27 @@ class DisplayTabUIBuilder:
         displacement_component_combo = QComboBox()
         displacement_component_combo.setMinimumWidth(120)
         displacement_component_combo.addItems(["U_mag", "UX", "UY", "UZ"])
-        displacement_component_combo.setToolTip(
-            "Select which displacement component to display as contour:\n"
-            "- U_mag: Total displacement magnitude sqrt(UX^2+UY^2+UZ^2)\n"
-            "- UX: Displacement in X direction\n"
-            "- UY: Displacement in Y direction\n"
-            "- UZ: Displacement in Z direction"
-        )
+        displacement_component_label.setToolTip(TOOLTIP_DISPLAY_DISPLACEMENT_COMPONENT)
+        displacement_component_combo.setToolTip(TOOLTIP_DISPLAY_DISPLACEMENT_COMPONENT)
         displacement_component_label.setVisible(False)  # Hidden until deformation is available
         displacement_component_combo.setVisible(False)
         
         # Export output CSV (stress, forces, deformation)
         export_output_button = QPushButton("Export Output CSV")
         export_output_button.setStyleSheet(BUTTON_STYLE)
-        export_output_button.setToolTip(
-            "Export results to CSV files.\n\n"
-            "Envelope View:\n"
-            "  - Exports envelope data based on Display dropdown selection\n"
-            "  - 'Max Value' or 'Combo # of Max' -> exports max envelope\n"
-            "  - 'Min Value' or 'Combo # of Min' -> exports min envelope\n\n"
-            "Single Combination:\n"
-            "  - Exports results for the selected combination\n\n"
-            "Exports all available result types (stress, forces, deformation).\n"
-            "Note: Deformation results are always exported to a separate file."
-        )
+        export_output_button.setToolTip(TOOLTIP_DISPLAY_EXPORT_OUTPUT)
         export_output_button.setVisible(False)  # Hidden until results are available
         
         # Layout
+        node_point_size_label = QLabel("Node Point Size:")
+        node_point_size_label.setToolTip(TOOLTIP_DISPLAY_POINT_SIZE)
+        legend_range_label = QLabel("Legend Range:")
+        legend_range_label.setToolTip(TOOLTIP_DISPLAY_LEGEND_RANGE)
+
         graphics_control_layout = QHBoxLayout()
-        graphics_control_layout.addWidget(QLabel("Node Point Size:"))
+        graphics_control_layout.addWidget(node_point_size_label)
         graphics_control_layout.addWidget(point_size)
-        graphics_control_layout.addWidget(QLabel("Legend Range:"))
+        graphics_control_layout.addWidget(legend_range_label)
         graphics_control_layout.addWidget(scalar_min_spin)
         graphics_control_layout.addWidget(scalar_max_spin)
         graphics_control_layout.addWidget(scalar_display_label)
@@ -195,6 +185,7 @@ class DisplayTabUIBuilder:
         graphics_control_group = QGroupBox("Visualization Controls")
         graphics_control_group.setStyleSheet(GROUP_BOX_STYLE)
         graphics_control_group.setLayout(graphics_control_layout)
+        graphics_control_group.setToolTip(TOOLTIP_DISPLAY_VISUALIZATION_CONTROLS)
         
         # Store components
         self.components['point_size'] = point_size
@@ -227,11 +218,12 @@ class DisplayTabUIBuilder:
             QGroupBox: Group box containing combination point controls.
         """
         selected_time_label = QLabel("Display results for Combination:")
+        selected_time_label.setToolTip(TOOLTIP_DISPLAY_COMBINATION_SELECTOR)
         
         # Combination dropdown instead of time spinbox for MARS-SC
         combination_combo = QComboBox()
         combination_combo.setMinimumWidth(200)
-        combination_combo.setToolTip("Select which combination to display")
+        combination_combo.setToolTip(TOOLTIP_DISPLAY_COMBINATION_SELECTOR)
         
         # Keep the spinbox for backwards compatibility but hidden by default
         time_point_spinbox = QDoubleSpinBox()
@@ -241,10 +233,13 @@ class DisplayTabUIBuilder:
         time_point_spinbox.setVisible(False)  # Hidden for MARS-SC
         
         update_time_button = QPushButton("Update")
+        update_time_button.setToolTip(TOOLTIP_DISPLAY_UPDATE_BUTTON)
         save_time_button = QPushButton("Save Combination as CSV")
+        save_time_button.setToolTip(TOOLTIP_DISPLAY_SAVE_BUTTON)
         
         extract_ic_button = QPushButton("Export Velocity as Initial Condition in APDL")
         extract_ic_button.setStyleSheet(BUTTON_STYLE)
+        extract_ic_button.setToolTip(TOOLTIP_DISPLAY_EXTRACT_IC)
         extract_ic_button.setVisible(False)  # Not used in MARS-SC
         
         # Layout
@@ -260,6 +255,7 @@ class DisplayTabUIBuilder:
         time_point_group = QGroupBox("Combination Point Controls")
         time_point_group.setStyleSheet(GROUP_BOX_STYLE)
         time_point_group.setLayout(time_point_layout)
+        time_point_group.setToolTip(TOOLTIP_DISPLAY_COMBINATION_POINT_CONTROLS)
         time_point_group.setVisible(False)
         
         # Store components
@@ -321,4 +317,3 @@ class DisplayTabUIBuilder:
         main_layout.addWidget(plotter)
         
         return main_layout, self.components
-

@@ -28,9 +28,12 @@ from utils.constants import (
 from utils.tooltips import (
     TOOLTIP_VON_MISES, TOOLTIP_MAX_PRINCIPAL, TOOLTIP_MIN_PRINCIPAL,
     TOOLTIP_NODAL_FORCES, TOOLTIP_NODAL_FORCES_CSYS, TOOLTIP_COMBINATION_HISTORY,
-    TOOLTIP_PLASTICITY_CORRECTION, TOOLTIP_PLASTICITY_METHOD, TOOLTIP_MAX_ITERATIONS,
+    TOOLTIP_PLASTICITY_CORRECTION, TOOLTIP_OUTPUT_OPTIONS, TOOLTIP_PLASTICITY_METHOD, TOOLTIP_MAX_ITERATIONS,
     TOOLTIP_TOLERANCE, TOOLTIP_EXTRAPOLATION, TOOLTIP_IMPORT_CSV, TOOLTIP_EXPORT_CSV,
-    TOOLTIP_DEFORMATION, TOOLTIP_DEFORMATION_CYLINDRICAL_CS
+    TOOLTIP_DEFORMATION, TOOLTIP_DEFORMATION_CYLINDRICAL_CS,
+    TOOLTIP_NAMED_SELECTION, TOOLTIP_NAMED_SELECTION_SOURCE, TOOLTIP_NAMED_SELECTION_REFRESH,
+    TOOLTIP_BASE_RST, TOOLTIP_COMBINE_RST, TOOLTIP_COMBINATION_TABLE,
+    TOOLTIP_ADD_ROW, TOOLTIP_DELETE_ROW
 )
 from ui.styles.style_constants import (
     BUTTON_STYLE, GROUP_BOX_STYLE, TAB_STYLE, READONLY_INPUT_STYLE,
@@ -58,25 +61,31 @@ class SolverTabUIBuilder:
         base_rst_button = QPushButton('Select Base Analysis RST')
         base_rst_button.setStyleSheet(BUTTON_STYLE)
         base_rst_button.setFont(QFont('Arial', 8))
+        base_rst_button.setToolTip(TOOLTIP_BASE_RST)
         base_rst_path = QLineEdit()
         base_rst_path.setReadOnly(True)
         base_rst_path.setStyleSheet(READONLY_INPUT_STYLE)
         base_rst_path.setPlaceholderText("No file selected")
+        base_rst_path.setToolTip(TOOLTIP_BASE_RST)
         
         base_info_label = QLabel("Load steps: -")
         base_info_label.setStyleSheet("color: #666; font-size: 10px;")
+        base_info_label.setToolTip(TOOLTIP_BASE_RST)
 
         # Analysis to Combine RST (Analysis 2)
         combine_rst_button = QPushButton('Select Analysis to Combine RST')
         combine_rst_button.setStyleSheet(BUTTON_STYLE)
         combine_rst_button.setFont(QFont('Arial', 8))
+        combine_rst_button.setToolTip(TOOLTIP_COMBINE_RST)
         combine_rst_path = QLineEdit()
         combine_rst_path.setReadOnly(True)
         combine_rst_path.setStyleSheet(READONLY_INPUT_STYLE)
         combine_rst_path.setPlaceholderText("No file selected")
+        combine_rst_path.setToolTip(TOOLTIP_COMBINE_RST)
         
         combine_info_label = QLabel("Load steps: -")
         combine_info_label.setStyleSheet("color: #666; font-size: 10px;")
+        combine_info_label.setToolTip(TOOLTIP_COMBINE_RST)
         
         # Named Selection source and dropdown
         named_selection_source_label = QLabel("Named Selection Source:")
@@ -86,6 +95,11 @@ class SolverTabUIBuilder:
         named_selection_source_combo.addItem("Analysis 2 (Combine)", "analysis2")
         named_selection_source_combo.setMinimumWidth(170)
         named_selection_source_combo.setEnabled(False)
+        named_selection_source_combo.setToolTip(TOOLTIP_NAMED_SELECTION_SOURCE)
+        named_selection_source_label.setToolTip(TOOLTIP_NAMED_SELECTION_SOURCE)
+        named_selection_source_combo.setItemData(0, "Show only names available in both analyses.", Qt.ToolTipRole)
+        named_selection_source_combo.setItemData(1, "Show names from Analysis 1 only.", Qt.ToolTipRole)
+        named_selection_source_combo.setItemData(2, "Show names from Analysis 2 only.", Qt.ToolTipRole)
 
         named_selection_label = QLabel("Named Selection:")
         named_selection_combo = QComboBox()
@@ -95,12 +109,15 @@ class SolverTabUIBuilder:
         named_selection_combo.view().setMinimumWidth(520)
         named_selection_combo.setEnabled(False)
         named_selection_combo.addItem("(Load RST files first)")
+        named_selection_combo.setToolTip(TOOLTIP_NAMED_SELECTION)
+        named_selection_label.setToolTip(TOOLTIP_NAMED_SELECTION)
         
         refresh_ns_button = QPushButton("Refresh")
         refresh_ns_button.setStyleSheet(BUTTON_STYLE)
         refresh_ns_button.setFont(QFont('Arial', 8))
         refresh_ns_button.setMaximumWidth(80)
         refresh_ns_button.setEnabled(False)
+        refresh_ns_button.setToolTip(TOOLTIP_NAMED_SELECTION_REFRESH)
         
         # Skip substeps checkbox
         skip_substeps_checkbox = QCheckBox("Skip Substeps (use last substep of each load step only)")
@@ -166,6 +183,7 @@ class SolverTabUIBuilder:
         combo_table = ClearableSelectionTableWidget()
         combo_table.setMinimumHeight(120)
         combo_table.setAlternatingRowColors(True)
+        combo_table.setToolTip(TOOLTIP_COMBINATION_TABLE)
         combo_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         combo_table.setSelectionMode(QAbstractItemView.SingleSelection)
         combo_table.verticalHeader().setVisible(False)
@@ -206,10 +224,12 @@ class SolverTabUIBuilder:
         add_row_btn = QPushButton("Add Row")
         add_row_btn.setStyleSheet(BUTTON_STYLE)
         add_row_btn.setFont(QFont('Arial', 8))
+        add_row_btn.setToolTip(TOOLTIP_ADD_ROW)
         
         delete_row_btn = QPushButton("Delete Row")
         delete_row_btn.setStyleSheet(BUTTON_STYLE)
         delete_row_btn.setFont(QFont('Arial', 8))
+        delete_row_btn.setToolTip(TOOLTIP_DELETE_ROW)
         
         # Button layout
         btn_layout = QHBoxLayout()
@@ -228,6 +248,7 @@ class SolverTabUIBuilder:
         table_group = CollapsibleGroupBoxStyled("Combination Coefficients Table", initially_expanded=True)
         table_group.setContentLayout(table_layout)
         table_group.setContentMargins(8, 4, 8, 4)
+        table_group.setToolTip(TOOLTIP_COMBINATION_TABLE)
         
         # Store components
         self.components['combo_table'] = combo_table
@@ -339,6 +360,7 @@ class SolverTabUIBuilder:
         output_group = CollapsibleGroupBoxStyled("Output Options", initially_expanded=True)
         output_group.setContentLayout(output_layout)
         output_group.setContentMargins(8, 4, 8, 4)
+        output_group.setToolTip(TOOLTIP_OUTPUT_OPTIONS)
         
         # Store components
         self.components['combination_history_checkbox'] = combination_history_checkbox

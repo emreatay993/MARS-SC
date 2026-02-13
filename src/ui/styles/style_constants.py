@@ -1,5 +1,19 @@
 """Qt stylesheet strings for MARS-SC; applied via setStyleSheet()."""
 
+# Tooltip styles (kept consistent with MARS_ project)
+TOOLTIP_STYLE = """
+QToolTip {
+    background-color: #f7f9fc;
+    color: #1a1a2e;
+    border: 1px solid #5b9bd5;
+    border-radius: 4px;
+    padding: 8px 10px;
+    font-family: Arial, sans-serif;
+    font-size: 8pt;
+    opacity: 245;
+}
+"""
+
 # Button styles
 BUTTON_STYLE = """
     QPushButton {

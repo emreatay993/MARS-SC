@@ -8,11 +8,11 @@ static analysis results from two RST files and computes stress envelopes.
 
 from pathlib import Path
 
-from PyQt5.QtCore import Qt, QDir, pyqtSlot
+from PyQt5.QtCore import Qt, QDir, QObject, QEvent, QSettings, pyqtSlot
 from PyQt5.QtGui import QPalette, QColor, QIcon
 from PyQt5.QtWidgets import (
-    QAction, QDockWidget, QFileSystemModel,
-    QMainWindow, QMenuBar, QMessageBox, QTabWidget, QTreeView
+    QAction, QApplication, QDockWidget, QFileSystemModel,
+    QMainWindow, QMenuBar, QMessageBox, QTabWidget, QTreeView, QToolTip
 )
 
 from ui.solver_tab import SolverTab
@@ -20,8 +20,28 @@ from ui.display_tab import DisplayTab
 from ui.handlers.plotting_handler import PlottingHandler
 from ui.handlers.navigator_handler import NavigatorHandler
 from ui.styles.style_constants import (
-    MENU_BAR_STYLE, NAVIGATOR_TITLE_STYLE, TREE_VIEW_STYLE, TAB_STYLE
+    MENU_BAR_STYLE, NAVIGATOR_TITLE_STYLE, TREE_VIEW_STYLE, TAB_STYLE,
+    TOOLTIP_STYLE
 )
+
+
+class TooltipEventFilter(QObject):
+    """App-wide filter that can disable all tooltip popups."""
+
+    def __init__(self, enabled: bool = True, parent=None):
+        super().__init__(parent)
+        self._enabled = enabled
+
+    def set_enabled(self, enabled: bool) -> None:
+        """Enable or disable tooltip popups globally."""
+        self._enabled = bool(enabled)
+
+    def eventFilter(self, obj, event):
+        """Block tooltip events when disabled."""
+        if event.type() == QEvent.ToolTip and not self._enabled:
+            QToolTip.hideText()
+            return True
+        return False
 
 
 class ApplicationController(QMainWindow):
@@ -36,10 +56,28 @@ class ApplicationController(QMainWindow):
         """Initialize the application controller."""
         super().__init__()
 
+        # Persistent app settings
+        self.settings = QSettings("MARS-SC", "MARS-SC")
+        self.tooltips_enabled = self.settings.value(
+            "view/tooltips_enabled", True, type=bool
+        )
+
+        # Install global tooltip filter
+        self._tooltip_filter = TooltipEventFilter(
+            enabled=self.tooltips_enabled,
+            parent=self
+        )
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self._tooltip_filter)
+
         # Set window background color (matching legacy)
         palette = self.palette()
         palette.setColor(QPalette.Window, QColor(230, 230, 230))  # Light gray background
         self.setPalette(palette)
+        
+        # Apply global tooltip style (kept consistent with MARS_ project)
+        self.setStyleSheet(TOOLTIP_STYLE)
 
         # Handlers
         self.plotting_handler = PlottingHandler()
@@ -94,6 +132,12 @@ class ApplicationController(QMainWindow):
         toggle_navigator_action = self.navigator_dock.toggleViewAction()
         toggle_navigator_action.setText("Navigator")
         view_menu.addAction(toggle_navigator_action)
+
+        self.toggle_tooltips_action = QAction("Enable Tooltips", self)
+        self.toggle_tooltips_action.setCheckable(True)
+        self.toggle_tooltips_action.setChecked(self.tooltips_enabled)
+        self.toggle_tooltips_action.toggled.connect(self._on_tooltips_toggled)
+        view_menu.addAction(self.toggle_tooltips_action)
     
     def _create_navigator(self):
         """Create file navigator dock widget."""
@@ -203,7 +247,19 @@ class ApplicationController(QMainWindow):
             if hasattr(self.solver_tab, 'plot_combination_history_for_node'):
                 self.solver_tab.plot_combination_history_for_node(node_id)
 
+    @pyqtSlot(bool)
+    def _on_tooltips_toggled(self, checked: bool):
+        """Enable/disable tooltips globally and persist the preference."""
+        self.tooltips_enabled = bool(checked)
+        self._tooltip_filter.set_enabled(self.tooltips_enabled)
+        self.settings.setValue("view/tooltips_enabled", self.tooltips_enabled)
+        if not self.tooltips_enabled:
+            QToolTip.hideText()
+
     def closeEvent(self, event):
         """Clean up temporary files on application close."""
+        app = QApplication.instance()
+        if app is not None:
+            app.removeEventFilter(self._tooltip_filter)
         self.plotting_handler.cleanup_temp_files()
         event.accept()
