@@ -25,6 +25,26 @@ from PyQt5.QtWidgets import (
 from core.data_models import MaterialProfileData
 from file_io.loaders import load_material_profile
 from file_io.exporters import export_material_profile
+from utils.tooltips import (
+    TOOLTIP_MATERIAL_DIALOG_OVERVIEW,
+    TOOLTIP_MATERIAL_DIALOG_IMPORT_PROFILE,
+    TOOLTIP_MATERIAL_DIALOG_EXPORT_PROFILE,
+    TOOLTIP_MATERIAL_DIALOG_YOUNGS_TABLE,
+    TOOLTIP_MATERIAL_DIALOG_POISSON_TABLE,
+    TOOLTIP_MATERIAL_DIALOG_PLASTIC_TABLE,
+    TOOLTIP_MATERIAL_DIALOG_ADD_ROW,
+    TOOLTIP_MATERIAL_DIALOG_REMOVE_SELECTED,
+    TOOLTIP_MATERIAL_DIALOG_IMPORT_YOUNGS,
+    TOOLTIP_MATERIAL_DIALOG_IMPORT_POISSON,
+    TOOLTIP_MATERIAL_DIALOG_EXPORT_TABLE,
+    TOOLTIP_MATERIAL_DIALOG_TEMPERATURE_LIST,
+    TOOLTIP_MATERIAL_DIALOG_ADD_TEMPERATURE,
+    TOOLTIP_MATERIAL_DIALOG_REMOVE_TEMPERATURE,
+    TOOLTIP_MATERIAL_DIALOG_IMPORT_PLASTIC_CURVE,
+    TOOLTIP_MATERIAL_DIALOG_EXPORT_PLASTIC_CURVE,
+    TOOLTIP_MATERIAL_DIALOG_SAVE,
+    TOOLTIP_MATERIAL_DIALOG_CANCEL,
+)
 from ui.widgets.editable_table import EditableTableWidget
 
 class MaterialProfileDialog(QDialog):
@@ -57,6 +77,7 @@ class MaterialProfileDialog(QDialog):
         main_layout = QVBoxLayout(self)
 
         self.tab_widget = QTabWidget()
+        self.tab_widget.setToolTip(TOOLTIP_MATERIAL_DIALOG_OVERVIEW)
         self._build_youngs_tab()
         self._build_poisson_tab()
         self._build_plastic_tab()
@@ -66,6 +87,8 @@ class MaterialProfileDialog(QDialog):
         profile_buttons_layout = QHBoxLayout()
         self.import_profile_button = QPushButton("Import Material Profile")
         self.export_profile_button = QPushButton("Export Material Profile")
+        self.import_profile_button.setToolTip(TOOLTIP_MATERIAL_DIALOG_IMPORT_PROFILE)
+        self.export_profile_button.setToolTip(TOOLTIP_MATERIAL_DIALOG_EXPORT_PROFILE)
         profile_buttons_layout.addWidget(self.import_profile_button)
         profile_buttons_layout.addWidget(self.export_profile_button)
         profile_buttons_layout.addStretch()
@@ -74,6 +97,12 @@ class MaterialProfileDialog(QDialog):
         self.button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         self.button_box.accepted.connect(self._handle_accept)
         self.button_box.rejected.connect(self.reject)
+        save_button = self.button_box.button(QDialogButtonBox.Save)
+        cancel_button = self.button_box.button(QDialogButtonBox.Cancel)
+        if save_button is not None:
+            save_button.setToolTip(TOOLTIP_MATERIAL_DIALOG_SAVE)
+        if cancel_button is not None:
+            cancel_button.setToolTip(TOOLTIP_MATERIAL_DIALOG_CANCEL)
 
         main_layout.addWidget(self.button_box)
 
@@ -114,13 +143,18 @@ class MaterialProfileDialog(QDialog):
             ["Temperature (°C)", "Young's Modulus [MPa]"],
             display_formats={"Temperature (°C)": "{:.2f}"}
         )
+        self.youngs_table.setToolTip(TOOLTIP_MATERIAL_DIALOG_YOUNGS_TABLE)
 
-        controls = self._build_table_control_row(
+        controls, add_button, remove_button, import_button, export_button = self._build_table_control_row(
             add_callback=lambda: self._add_row(self.youngs_table),
             remove_callback=lambda: self._remove_selected_rows(self.youngs_table),
             import_callback=lambda: self._import_table(self.youngs_table, ["Temperature (°C)", "Young's Modulus [MPa]"]),
             export_callback=lambda: self._export_table(self.youngs_table, "youngs_modulus.csv"),
         )
+        add_button.setToolTip(TOOLTIP_MATERIAL_DIALOG_ADD_ROW)
+        remove_button.setToolTip(TOOLTIP_MATERIAL_DIALOG_REMOVE_SELECTED)
+        import_button.setToolTip(TOOLTIP_MATERIAL_DIALOG_IMPORT_YOUNGS)
+        export_button.setToolTip(TOOLTIP_MATERIAL_DIALOG_EXPORT_TABLE)
 
         tab_layout.addLayout(controls)
         tab_layout.addWidget(self.youngs_table)
@@ -135,13 +169,18 @@ class MaterialProfileDialog(QDialog):
             ["Temperature (°C)", "Poisson's Ratio"],
             display_formats={"Temperature (°C)": "{:.2f}"}
         )
+        self.poisson_table.setToolTip(TOOLTIP_MATERIAL_DIALOG_POISSON_TABLE)
 
-        controls = self._build_table_control_row(
+        controls, add_button, remove_button, import_button, export_button = self._build_table_control_row(
             add_callback=lambda: self._add_row(self.poisson_table),
             remove_callback=lambda: self._remove_selected_rows(self.poisson_table),
             import_callback=lambda: self._import_table(self.poisson_table, ["Temperature (°C)", "Poisson's Ratio"]),
             export_callback=lambda: self._export_table(self.poisson_table, "poisson_ratio.csv"),
         )
+        add_button.setToolTip(TOOLTIP_MATERIAL_DIALOG_ADD_ROW)
+        remove_button.setToolTip(TOOLTIP_MATERIAL_DIALOG_REMOVE_SELECTED)
+        import_button.setToolTip(TOOLTIP_MATERIAL_DIALOG_IMPORT_POISSON)
+        export_button.setToolTip(TOOLTIP_MATERIAL_DIALOG_EXPORT_TABLE)
 
         tab_layout.addLayout(controls)
         tab_layout.addWidget(self.poisson_table)
@@ -154,12 +193,15 @@ class MaterialProfileDialog(QDialog):
 
         left_column = QVBoxLayout()
         self.plastic_temp_list = QListWidget()
+        self.plastic_temp_list.setToolTip(TOOLTIP_MATERIAL_DIALOG_TEMPERATURE_LIST)
         self.plastic_temp_list.currentRowChanged.connect(self._on_plastic_temperature_changed)
         left_column.addWidget(self.plastic_temp_list)
 
         temp_button_row = QHBoxLayout()
         add_temp_button = QPushButton("Add Temperature")
         remove_temp_button = QPushButton("Remove Temperature")
+        add_temp_button.setToolTip(TOOLTIP_MATERIAL_DIALOG_ADD_TEMPERATURE)
+        remove_temp_button.setToolTip(TOOLTIP_MATERIAL_DIALOG_REMOVE_TEMPERATURE)
         add_temp_button.clicked.connect(self._add_plastic_temperature)
         remove_temp_button.clicked.connect(self._remove_plastic_temperature)
         temp_button_row.addWidget(add_temp_button)
@@ -169,6 +211,8 @@ class MaterialProfileDialog(QDialog):
         curve_button_row = QHBoxLayout()
         import_curve_button = QPushButton("Import Curve CSV")
         export_curve_button = QPushButton("Export Curve CSV")
+        import_curve_button.setToolTip(TOOLTIP_MATERIAL_DIALOG_IMPORT_PLASTIC_CURVE)
+        export_curve_button.setToolTip(TOOLTIP_MATERIAL_DIALOG_EXPORT_PLASTIC_CURVE)
         import_curve_button.clicked.connect(self._import_plastic_curve)
         export_curve_button.clicked.connect(self._export_plastic_curve)
         curve_button_row.addWidget(import_curve_button)
@@ -180,6 +224,7 @@ class MaterialProfileDialog(QDialog):
             ["Plastic Strain", "True Stress [MPa]"],
             display_formats={"Plastic Strain": "{:.4f}", "True Stress [MPa]": "{:.1f}"}
         )
+        self.plastic_table.setToolTip(TOOLTIP_MATERIAL_DIALOG_PLASTIC_TABLE)
         right_column.addWidget(self.plastic_table)
 
         tab_layout.addLayout(left_column, 1)
@@ -208,7 +253,7 @@ class MaterialProfileDialog(QDialog):
         row.addStretch()
         row.addWidget(import_button)
         row.addWidget(export_button)
-        return row
+        return row, add_button, remove_button, import_button, export_button
 
     def _add_row(self, table: EditableTableWidget):
         table.append_empty_row()

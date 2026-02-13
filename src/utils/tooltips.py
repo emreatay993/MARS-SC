@@ -78,9 +78,162 @@ TOOLTIP_COMBINATION_HISTORY = (
 )
 
 TOOLTIP_PLASTICITY_CORRECTION = (
-    "Enable plasticity correction for elastic-plastic analysis.\n\n"
-    "Applies Neuber or Glinka correction to convert elastic\n"
-    "stresses to elastic-plastic stresses using material curves."
+    "Enable elastic-plastic correction (Neuber/Glinka) for local yielding.\n\n"
+    "Valid when: linear-elastic FE stress is representative, yielding is\n"
+    "localized (small plastic zone), material curve is monotonic/stabilized,\n"
+    "and loading is mainly proportional or monotonic.\n\n"
+    "Use caution for large plastic zones, strong non-proportional multiaxial\n"
+    "or cyclic path-dependent loading (ratcheting/hysteresis), or major\n"
+    "redistribution/global collapse behavior."
+)
+
+TOOLTIP_MATERIAL_PROFILE = (
+    "<html>"
+    "<b>Material Profile</b><br><br>"
+    "Opens the dedicated <b>Material Profile</b> editor where you define the<br>"
+    "temperature-dependent material inputs used by plasticity correction.<br><br>"
+    "In that editor you can fill tables directly, or import/export a JSON profile.<br><br>"
+    "<b>Expected import format (JSON):</b><br>"
+    "- Root keys: <b>youngs_modulus</b>, <b>poisson_ratio</b>, <b>plastic_curves</b><br>"
+    "- Table sections use: <b>columns</b> and <b>data</b><br><br>"
+    "<b>Required columns:</b><br>"
+    "- Young's modulus: <code>Temperature (°C)</code>, <code>Young's Modulus [MPa]</code><br>"
+    "- Poisson ratio: <code>Temperature (°C)</code>, <code>Poisson's Ratio</code><br>"
+    "- Plastic curves (per temperature): <code>Plastic Strain</code>, <code>True Stress [MPa]</code><br><br>"
+    "<b>Minimal example:</b><br>"
+    "<code>{</code><br>"
+    "<code>&nbsp;&nbsp;\"youngs_modulus\": {\"columns\": [\"Temperature (°C)\", \"Young's Modulus [MPa]\"], \"data\": [[20, 210000]]},</code><br>"
+    "<code>&nbsp;&nbsp;\"poisson_ratio\": {\"columns\": [\"Temperature (°C)\", \"Poisson's Ratio\"], \"data\": [[20, 0.3]]},</code><br>"
+    "<code>&nbsp;&nbsp;\"plastic_curves\": [{\"temperature\": 20, \"columns\": [\"Plastic Strain\", \"True Stress [MPa]\"], \"data\": [[0.0, 250], [0.01, 300]]}]</code><br>"
+    "<code>}</code>"
+    "</html>"
+)
+
+TOOLTIP_MATERIAL_DIALOG_OVERVIEW = (
+    "<html>"
+    "<b>Material Profile Editor</b><br><br>"
+    "Define temperature-dependent Young's modulus, Poisson ratio, and plastic strain curves.<br>"
+    "These datasets are used when plasticity correction is enabled."
+    "</html>"
+)
+
+TOOLTIP_MATERIAL_DIALOG_IMPORT_PROFILE = (
+    "<html>"
+    "<b>Import Material Profile (.json)</b><br><br>"
+    "<b>Required root keys:</b><br>"
+    "- <code>youngs_modulus</code><br>"
+    "- <code>poisson_ratio</code><br>"
+    "- <code>plastic_curves</code><br><br>"
+    "<b>Section structure:</b><br>"
+    "- Objects with <code>columns</code> and <code>data</code><br>"
+    "- Each plastic curve entry also includes <code>temperature</code><br><br>"
+    "<b>Required columns:</b><br>"
+    "- Young's modulus: <code>Temperature (°C)</code>, <code>Young's Modulus [MPa]</code><br>"
+    "- Poisson ratio: <code>Temperature (°C)</code>, <code>Poisson's Ratio</code><br>"
+    "- Plastic curve: <code>Plastic Strain</code>, <code>True Stress [MPa]</code>"
+    "</html>"
+)
+
+TOOLTIP_MATERIAL_DIALOG_EXPORT_PROFILE = (
+    "Export the full material profile (all tabs) to a JSON file."
+)
+
+TOOLTIP_MATERIAL_DIALOG_YOUNGS_TABLE = (
+    "Young's modulus table. Expected columns: Temperature (°C), Young's Modulus [MPa]."
+)
+
+TOOLTIP_MATERIAL_DIALOG_POISSON_TABLE = (
+    "Poisson's ratio table. Expected columns: Temperature (°C), Poisson's Ratio."
+)
+
+TOOLTIP_MATERIAL_DIALOG_PLASTIC_TABLE = (
+    "Plastic curve table for the selected temperature. Expected columns: Plastic Strain, True Stress [MPa]."
+)
+
+TOOLTIP_MATERIAL_DIALOG_ADD_ROW = (
+    "Add an empty row to the current table."
+)
+
+TOOLTIP_MATERIAL_DIALOG_REMOVE_SELECTED = (
+    "Remove selected row(s) from the current table."
+)
+
+TOOLTIP_MATERIAL_DIALOG_IMPORT_YOUNGS = (
+    "<html>"
+    "<b>Import Young's Modulus CSV/TXT</b><br><br>"
+    "<b>Required columns (exact):</b><br>"
+    "- <code>Temperature (°C)</code><br>"
+    "- <code>Young's Modulus [MPa]</code><br><br>"
+    "<b>Example header:</b><br>"
+    "<code>Temperature (°C),Young's Modulus [MPa]</code>"
+    "</html>"
+)
+
+TOOLTIP_MATERIAL_DIALOG_IMPORT_POISSON = (
+    "<html>"
+    "<b>Import Poisson Ratio CSV/TXT</b><br><br>"
+    "<b>Required columns (exact):</b><br>"
+    "- <code>Temperature (°C)</code><br>"
+    "- <code>Poisson's Ratio</code><br><br>"
+    "<b>Example header:</b><br>"
+    "<code>Temperature (°C),Poisson's Ratio</code>"
+    "</html>"
+)
+
+TOOLTIP_MATERIAL_DIALOG_EXPORT_TABLE = (
+    "Export the current table to CSV."
+)
+
+TOOLTIP_MATERIAL_DIALOG_TEMPERATURE_LIST = (
+    "Temperature sets for plastic strain curves. Select one to edit its curve table."
+)
+
+TOOLTIP_MATERIAL_DIALOG_ADD_TEMPERATURE = (
+    "Add a new temperature entry (°C) for a plastic strain curve."
+)
+
+TOOLTIP_MATERIAL_DIALOG_REMOVE_TEMPERATURE = (
+    "Remove the selected temperature and its associated plastic curve."
+)
+
+TOOLTIP_MATERIAL_DIALOG_IMPORT_PLASTIC_CURVE = (
+    "<html>"
+    "<b>Import Plastic Curve CSV/TXT</b><br><br>"
+    "Imports curve data for the currently selected temperature.<br><br>"
+    "<b>Required columns (exact):</b><br>"
+    "- <code>Plastic Strain</code><br>"
+    "- <code>True Stress [MPa]</code><br><br>"
+    "<b>Example header:</b><br>"
+    "<code>Plastic Strain,True Stress [MPa]</code>"
+    "</html>"
+)
+
+TOOLTIP_MATERIAL_DIALOG_EXPORT_PLASTIC_CURVE = (
+    "Export the plastic curve for the selected temperature to CSV."
+)
+
+TOOLTIP_MATERIAL_DIALOG_SAVE = (
+    "Save changes and apply this material profile to the solver."
+)
+
+TOOLTIP_MATERIAL_DIALOG_CANCEL = (
+    "Close without applying changes."
+)
+
+TOOLTIP_TEMPERATURE_FIELD_FILE = (
+    "<html>"
+    "<b>Temperature Field File</b><br><br>"
+    "Optional input for temperature-dependent plasticity.<br><br>"
+    "<b>Expected table format:</b><br>"
+    "- Text table with <b>tab</b> or <b>whitespace</b> separators<br>"
+    "- Must include a node-ID column named <code>Node Number</code><br>"
+    "- Include one or more numeric temperature columns (first non-node column is used by default)<br><br>"
+    "<b>Example header:</b><br>"
+    "<code>Node Number    Temperature (°C)</code><br>"
+    "<code>101    350.0</code><br><br>"
+    "<b>Multiple temperature columns are allowed:</b><br>"
+    "<code>Node Number    Temp_Load1    Temp_Load2</code>"
+    "</html>"
 )
 
 TOOLTIP_OUTPUT_OPTIONS = (
@@ -289,10 +442,23 @@ TOOLTIP_DELETE_ROW = (
 # =============================================================================
 
 TOOLTIP_PLASTICITY_METHOD = (
-    "Select the plasticity correction method:\n\n"
-    "• Neuber: Uses Neuber's rule (σ × ε = σ_e² / E)\n"
-    "• Glinka: Uses Glinka's ESED method (energy-based)\n"
-    "• IBG: Incremental Buczynski-Glinka (not yet implemented)"
+    "Select the elastic-plastic correction method:\n\n"
+    "- Neuber: Local notch-yielding correction using equivalent\n"
+    "  stress-strain product. Best with proportional/monotonic loading.\n"
+    "- Glinka: Energy-density based local correction; often predicts\n"
+    "  slightly higher plastic strain at the same elastic input.\n"
+    "- Neuber/Glinka assumptions: representative linear-elastic FE stress,\n"
+    "  localized yielding (small plastic zone), monotonic/stabilized curve,\n"
+    "  and limited path dependence.\n"
+    "- If loading is strongly non-proportional cyclic or plasticity is\n"
+    "  widespread, prefer full nonlinear analysis.\n"
+    "- IBG: Incremental Buczynski-Glinka (currently disabled)."
+)
+
+TOOLTIP_ITERATION_CONTROLS = (
+    "Controls for nonlinear correction convergence.\n\n"
+    "Max Iterations limits solver steps; Tolerance sets residual target.\n"
+    "Tighter tolerance and more iterations improve accuracy but increase runtime."
 )
 
 TOOLTIP_MAX_ITERATIONS = (

@@ -30,6 +30,7 @@ from utils.tooltips import (
     TOOLTIP_NODAL_FORCES, TOOLTIP_NODAL_FORCES_CSYS, TOOLTIP_COMBINATION_HISTORY,
     TOOLTIP_PLASTICITY_CORRECTION, TOOLTIP_OUTPUT_OPTIONS, TOOLTIP_PLASTICITY_METHOD, TOOLTIP_MAX_ITERATIONS,
     TOOLTIP_TOLERANCE, TOOLTIP_EXTRAPOLATION, TOOLTIP_IMPORT_CSV, TOOLTIP_EXPORT_CSV,
+    TOOLTIP_MATERIAL_PROFILE, TOOLTIP_TEMPERATURE_FIELD_FILE, TOOLTIP_ITERATION_CONTROLS,
     TOOLTIP_DEFORMATION, TOOLTIP_DEFORMATION_CYLINDRICAL_CS,
     TOOLTIP_NAMED_SELECTION, TOOLTIP_NAMED_SELECTION_SOURCE, TOOLTIP_NAMED_SELECTION_REFRESH,
     TOOLTIP_BASE_RST, TOOLTIP_COMBINE_RST, TOOLTIP_COMBINATION_TABLE,
@@ -433,13 +434,16 @@ class SolverTabUIBuilder:
         material_profile_button = QPushButton('Enter Material Profile')
         material_profile_button.setStyleSheet(BUTTON_STYLE)
         material_profile_button.setFont(QFont('Arial', 8))
+        material_profile_button.setToolTip(TOOLTIP_MATERIAL_PROFILE)
 
         temperature_field_button = QPushButton('Read Temperature Field File (.txt)')
         temperature_field_button.setStyleSheet(BUTTON_STYLE)
         temperature_field_button.setFont(QFont('Arial', 8))
+        temperature_field_button.setToolTip(TOOLTIP_TEMPERATURE_FIELD_FILE)
         temperature_field_path = QLineEdit()
         temperature_field_path.setReadOnly(True)
         temperature_field_path.setStyleSheet(READONLY_INPUT_STYLE)
+        temperature_field_path.setToolTip(TOOLTIP_TEMPERATURE_FIELD_FILE)
 
         file_row = QHBoxLayout()
         file_row.addWidget(temperature_field_button)
@@ -449,6 +453,7 @@ class SolverTabUIBuilder:
 
         method_row = QHBoxLayout()
         method_label = QLabel("Select Method:")
+        method_label.setToolTip(TOOLTIP_PLASTICITY_METHOD)
         method_combo = QComboBox()
         method_combo.addItems(["Neuber", "Glinka", "Incremental Buczynski-Glinka (IBG)"])
         method_combo.setToolTip(TOOLTIP_PLASTICITY_METHOD)
@@ -465,8 +470,10 @@ class SolverTabUIBuilder:
         iteration_row = QHBoxLayout()
         iteration_label = QLabel("Iteration Controls:")
         iteration_label.setMinimumWidth(120)
+        iteration_label.setToolTip(TOOLTIP_ITERATION_CONTROLS)
         max_iter_label = QLabel("Max Iterations")
         max_iter_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        max_iter_label.setToolTip(TOOLTIP_MAX_ITERATIONS)
         max_iter_input = QLineEdit("60")
         max_iter_input.setMaximumWidth(70)
         max_iter_validator = QIntValidator(1, 10000, max_iter_input)
@@ -474,6 +481,7 @@ class SolverTabUIBuilder:
         max_iter_input.setToolTip(TOOLTIP_MAX_ITERATIONS)
         tolerance_label = QLabel("Tolerance")
         tolerance_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        tolerance_label.setToolTip(TOOLTIP_TOLERANCE)
         tolerance_input = QLineEdit("1e-10")
         tolerance_input.setMaximumWidth(100)
         tolerance_validator = QDoubleValidator(0.0, 1.0, 12, tolerance_input)
@@ -489,11 +497,13 @@ class SolverTabUIBuilder:
 
         warning_label = QLabel("Warning: Relaxed iteration settings may impact accuracy.")
         warning_label.setStyleSheet("color: #b36b00; font-style: italic;")
+        warning_label.setToolTip(TOOLTIP_ITERATION_CONTROLS)
         warning_label.setVisible(False)
 
         # Extrapolation mode
         extrap_row = QHBoxLayout()
         extrap_label = QLabel("Extrapolation:")
+        extrap_label.setToolTip(TOOLTIP_EXTRAPOLATION)
         extrap_combo = QComboBox()
         extrap_combo.addItems(["Linear", "Plateau"])
         extrap_combo.setToolTip(TOOLTIP_EXTRAPOLATION)
