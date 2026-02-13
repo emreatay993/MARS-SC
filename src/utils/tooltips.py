@@ -288,6 +288,23 @@ TOOLTIP_NAMED_SELECTION_REFRESH = (
 )
 
 # =============================================================================
+# Navigator Tooltips
+# =============================================================================
+
+TOOLTIP_NAVIGATOR = (
+    "<html>"
+    "<b>Navigator</b><br><br>"
+    "Browse project files used in MARS-SC workflows.<br><br>"
+    "<b>Capabilities</b><br>"
+    "&#8226; Shows files under the selected project directory<br>"
+    "&#8226; Focuses on common result/data files (<code>.rst</code>, <code>.csv</code>, <code>.txt</code>)<br>"
+    "&#8226; Double-click a file to open it with your default application<br><br>"
+    "<b>Tip</b><br>"
+    "Use <i>File &gt; Select Project Directory</i> to point the navigator to your working folder."
+    "</html>"
+)
+
+# =============================================================================
 # Display Tab Tooltips
 # =============================================================================
 
@@ -442,17 +459,20 @@ TOOLTIP_DELETE_ROW = (
 # =============================================================================
 
 TOOLTIP_PLASTICITY_METHOD = (
-    "Select the elastic-plastic correction method:\n\n"
-    "- Neuber: Local notch-yielding correction using equivalent\n"
-    "  stress-strain product. Best with proportional/monotonic loading.\n"
-    "- Glinka: Energy-density based local correction; often predicts\n"
-    "  slightly higher plastic strain at the same elastic input.\n"
-    "- Neuber/Glinka assumptions: representative linear-elastic FE stress,\n"
-    "  localized yielding (small plastic zone), monotonic/stabilized curve,\n"
-    "  and limited path dependence.\n"
-    "- If loading is strongly non-proportional cyclic or plasticity is\n"
-    "  widespread, prefer full nonlinear analysis.\n"
-    "- IBG: Incremental Buczynski-Glinka (currently disabled)."
+    "<html>"
+    "<b>Select Elastic-Plastic Correction Method</b><br><br>"
+    "<b>Methods</b><br>"
+    "&#8226; <b>Neuber</b>: Local notch-yielding correction using equivalent stress-strain product. "
+    "Best with proportional/monotonic loading.<br>"
+    "&#8226; <b>Glinka</b>: Energy-density-based local correction; often predicts slightly higher plastic "
+    "strain at the same elastic input.<br>"
+    "&#8226; <b>IBG</b>: Incremental Buczynski-Glinka <i>(currently disabled)</i>.<br><br>"
+    "<b>Applicability (Neuber/Glinka)</b><br>"
+    "Representative linear-elastic FE stress, localized yielding (small plastic zone), "
+    "monotonic/stabilized material curve, and limited path dependence.<br><br>"
+    "<b>Prefer Full Nonlinear Analysis When</b><br>"
+    "Loading is strongly non-proportional cyclic or plasticity is widespread."
+    "</html>"
 )
 
 TOOLTIP_ITERATION_CONTROLS = (

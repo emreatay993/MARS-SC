@@ -19,6 +19,7 @@ from ui.solver_tab import SolverTab
 from ui.display_tab import DisplayTab
 from ui.handlers.plotting_handler import PlottingHandler
 from ui.handlers.navigator_handler import NavigatorHandler
+from utils.tooltips import TOOLTIP_NAVIGATOR
 from ui.styles.style_constants import (
     MENU_BAR_STYLE, NAVIGATOR_TITLE_STYLE, TREE_VIEW_STYLE, TAB_STYLE,
     TOOLTIP_STYLE
@@ -142,6 +143,7 @@ class ApplicationController(QMainWindow):
     def _create_navigator(self):
         """Create file navigator dock widget."""
         self.navigator_dock = QDockWidget("Navigator", self)
+        self.navigator_dock.setToolTip(TOOLTIP_NAVIGATOR)
         self.navigator_dock.setAllowedAreas(
             Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea
         )
@@ -157,6 +159,7 @@ class ApplicationController(QMainWindow):
         
         # Tree view
         self.tree_view = QTreeView()
+        self.tree_view.setToolTip(TOOLTIP_NAVIGATOR)
         self.tree_view.setModel(self.file_model)
         self.tree_view.setHeaderHidden(False)
         self.tree_view.setMinimumWidth(240)
