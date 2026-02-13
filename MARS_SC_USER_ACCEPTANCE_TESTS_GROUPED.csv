@@ -1,0 +1,27 @@
+Test Group,Test ID,Title,Preconditions,Steps,Expected
+TEST CASE 1: NAMED SELECTION SOURCE FILTERING,,,,,
+,UAT-NS-001,Named Selection Source dropdown is enabled after both RST files load,Application launched; Analysis 1 and Analysis 2 RST files available,Load Analysis 1 RST > Load Analysis 2 RST > Observe Named Selection Source control,Named Selection Source dropdown is enabled
+,UAT-NS-002,Common mode lists only shared named selections,Both RST files loaded; Each file has named selections,Set Named Selection Source to Common (A1 & A2) > Open Named Selection dropdown,Only names existing in both analyses are listed
+,UAT-NS-003,Analysis 1 mode lists base-only names,Both RST files loaded,Set Named Selection Source to Analysis 1 (Base) > Open Named Selection dropdown,Analysis 1 named selections are listed
+,UAT-NS-004,Analysis 2 mode lists combine-only names,Both RST files loaded,Set Named Selection Source to Analysis 2 (Combine) > Open Named Selection dropdown,Analysis 2 named selections are listed
+,UAT-NS-005,Refresh respects current source mode,Both RST files loaded; Source mode selected,Click Refresh named selections button,Named Selection list refreshes according to active source mode
+TEST CASE 2: SCOPING PRECEDENCE AND SOLVE BEHAVIOR,,,,,
+,UAT-NS-006,Same-name selection uses Analysis 1 node content for scoping,Both RST files loaded; At least one same-name NS with different node sets exists,Select same-name NS > Run solve,Scoping follows Analysis 1 node set (base precedence)
+,UAT-NS-007,Analysis-2-only selection can be used for solve,Analysis 2 contains a unique NS not in Analysis 1,Set source mode to Analysis 2 > Select Analysis-2-only NS > Run solve,Solve proceeds with valid scoping
+TEST CASE 3: NAMED SELECTION USABILITY,,,,,
+,UAT-NS-008,Named selection field width supports long names,Both RST files loaded with long NS names,Open named selection dropdown and inspect selected field text,Long names are readable with reduced truncation in field and popup
+TEST CASE 4: SOLVER TOOLTIP COVERAGE,,,,,
+,UAT-TT-001,Base Analysis button tooltip explains reference role,Application launched,Hover Select Base Analysis RST button,Tooltip explains base/reference role with steady-state example wording
+,UAT-TT-002,Analysis 2 button tooltip includes maneuver example,Application launched,Hover Select Analysis to Combine RST button,Tooltip includes maneuver analysis example wording
+,UAT-TT-003,Named Selection Source tooltip explains three modes,Application launched,Hover Named Selection Source label/combobox,Tooltip explains Common/Analysis1/Analysis2 behavior
+,UAT-TT-004,Named Selection tooltip explains base precedence,Application launched,Hover Named Selection label/combobox,Tooltip states same-name selections use Analysis 1 node content
+,UAT-TT-005,Import CSV tooltip documents expected headers and prefixes,Application launched,Hover Import CSV button in combination table,HTML tooltip shows Combination Name and Type and accepted coefficient prefixes
+,UAT-TT-006,Output Options group tooltip explains exclusivity rules,Application launched,Hover Output Options group,Tooltip explains mutual exclusivity and combination-history behavior
+,UAT-TT-008,Add Row and Delete Row buttons show action tooltips,Application launched,Hover Add Row > Hover Delete Row,Tooltips describe row addition and selected-row deletion
+TEST CASE 5: DISPLAY TOOLTIP COVERAGE,,,,,
+,UAT-TT-007,Display Load Visualization tooltip documents required CSV format,Display tab opened,Hover Load Visualization File button,Tooltip explains required X Y Z columns optional NodeID and example header
+TEST CASE 6: GLOBAL TOOLTIP SETTING,,,,,
+,UAT-TT-009,View menu can globally disable tooltips,Application launched with tooltips enabled,Open View menu > Uncheck Enable Tooltips > Hover any control,No tooltip popups appear while disabled
+,UAT-TT-010,Tooltip enable state persists across restart,Tooltip toggle changed from default,Close app > Reopen app > Check View menu and hover behavior,Enable Tooltips state and behavior are restored from previous session
+TEST CASE 7: TOOLTIP STYLE CONSISTENCY,,,,,
+,UAT-TT-011,Tooltip visual style matches sibling MARS_ palette,Application launched,Hover any tooltip and inspect style,Tooltip style matches expected background text border and font settings from MARS_

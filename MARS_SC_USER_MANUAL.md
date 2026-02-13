@@ -165,3 +165,6 @@ Check `View -> Enable Tooltips` is checked.
 - `src/ui/application_controller.py`
 - `src/utils/tooltips.py`
 - `src/ui/styles/style_constants.py`
+- `MARS_SC_USER_ACCEPTANCE_TESTS.csv`
+- `MARS_SC_USER_ACCEPTANCE_TESTS_GROUPED.csv`
+- `MARS_SC_UAT_Consolidated_Tests.csv`
