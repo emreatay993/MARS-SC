@@ -885,13 +885,16 @@ class DisplayTab(QWidget):
     
     def _reinitialize_camera_widget(self):
         """Reinitialize camera widget with proper sizing after tab is visible."""
-        if hasattr(self, 'visual_handler') and self.visual_handler:
+        if self.visual_handler:
             self.visual_handler._clear_camera_widget()
             self.visual_handler._add_camera_widget()
     
     def __del__(self):
         """Cleanup when widget is destroyed."""
-        if hasattr(self, 'plotter'):
-            self.plotter.close()
+        try:
+            if self.plotter:
+                self.plotter.close()
+        except Exception:
+            pass
 
 

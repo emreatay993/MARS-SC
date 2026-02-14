@@ -107,8 +107,11 @@ class MaterialProfileDialog(QDialog):
         main_layout.addWidget(self.button_box)
 
     def _determine_base_directory(self, parent: Optional[QWidget]) -> str:
-        if parent is not None and hasattr(parent, "project_directory"):
-            project_dir = getattr(parent, "project_directory")
+        if parent is not None:
+            try:
+                project_dir = parent.project_directory
+            except AttributeError:
+                project_dir = None
             if project_dir and os.path.isdir(project_dir):
                 return project_dir
         desktop = os.path.join(os.path.expanduser("~"), "Desktop")

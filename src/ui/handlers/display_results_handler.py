@@ -32,7 +32,7 @@ class DisplayResultsHandler(DisplayBaseHandler):
             dataset_options: Iterable of (field_name, filename) tuples.
             current_field: Name of the field currently visible on the display.
         """
-        if solver is None or not hasattr(solver, "output_directory"):
+        if solver is None:
             return
 
         options = list(dataset_options)
@@ -65,7 +65,11 @@ class DisplayResultsHandler(DisplayBaseHandler):
     def _load_solver_array(self, solver, filename: str) -> Optional[np.ndarray]:
         """Load a NumPy array from the solver output directory."""
         try:
-            base_dir = getattr(solver, "output_directory", None)
+            base_dir = solver.output_directory
+        except AttributeError:
+            return None
+
+        try:
             if not base_dir:
                 return None
 

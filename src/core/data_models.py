@@ -289,6 +289,7 @@ class NodalForcesResult:
         node_element_types: Array of element types per node ('beam' or 'solid_shell').
         has_beam_nodes: True if any node has beam elements attached.
         coordinate_system: Coordinate system used for forces ('Global' or 'Local').
+        metadata: Optional analysis metadata (e.g., single-node history payload).
     """
     node_ids: np.ndarray
     node_coords: np.ndarray
@@ -303,6 +304,7 @@ class NodalForcesResult:
     node_element_types: Optional[np.ndarray] = None
     has_beam_nodes: bool = False
     coordinate_system: str = "Global"
+    metadata: dict = field(default_factory=dict)
 
     @property
     def num_nodes(self) -> int:
@@ -353,6 +355,7 @@ class DeformationResult:
         all_combo_uy: Full UY (Y displacement) results array, shape (num_combinations, num_nodes).
         all_combo_uz: Full UZ (Z displacement) results array, shape (num_combinations, num_nodes).
         displacement_unit: Unit of displacement (e.g., "mm", "m").
+        metadata: Optional analysis metadata (e.g., single-node history payload).
     """
     node_ids: np.ndarray
     node_coords: np.ndarray
@@ -364,6 +367,7 @@ class DeformationResult:
     all_combo_uy: Optional[np.ndarray] = None
     all_combo_uz: Optional[np.ndarray] = None
     displacement_unit: str = "mm"
+    metadata: dict = field(default_factory=dict)
     
     @property
     def num_nodes(self) -> int:

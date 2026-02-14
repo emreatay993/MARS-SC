@@ -504,6 +504,103 @@ class DPFAnalysisReader:
             displacement_available=displacement_available,
             displacement_unit=self.get_displacement_unit() if displacement_available else "mm",
         )
+
+    @staticmethod
+    def _resolve_transpose_output_scoping(transpose_op) -> 'dpf.Scoping':
+        """
+        Resolve transpose operator output scoping across DPF API variants.
+
+        Some DPF versions expose the output as ``mesh_scoping`` while others use
+        ``mesh_scoping_as_scoping``. As a final fallback, evaluate the operator
+        and use the returned scoping directly.
+        """
+        outputs = transpose_op.outputs
+
+        if hasattr(outputs, 'mesh_scoping'):
+            return outputs.mesh_scoping()
+        if hasattr(outputs, 'mesh_scoping_as_scoping'):
+            return outputs.mesh_scoping_as_scoping()
+
+        result = transpose_op.eval()
+        if isinstance(result, dpf.Scoping):
+            return result
+
+        raise AttributeError("Could not get scoping from transpose operator")
+
+    @staticmethod
+    def _is_beam_element(element, include_pipe: bool = False) -> bool:
+        """
+        Check if a DPF element descriptor represents a beam-like element.
+
+        Supports multiple DPF descriptor shapes:
+        - ``element.shape == "beam"``
+        - ``element.type.shape == "beam"``
+        - ``element.type.name`` containing beam-like tokens.
+        """
+        try:
+            if hasattr(element, 'shape') and element.shape == "beam":
+                return True
+
+            if not hasattr(element, 'type'):
+                return False
+
+            elem_type = element.type
+            if hasattr(elem_type, 'shape') and elem_type.shape == "beam":
+                return True
+
+            if hasattr(elem_type, 'name'):
+                type_name = str(elem_type.name).lower()
+                tokens = ['beam', 'line']
+                if include_pipe:
+                    tokens.append('pipe')
+                return any(token in type_name for token in tokens)
+        except Exception:
+            return False
+
+        return False
+
+    @staticmethod
+    def _available_result_has_entry(
+        available_results,
+        string_token: str,
+        name_token: str,
+        name_exact: bool = False,
+    ) -> bool:
+        """
+        Check available result descriptors using both string and name matching.
+
+        DPF may expose ``available_results`` entries as rich objects or plain-ish
+        string descriptors depending on runtime/version.
+        """
+        if available_results is None:
+            return False
+
+        string_token = string_token.lower()
+        name_token = name_token.lower()
+
+        for res in available_results:
+            try:
+                if string_token in str(res).lower():
+                    return True
+            except Exception:
+                pass
+
+            try:
+                res_name = str(res.name).lower()
+            except Exception:
+                res_name = ""
+
+            if not res_name:
+                continue
+
+            if name_exact:
+                if res_name == name_token:
+                    return True
+            else:
+                if name_token in res_name:
+                    return True
+
+        return False
     
     def get_nodal_scoping_from_named_selection(self, ns_name: str) -> 'dpf.Scoping':
         """
@@ -536,18 +633,8 @@ class DPFAnalysisReader:
                 transpose_op.inputs.mesh_scoping.connect(ns_scoping)
                 transpose_op.inputs.meshed_region.connect(mesh)
                 transpose_op.inputs.inclusive.connect(1)  # Include all nodes of elements
-                
-                # Try different output attribute names for API compatibility
-                if hasattr(transpose_op.outputs, 'mesh_scoping'):
-                    return transpose_op.outputs.mesh_scoping()
-                elif hasattr(transpose_op.outputs, 'mesh_scoping_as_scoping'):
-                    return transpose_op.outputs.mesh_scoping_as_scoping()
-                else:
-                    # Evaluate and get first output
-                    result = transpose_op.eval()
-                    if isinstance(result, dpf.Scoping):
-                        return result
-                    raise AttributeError("Could not get scoping from transpose operator")
+
+                return self._resolve_transpose_output_scoping(transpose_op)
             except Exception:
                 # Fallback: manually get nodes from elements
                 if ns_scoping.location == dpf.locations.elemental:
@@ -596,19 +683,8 @@ class DPFAnalysisReader:
                     transpose_op.inputs.mesh_scoping.connect(ns_scoping)
                     transpose_op.inputs.meshed_region.connect(self.mesh)
                     transpose_op.inputs.inclusive.connect(0)  # Elements fully contained
-                    
-                    if hasattr(transpose_op.outputs, 'mesh_scoping'):
-                        elem_scoping = transpose_op.outputs.mesh_scoping()
-                    elif hasattr(transpose_op.outputs, 'mesh_scoping_as_scoping'):
-                        elem_scoping = transpose_op.outputs.mesh_scoping_as_scoping()
-                    else:
-                        result = transpose_op.eval()
-                        if isinstance(result, dpf.Scoping):
-                            elem_scoping = result
-                        else:
-                            # Cannot determine elements, assume no beams
-                            return False
-                    
+
+                    elem_scoping = self._resolve_transpose_output_scoping(transpose_op)
                     element_ids = list(elem_scoping.ids)
                 except Exception:
                     # If we can't get element scoping from nodal, assume no beams
@@ -626,23 +702,9 @@ class DPFAnalysisReader:
                 try:
                     elem_idx = mesh.elements.scoping.index(elem_id)
                     element = mesh.elements.element_by_index(elem_idx)
-                    
-                    # Check if element is a beam using the shape property
-                    if hasattr(element, 'shape'):
-                        if element.shape == "beam":
-                            return True
-                    
-                    # Alternative: check element type descriptor
-                    if hasattr(element, 'type'):
-                        elem_type = element.type
-                        # Check if element type descriptor indicates beam
-                        if hasattr(elem_type, 'shape') and elem_type.shape == "beam":
-                            return True
-                        # Some DPF versions use different attribute
-                        if hasattr(elem_type, 'name'):
-                            type_name = str(elem_type.name).lower()
-                            if 'beam' in type_name or 'line' in type_name:
-                                return True
+
+                    if self._is_beam_element(element, include_pipe=False):
+                        return True
                 except Exception:
                     continue
             
@@ -710,26 +772,7 @@ class DPFAnalysisReader:
                 node_idx = node_id_to_idx[node_id]
                 
                 for elem_id, element in elements:
-                    is_beam = False
-                    
-                    # Check if element is a beam using the shape property
-                    if hasattr(element, 'shape'):
-                        if element.shape == "beam":
-                            is_beam = True
-                    
-                    # Alternative: check element type descriptor
-                    if not is_beam and hasattr(element, 'type'):
-                        elem_type = element.type
-                        # Check if element type descriptor indicates beam
-                        if hasattr(elem_type, 'shape') and elem_type.shape == "beam":
-                            is_beam = True
-                        # Some DPF versions use different attribute
-                        elif hasattr(elem_type, 'name'):
-                            type_name = str(elem_type.name).lower()
-                            if 'beam' in type_name or 'line' in type_name or 'pipe' in type_name:
-                                is_beam = True
-                    
-                    if is_beam:
+                    if self._is_beam_element(element, include_pipe=True):
                         element_types[node_idx] = 'beam'
                         has_beam_nodes = True
                         break  # No need to check more elements for this node
@@ -849,7 +892,7 @@ class DPFAnalysisReader:
         syz = stress_data[:, 4].copy()
         sxz = stress_data[:, 5].copy()
         
-        # CRITICAL FIX: Reorder/align arrays to match input scoping order
+        # Reorder/align arrays to match input scoping order.
         # DPF may return results in a different order than the input scoping,
         # and may also return fewer nodes (if some nodes have no stress data).
         # This ensures scalar values are correctly mapped to node positions.
@@ -1034,10 +1077,11 @@ class DPFAnalysisReader:
             available = result_info.available_results
             
             # Check if element_nodal_forces is in available results
-            has_enf = any(
-                "element_nodal_forces" in str(res).lower() or 
-                "enf" in str(getattr(res, 'name', '')).lower()
-                for res in available
+            has_enf = self._available_result_has_entry(
+                available_results=available,
+                string_token="element_nodal_forces",
+                name_token="enf",
+                name_exact=False,
             )
             
             if not has_enf:
@@ -1215,7 +1259,7 @@ class DPFAnalysisReader:
             fy = force_data[:, 1].copy()
             fz = force_data[:, 2].copy()
             
-            # CRITICAL FIX: Reorder/align arrays to match input scoping order
+            # Reorder/align arrays to match input scoping order.
             # DPF may return results in a different order than the input scoping,
             # and may also return fewer nodes (if some nodes have no force data).
             # This ensures scalar values are correctly mapped to node positions.
@@ -1418,10 +1462,11 @@ class DPFAnalysisReader:
             available = result_info.available_results
             
             # Check for displacement result
-            has_displacement = any(
-                "displacement" in str(res).lower() or
-                "u" == str(getattr(res, 'name', '')).lower()
-                for res in available
+            has_displacement = self._available_result_has_entry(
+                available_results=available,
+                string_token="displacement",
+                name_token="u",
+                name_exact=True,
             )
             
             if not has_displacement:
@@ -1549,7 +1594,7 @@ class DPFAnalysisReader:
             uy = disp_data[:, 1].copy() * conversion_factor
             uz = disp_data[:, 2].copy() * conversion_factor
             
-            # CRITICAL FIX: Reorder/align arrays to match input scoping order
+            # Reorder/align arrays to match input scoping order.
             if input_node_ids_order is not None:
                 # Build a lookup: node_id -> index in DPF results
                 dpf_id_to_idx = {nid: idx for idx, nid in enumerate(dpf_node_ids)}

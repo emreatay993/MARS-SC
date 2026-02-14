@@ -464,8 +464,7 @@ class MatplotlibWidget(QWidget):
         """
         Update the plot with combination history data (stress vs combination number).
         
-        This is the MARS-SC specific version that shows stress values across combinations
-        for a single node.
+        Show stress values across combinations for a single node.
         
         Args:
             combination_indices: Array of combination indices (0, 1, 2, ...)
@@ -476,6 +475,9 @@ class MatplotlibWidget(QWidget):
             plasticity_overlay: Optional dict with corrected values
             deformation_data: Optional dict with 'ux', 'uy', 'uz', 'u_mag' arrays for deformation plotting
             displacement_unit: Unit string for displacement (e.g., "mm")
+
+        Note:
+            Combination indices are 0-based internally and displayed as 1-based in the UI.
         """
         # Check if this is a deformation-only plot
         if stress_values is None and deformation_data is not None:
@@ -528,7 +530,6 @@ class MatplotlibWidget(QWidget):
             for idx in range(len(x)):
                 name = combination_names[idx] if combination_names and idx < len(combination_names) else ""
                 row_items = [
-                    # Display 1-based combination number for user-friendliness
                     QStandardItem(f"{int(x[idx]) + 1}"),
                     QStandardItem(name),
                     QStandardItem(f"{y[idx]:.5f}"),
@@ -541,7 +542,6 @@ class MatplotlibWidget(QWidget):
             if corrected.size > 0 and np.any(np.isfinite(corrected)):
                 max_corr = np.nanmax(corrected)
                 combo_of_max = x[np.nanargmax(corrected)]
-                # Display 1-based combination number for user-friendliness
                 textstr = f'Max Corrected: {max_corr:.4f} MPa\nAt Combination: {int(combo_of_max) + 1}'
         else:
             line, = self.ax.plot(x, y, label=config['label'], color=config['color'], 
@@ -553,7 +553,6 @@ class MatplotlibWidget(QWidget):
             for idx in range(len(x)):
                 name = combination_names[idx] if combination_names and idx < len(combination_names) else ""
                 self.model.appendRow([
-                    # Display 1-based combination number for user-friendliness
                     QStandardItem(f"{int(x[idx]) + 1}"),
                     QStandardItem(name),
                     QStandardItem(f"{y[idx]:.5f}")
@@ -562,7 +561,6 @@ class MatplotlibWidget(QWidget):
             if len(y) > 0:
                 max_y = np.max(y)
                 combo_of_max = x[np.argmax(y)]
-                # Display 1-based combination number for user-friendliness
                 textstr = f'Max: {max_y:.4f} MPa\nAt Combination: {int(combo_of_max) + 1}'
             else:
                 textstr = ""
@@ -743,7 +741,6 @@ class MatplotlibWidget(QWidget):
         
         QApplication.clipboard().setText('\\n'.join(lines))
 
-
 class PlotlyMaxWidget(QWidget):
     """
     Widget for displaying Plotly plots with a data table.
@@ -844,8 +841,7 @@ class PlotlyMaxWidget(QWidget):
         )
         
         # Display
-        main_win = self.window()
-        main_win.plotting_handler.load_fig_to_webview(fig, self.web_view)
+        self._render_figure(fig, "plot")
         
         # Populate table
         headers = ["Time [s]"] + [trace['name'] for trace in traces]
@@ -886,6 +882,24 @@ class PlotlyMaxWidget(QWidget):
             lines.append('\\t'.join(row_data))
         
         QApplication.clipboard().setText('\\n'.join(lines))
+
+    def _render_figure(self, fig, error_context: str) -> None:
+        """Render a Plotly figure with optional main-window plotting handler fallback."""
+        plotting_handler = None
+        try:
+            main_win = self.window()
+            plotting_handler = main_win.plotting_handler
+        except Exception:
+            plotting_handler = None
+
+        if plotting_handler is not None:
+            try:
+                plotting_handler.load_fig_to_webview(fig, self.web_view)
+                return
+            except Exception as e:
+                print(f"Error rendering {error_context}: {e}")
+
+        self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
     
     def update_envelope_plot(self, node_ids, max_values=None, min_values=None,
                             combo_of_max=None, combo_of_min=None,
@@ -894,8 +908,7 @@ class PlotlyMaxWidget(QWidget):
         """
         Update plot with envelope results (max/min over combinations).
         
-        This is the MARS-SC specific method for displaying envelope results
-        that show the maximum or minimum stress values across all combinations.
+        Display envelope results for maximum/minimum stress across combinations.
         
         Args:
             node_ids: Array of node IDs
@@ -906,6 +919,9 @@ class PlotlyMaxWidget(QWidget):
             stress_type: Type of stress ("von_mises", "max_principal", "min_principal")
             combination_names: Optional list of combination names
             show_top_n: Number of top nodes to display in the plot (default 50)
+
+        Note:
+            Combination indices are 0-based internally and displayed as 1-based in the UI.
         """
         # Stress type configuration
         stress_config = {
@@ -932,7 +948,6 @@ class PlotlyMaxWidget(QWidget):
                 text = f"Node: {sorted_node_ids[i]}<br>Max: {sorted_max[i]:.4f} MPa"
                 if combo_of_max is not None:
                     combo_idx = int(combo_of_max[idx])
-                    # Display 1-based combination number for user-friendliness
                     combo_name = combination_names[combo_idx] if combination_names and combo_idx < len(combination_names) else f"#{combo_idx + 1}"
                     text += f"<br>At: {combo_name}"
                 hover_text.append(text)
@@ -959,7 +974,6 @@ class PlotlyMaxWidget(QWidget):
                 text = f"Node: {sorted_node_ids[i]}<br>Min: {sorted_min[i]:.4f} MPa"
                 if combo_of_min is not None:
                     combo_idx = int(combo_of_min[idx])
-                    # Display 1-based combination number for user-friendliness
                     combo_name = combination_names[combo_idx] if combination_names and combo_idx < len(combination_names) else f"#{combo_idx + 1}"
                     text += f"<br>At: {combo_name}"
                 hover_text.append(text)
@@ -994,17 +1008,7 @@ class PlotlyMaxWidget(QWidget):
         )
         
         # Display
-        try:
-            main_win = self.window()
-            if hasattr(main_win, 'plotting_handler') and main_win.plotting_handler:
-                main_win.plotting_handler.load_fig_to_webview(fig, self.web_view)
-            else:
-                # Fallback: render HTML directly with embedded plotly.js (offline compatible)
-                self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
-        except Exception as e:
-            print(f"Error rendering envelope plot: {e}")
-            # Use embedded plotly.js for offline compatibility
-            self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
+        self._render_figure(fig, "envelope plot")
         
         # Populate table with all data (not just top N)
         headers = ["Node ID"]
@@ -1022,7 +1026,6 @@ class PlotlyMaxWidget(QWidget):
                 row_items.append(QStandardItem(f"{max_values[i]:.6f}"))
                 if combo_of_max is not None:
                     combo_idx = int(combo_of_max[i])
-                    # Display 1-based combination number for user-friendliness
                     combo_name = combination_names[combo_idx] if combination_names and combo_idx < len(combination_names) else str(combo_idx + 1)
                     row_items.append(QStandardItem(combo_name))
                 else:
@@ -1031,7 +1034,6 @@ class PlotlyMaxWidget(QWidget):
                 row_items.append(QStandardItem(f"{min_values[i]:.6f}"))
                 if combo_of_min is not None:
                     combo_idx = int(combo_of_min[i])
-                    # Display 1-based combination number for user-friendliness
                     combo_name = combination_names[combo_idx] if combination_names and combo_idx < len(combination_names) else str(combo_idx + 1)
                     row_items.append(QStandardItem(combo_name))
                 else:
@@ -1135,15 +1137,7 @@ class PlotlyMaxWidget(QWidget):
         )
         
         # Display
-        try:
-            main_win = self.window()
-            if hasattr(main_win, 'plotting_handler') and main_win.plotting_handler:
-                main_win.plotting_handler.load_fig_to_webview(fig, self.web_view)
-            else:
-                self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
-        except Exception as e:
-            print(f"Error rendering forces envelope plot: {e}")
-            self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
+        self._render_figure(fig, "forces envelope plot")
         
         # Populate table with all data
         headers = ["Node ID", f"Max |F| [{force_unit}]", "Combo of Max", f"Min |F| [{force_unit}]", "Combo of Min"]
@@ -1286,15 +1280,7 @@ class PlotlyMaxWidget(QWidget):
         )
         
         # Display
-        try:
-            main_win = self.window()
-            if hasattr(main_win, 'plotting_handler') and main_win.plotting_handler:
-                main_win.plotting_handler.load_fig_to_webview(fig, self.web_view)
-            else:
-                self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
-        except Exception as e:
-            print(f"Error rendering max over combinations plot: {e}")
-            self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
+        self._render_figure(fig, "max over combinations plot")
         
         # Populate table
         headers = ["Combo #", "Name"]
@@ -1414,15 +1400,7 @@ class PlotlyMaxWidget(QWidget):
         )
         
         # Display
-        try:
-            main_win = self.window()
-            if hasattr(main_win, 'plotting_handler') and main_win.plotting_handler:
-                main_win.plotting_handler.load_fig_to_webview(fig, self.web_view)
-            else:
-                self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
-        except Exception as e:
-            print(f"Error rendering deformation envelope plot: {e}")
-            self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
+        self._render_figure(fig, "deformation envelope plot")
         
         # Populate table with all data
         headers = ["Node ID", f"Max U_mag [{displacement_unit}]", "Combo of Max", 
@@ -1559,15 +1537,7 @@ class PlotlyMaxWidget(QWidget):
         )
         
         # Display
-        try:
-            main_win = self.window()
-            if hasattr(main_win, 'plotting_handler') and main_win.plotting_handler:
-                main_win.plotting_handler.load_fig_to_webview(fig, self.web_view)
-            else:
-                self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
-        except Exception as e:
-            print(f"Error rendering deformation over combinations plot: {e}")
-            self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
+        self._render_figure(fig, "deformation over combinations plot")
         
         # Populate table
         headers = ["Combo #", "Name", 

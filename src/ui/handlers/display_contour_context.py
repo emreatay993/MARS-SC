@@ -48,7 +48,7 @@ def _safe_current_text(widget, default: str = "") -> str:
 
 def build_contour_context(tab, mesh=None) -> DisplayContourContext:
     """Build current contour context from DisplayTab state and active mesh."""
-    active_mesh = mesh if mesh is not None else getattr(tab, "current_mesh", None)
+    active_mesh = mesh if mesh is not None else tab.current_mesh
     array_names = set(active_mesh.array_names) if active_mesh is not None else set()
 
     has_stress_arrays = (
@@ -70,27 +70,27 @@ def build_contour_context(tab, mesh=None) -> DisplayContourContext:
         or "U_mag" in array_names
     )
 
-    has_stress = has_stress_arrays or getattr(tab, "all_combo_results", None) is not None
-    has_forces = has_forces_arrays or getattr(tab, "nodal_forces_result", None) is not None
-    has_deformation = has_deformation_arrays or getattr(tab, "deformation_result", None) is not None
+    has_stress = has_stress_arrays or tab.all_combo_results is not None
+    has_forces = has_forces_arrays or tab.nodal_forces_result is not None
+    has_deformation = has_deformation_arrays or tab.deformation_result is not None
 
-    current_result_type = getattr(tab, "current_result_type", None)
+    current_result_type = tab.current_result_type
 
     has_min_stress = (
         "Min_Stress" in array_names and current_result_type == "min_principal"
     )
 
-    forces_result = getattr(tab, "nodal_forces_result", None)
+    forces_result = tab.nodal_forces_result
     has_min_forces = (
         "Min_Force_Magnitude" in array_names
-        or (forces_result is not None and getattr(forces_result, "min_magnitude_over_combo", None) is not None)
+        or (forces_result is not None and forces_result.min_magnitude_over_combo is not None)
     )
 
-    deformation_result = getattr(tab, "deformation_result", None)
+    deformation_result = tab.deformation_result
     has_min_deformation = (
         "Def_Min_U_mag" in array_names
         or "Min_U_mag" in array_names
-        or (deformation_result is not None and getattr(deformation_result, "min_magnitude_over_combo", None) is not None)
+        or (deformation_result is not None and deformation_result.min_magnitude_over_combo is not None)
     )
 
     available_types = get_available_contour_types(
@@ -99,7 +99,7 @@ def build_contour_context(tab, mesh=None) -> DisplayContourContext:
         has_deformation=has_deformation,
     )
 
-    view_index = _safe_current_index(getattr(tab, "view_combination_combo", None), default=0)
+    view_index = _safe_current_index(tab.view_combination_combo, default=0)
     is_envelope_view = view_index == 0
 
     selected_combo_idx = view_index - 1
@@ -133,10 +133,10 @@ def build_contour_context(tab, mesh=None) -> DisplayContourContext:
         is_envelope_view=is_envelope_view,
         view_combination_index=view_index,
         selected_combination_index=selected_combo_idx,
-        scalar_display_text=_safe_current_text(getattr(tab, "scalar_display_combo", None), default="Max Value"),
-        force_component_index=_safe_current_index(getattr(tab, "force_component_combo", None), default=0),
+        scalar_display_text=_safe_current_text(tab.scalar_display_combo, default="Max Value"),
+        force_component_index=_safe_current_index(tab.force_component_combo, default=0),
         displacement_component_index=_safe_current_index(
-            getattr(tab, "displacement_component_combo", None),
+            tab.displacement_component_combo,
             default=0,
         ),
         active_scalar_name=active_scalar_name,

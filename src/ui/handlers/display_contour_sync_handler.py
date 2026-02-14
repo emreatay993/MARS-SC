@@ -95,7 +95,7 @@ class DisplayContourSyncHandler(DisplayBaseHandler):
 
         use_specific = (not context.is_envelope_view) and self._family_supports_specific(contour_type)
 
-        if contour_type == ContourType.DEFORMATION and getattr(self.tab, "deformation_result", None) is not None:
+        if contour_type == ContourType.DEFORMATION and self.tab.deformation_result is not None:
             attach_deformation_envelope_arrays(mesh, self.tab.deformation_result)
 
         combo_idx = context.selected_combination_index
@@ -127,7 +127,7 @@ class DisplayContourSyncHandler(DisplayBaseHandler):
     def _resolve_active_type(self, context) -> Optional[ContourType]:
         inferred = context.inferred_active_type or self._infer_type_from_active_scalar(context.active_scalar_name)
         active_type = resolve_contour_type(
-            current=getattr(self.state, "current_contour_type", None),
+            current=self.state.current_contour_type,
             available_types=context.available_types,
             inferred=inferred,
         )
@@ -140,7 +140,7 @@ class DisplayContourSyncHandler(DisplayBaseHandler):
         self.tab.current_contour_type = value
 
     def _combo_value_to_type(self, index: int) -> Optional[ContourType]:
-        combo = getattr(self.tab, "contour_type_combo", None)
+        combo = self.tab.contour_type_combo
         if combo is None:
             return None
 
@@ -158,8 +158,8 @@ class DisplayContourSyncHandler(DisplayBaseHandler):
         available_types: list[ContourType],
         active_type: Optional[ContourType],
     ) -> None:
-        combo = getattr(self.tab, "contour_type_combo", None)
-        label = getattr(self.tab, "contour_type_label", None)
+        combo = self.tab.contour_type_combo
+        label = self.tab.contour_type_label
         if combo is None or label is None:
             return
 
@@ -233,17 +233,19 @@ class DisplayContourSyncHandler(DisplayBaseHandler):
         self.tab._show_displacement_component_controls(show_disp)
 
     def _ensure_view_combination_options(self) -> None:
-        combo = getattr(self.tab, "view_combination_combo", None)
-        label = getattr(self.tab, "view_combination_label", None)
+        combo = self.tab.view_combination_combo
+        label = self.tab.view_combination_label
         if combo is None or label is None:
             return
 
-        names = list(getattr(self.tab, "combination_names", []) or [])
+        names = list(self.tab.combination_names or [])
+        forces_result = self.tab.nodal_forces_result
+        deformation_result = self.tab.deformation_result
         supports_specific = any(
             [
-                getattr(self.tab, "all_combo_results", None) is not None,
-                getattr(getattr(self.tab, "nodal_forces_result", None), "all_combo_fx", None) is not None,
-                getattr(getattr(self.tab, "deformation_result", None), "all_combo_ux", None) is not None,
+                self.tab.all_combo_results is not None,
+                forces_result is not None and forces_result.all_combo_fx is not None,
+                deformation_result is not None and deformation_result.all_combo_ux is not None,
             ]
         )
 
@@ -273,14 +275,14 @@ class DisplayContourSyncHandler(DisplayBaseHandler):
 
     def _family_supports_specific(self, contour_type: ContourType) -> bool:
         if contour_type == ContourType.STRESS:
-            all_combo = getattr(self.tab, "all_combo_results", None)
+            all_combo = self.tab.all_combo_results
             return all_combo is not None
         if contour_type == ContourType.FORCES:
-            result = getattr(self.tab, "nodal_forces_result", None)
-            return result is not None and getattr(result, "all_combo_fx", None) is not None
+            result = self.tab.nodal_forces_result
+            return result is not None and result.all_combo_fx is not None
         if contour_type == ContourType.DEFORMATION:
-            result = getattr(self.tab, "deformation_result", None)
-            return result is not None and getattr(result, "all_combo_ux", None) is not None
+            result = self.tab.deformation_result
+            return result is not None and result.all_combo_ux is not None
         return False
 
     def _has_min_for_family(self, contour_type: ContourType, context) -> bool:
@@ -333,7 +335,7 @@ class DisplayContourSyncHandler(DisplayBaseHandler):
         return None
 
     def _attach_stress_specific_array(self, mesh, combo_idx: int) -> None:
-        all_combo = getattr(self.tab, "all_combo_results", None)
+        all_combo = self.tab.all_combo_results
         if all_combo is None:
             return
         if combo_idx < 0 or combo_idx >= all_combo.shape[0]:

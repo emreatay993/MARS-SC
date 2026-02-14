@@ -44,14 +44,12 @@ class SolverResultSummaryHandler:
             tab_widget.setTabText(tab_index, tab_title)
 
         # Compatibility fallback for runtimes that keep a hidden page selected.
-        is_tab_visible = getattr(tab_widget, "isTabVisible", None)
-        if callable(is_tab_visible):
-            try:
-                if not is_tab_visible(tab_index):
-                    tab_widget.removeTab(tab_index)
-                    tab_index = tab_widget.addTab(tab_page, tab_title)
-            except Exception:
-                pass
+        try:
+            if not tab_widget.isTabVisible(tab_index):
+                tab_widget.removeTab(tab_index)
+                tab_index = tab_widget.addTab(tab_page, tab_title)
+        except Exception:
+            pass
 
         if make_current:
             tab_widget.setCurrentIndex(tab_index)
@@ -87,7 +85,7 @@ class SolverResultSummaryHandler:
             make_current=True,
         )
 
-        if getattr(self.tab, "_history_popup_requested", False) and hasattr(self.tab, "_show_history_popup"):
+        if self.tab._history_popup_requested:
             self.tab._show_history_popup(
                 combination_indices=combo_indices,
                 stress_values=stress_values,
@@ -224,7 +222,7 @@ class SolverResultSummaryHandler:
 
     def handle_forces_history_result(self, result: NodalForcesResult, config: SolverConfig) -> None:
         """Handle nodal forces history mode result (single node)."""
-        metadata = getattr(result, "metadata", {}) or {}
+        metadata = result.metadata or {}
         node_id = metadata.get("node_id", config.selected_node_id)
         combo_indices = metadata.get("combination_indices", np.arange(result.num_combinations))
         fx = metadata.get("fx", result.all_combo_fx[:, 0] if result.all_combo_fx is not None else np.array([]))
@@ -316,7 +314,7 @@ class SolverResultSummaryHandler:
 
     def handle_deformation_history_result(self, result: DeformationResult, config: SolverConfig) -> None:
         """Handle deformation history mode result (single node)."""
-        metadata = getattr(result, "metadata", {}) or {}
+        metadata = result.metadata or {}
         node_id = metadata.get("node_id", config.selected_node_id)
         combo_indices = metadata.get("combination_indices", np.arange(result.num_combinations))
         ux = metadata.get("ux", result.all_combo_ux[:, 0] if result.all_combo_ux is not None else np.array([]))
@@ -346,7 +344,7 @@ class SolverResultSummaryHandler:
             make_current=True,
         )
 
-        if getattr(self.tab, "_history_popup_requested", False) and hasattr(self.tab, "_show_history_popup"):
+        if self.tab._history_popup_requested:
             self.tab._show_history_popup(
                 combination_indices=combo_indices,
                 stress_values=None,
@@ -411,7 +409,7 @@ class SolverResultSummaryHandler:
         if self.tab.project_directory:
             return self.tab.project_directory
         if self.tab.file_handler.base_reader:
-            rst_path = getattr(self.tab.file_handler.base_reader, "rst_path", None)
+            rst_path = self.tab.file_handler.base_reader.rst_path
             if rst_path:
                 return os.path.dirname(rst_path)
         return None

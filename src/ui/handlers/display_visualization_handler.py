@@ -38,12 +38,12 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
             return False
         
         # Check if we have deformation results
-        deformation_result = getattr(self.tab, 'deformation_result', None)
+        deformation_result = self.tab.deformation_result
         if deformation_result is None:
             return False
         
         # Get original coordinates (stored when mesh was created)
-        original_coords = getattr(self.tab, 'original_node_coords', None)
+        original_coords = self.tab.original_node_coords
         if original_coords is None:
             # Store original coordinates the first time
             self.tab.original_node_coords = mesh.points.copy()
@@ -125,7 +125,7 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
         if mesh is None:
             return False
         
-        original_coords = getattr(self.tab, 'original_node_coords', None)
+        original_coords = self.tab.original_node_coords
         if original_coords is None:
             return False
         
@@ -142,7 +142,7 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
         plotter.clear()
         
         # Apply deformed coordinates if deformation results are available
-        deformation_result = getattr(self.tab, 'deformation_result', None)
+        deformation_result = self.tab.deformation_result
         if deformation_result is not None:
             self.apply_deformed_coordinates()
 
@@ -159,7 +159,7 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
                 self.state.data_column = self.tab.data_column
 
         # Get scalar bar digit format from state
-        digits = getattr(self.state, 'scalar_bar_digits', 4)
+        digits = self.state.scalar_bar_digits
         scalar_bar_fmt = f"%.{digits}f"
         
         actor = plotter.add_mesh(
@@ -220,11 +220,7 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
         if self.state.camera_widget:
             try:
                 self.state.camera_widget.EnabledOff()
-                if hasattr(self.tab.plotter, 'remove_actor'):
-                    try:
-                        self.tab.plotter.remove_actor(self.state.camera_widget)
-                    except Exception:
-                        pass
+                self.tab.plotter.remove_actor(self.state.camera_widget)
             except Exception:
                 pass
             self.state.camera_widget = None
@@ -294,8 +290,8 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
                 has_combo_of_min = "Combo_of_Min" in current_mesh.array_names
                 has_force_envelope = "Max_Force_Magnitude" in current_mesh.array_names
                 active_contour_type = (
-                    getattr(self.state, "current_contour_type", None)
-                    or getattr(self.tab, "current_contour_type", None)
+                    self.state.current_contour_type
+                    or self.tab.current_contour_type
                 )
 
                 handled_deformation = (
@@ -319,8 +315,8 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
                     # This is batch solve result - show enhanced information
                     
                     # Get combination names if available
-                    combo_names = getattr(self.tab, 'combination_names', [])
-                    result_type = getattr(self.tab, 'current_result_type', None)
+                    combo_names = self.tab.combination_names
+                    result_type = self.tab.current_result_type
                     
                     stress_unit = "MPa"
                     # Show max value with combination info
@@ -350,9 +346,9 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
                             lines.append(f"Min: {min_val:.5f} {stress_unit}")
                 elif show_force_block:
                     # Force envelope visualization - show current scalar and combo info if available
-                    combo_names = getattr(self.tab, 'combination_names', [])
+                    combo_names = self.tab.combination_names
                     force_unit = "N"
-                    if getattr(self.tab, 'nodal_forces_result', None) is not None:
+                    if self.tab.nodal_forces_result is not None:
                         force_unit = self.tab.nodal_forces_result.force_unit
                     active_name = current_mesh.active_scalars_name or self.tab.data_column
                     if active_name in current_mesh.array_names:
@@ -444,7 +440,7 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
                             unit = "MPa"
                         elif active_name in ("U_mag", "UX", "UY", "UZ", "Max_U_mag", "Min_U_mag") or active_name.startswith("Def_"):
                             disp_unit = "mm"
-                            if getattr(self.tab, 'deformation_result', None) is not None:
+                            if self.tab.deformation_result is not None:
                                 disp_unit = self.tab.deformation_result.displacement_unit
                             unit = disp_unit
                         elif active_name in (
@@ -454,7 +450,7 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
                             "Max_Shear_XY", "Min_Shear_XY", "Max_Shear_XZ", "Min_Shear_XZ",
                             "Max_Shear_YZ", "Min_Shear_YZ", "Shear_Force"
                         ):
-                            if getattr(self.tab, 'nodal_forces_result', None) is not None:
+                            if self.tab.nodal_forces_result is not None:
                                 unit = self.tab.nodal_forces_result.force_unit
                         if unit:
                             lines.append(f"{active_name} [{unit}]: {value:.5f}")
@@ -489,10 +485,10 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
             return False
 
         disp_unit = "mm"
-        if getattr(self.tab, "deformation_result", None) is not None:
+        if self.tab.deformation_result is not None:
             disp_unit = self.tab.deformation_result.displacement_unit
 
-        combo_names = getattr(self.tab, "combination_names", [])
+        combo_names = self.tab.combination_names
 
         if active_name in mesh.array_names:
             value = mesh[active_name][point_id]
@@ -594,7 +590,7 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
         self.tab.last_valid_deformation_scale = value
         
         # If deformation results are available, update the visualization
-        deformation_result = getattr(self.tab, 'deformation_result', None)
+        deformation_result = self.tab.deformation_result
         if deformation_result is not None:
             self.update_visualization()
 

@@ -429,10 +429,7 @@ class DisplayInteractionHandler(DisplayBaseHandler):
                 QMessageBox.Yes
             )
             if reply == QMessageBox.Yes:
-                if hasattr(self.tab, "node_picked_for_history_popup"):
-                    self.tab.node_picked_for_history_popup.emit(self.state.target_node_id)
-                else:
-                    self.tab.node_picked_signal.emit(self.state.target_node_id)
+                self.tab.node_picked_for_history_popup.emit(self.state.target_node_id)
                 return
 
         if not self.tab.current_mesh or 'NodeID' not in self.tab.current_mesh.array_names:
@@ -476,10 +473,7 @@ class DisplayInteractionHandler(DisplayBaseHandler):
                 self._show_pick_indicator(point_coords, node_id)
                 
                 print(f"Node {node_id} picked. Emitting signal...")
-                if hasattr(self.tab, "node_picked_for_history_popup"):
-                    self.tab.node_picked_for_history_popup.emit(node_id)
-                else:
-                    self.tab.node_picked_signal.emit(node_id)
+                self.tab.node_picked_for_history_popup.emit(node_id)
             except (KeyError, IndexError) as exc:
                 print(f"Could not retrieve NodeID: {exc}")
         else:
@@ -488,7 +482,7 @@ class DisplayInteractionHandler(DisplayBaseHandler):
     def _show_pick_indicator(self, point_coords: np.ndarray, node_id: int) -> None:
         """Display a visual indicator (labeled point) at the picked node."""
         # Remove previous pick indicator if it exists
-        if hasattr(self.state, 'pick_indicator_actor') and self.state.pick_indicator_actor:
+        if self.state.pick_indicator_actor:
             try:
                 self.tab.plotter.remove_actor(self.state.pick_indicator_actor)
             except Exception:

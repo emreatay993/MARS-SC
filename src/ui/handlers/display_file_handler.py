@@ -91,7 +91,7 @@ class DisplayFileHandler(DisplayBaseHandler):
         self.tab.file_path.setText(filename)
 
         # Refresh the 3D view via contour-sync pipeline
-        if hasattr(self.tab, "contour_sync_handler") and self.tab.contour_sync_handler is not None:
+        if self.tab.contour_sync_handler is not None:
             self.tab.contour_sync_handler.sync_from_current_state()
         else:
             self.tab.update_visualization()

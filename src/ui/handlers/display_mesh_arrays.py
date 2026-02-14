@@ -24,7 +24,7 @@ def attach_force_component_arrays(mesh, forces_result, combo_idx: int) -> bool:
     """Attach force component arrays for a specific combination."""
     if mesh is None or forces_result is None:
         return False
-    if getattr(forces_result, "all_combo_fx", None) is None:
+    if forces_result.all_combo_fx is None:
         return False
 
     num_combos = int(forces_result.all_combo_fx.shape[0])
@@ -55,7 +55,7 @@ def attach_deformation_specific_arrays(mesh, deformation_result, combo_idx: int)
     """Attach deformation component arrays for a specific combination."""
     if mesh is None or deformation_result is None:
         return False
-    if getattr(deformation_result, "all_combo_ux", None) is None:
+    if deformation_result.all_combo_ux is None:
         return False
 
     num_combos = int(deformation_result.all_combo_ux.shape[0])
@@ -82,10 +82,10 @@ def attach_deformation_envelope_arrays(mesh, deformation_result) -> bool:
     if mesh is None or deformation_result is None:
         return False
 
-    max_mag = getattr(deformation_result, "max_magnitude_over_combo", None)
-    min_mag = getattr(deformation_result, "min_magnitude_over_combo", None)
-    combo_of_max_mag = getattr(deformation_result, "combo_of_max", None)
-    combo_of_min_mag = getattr(deformation_result, "combo_of_min", None)
+    max_mag = deformation_result.max_magnitude_over_combo
+    min_mag = deformation_result.min_magnitude_over_combo
+    combo_of_max_mag = deformation_result.combo_of_max
+    combo_of_min_mag = deformation_result.combo_of_min
 
     if max_mag is not None and _mesh_and_size_ok(mesh, max_mag):
         mesh["Def_Max_U_mag"] = _flatten(max_mag)
@@ -96,9 +96,9 @@ def attach_deformation_envelope_arrays(mesh, deformation_result) -> bool:
     if combo_of_min_mag is not None and _mesh_and_size_ok(mesh, combo_of_min_mag):
         mesh["Def_Combo_of_Min_U_mag"] = _flatten(combo_of_min_mag).astype(int)
 
-    all_ux = getattr(deformation_result, "all_combo_ux", None)
-    all_uy = getattr(deformation_result, "all_combo_uy", None)
-    all_uz = getattr(deformation_result, "all_combo_uz", None)
+    all_ux = deformation_result.all_combo_ux
+    all_uy = deformation_result.all_combo_uy
+    all_uz = deformation_result.all_combo_uz
 
     if all_ux is None or all_uy is None or all_uz is None:
         return True
@@ -137,9 +137,9 @@ def build_deformation_component_payload_from_result(deformation_result) -> Optio
     if deformation_result is None:
         return None
 
-    all_ux = getattr(deformation_result, "all_combo_ux", None)
-    all_uy = getattr(deformation_result, "all_combo_uy", None)
-    all_uz = getattr(deformation_result, "all_combo_uz", None)
+    all_ux = deformation_result.all_combo_ux
+    all_uy = deformation_result.all_combo_uy
+    all_uz = deformation_result.all_combo_uz
 
     if all_ux is None or all_uy is None or all_uz is None:
         return None

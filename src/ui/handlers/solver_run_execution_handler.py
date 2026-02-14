@@ -291,5 +291,4 @@ class SolverRunExecutionHandler:
             return False
 
     def _append_console(self, message: str) -> None:
-        if hasattr(self.tab, "console_textbox"):
-            self.tab.console_textbox.append(message)
+        self.tab.console_textbox.append(message)

@@ -6,6 +6,8 @@ Centralizing these checks avoids drift between UI enablement and run-time valida
 
 from dataclasses import dataclass
 
+from core.data_models import AnalysisData
+
 
 @dataclass(frozen=True)
 class SolverOutputAvailability:
@@ -15,7 +17,10 @@ class SolverOutputAvailability:
     displacement: bool
 
 
-def evaluate_output_availability(analysis1_data, analysis2_data) -> SolverOutputAvailability:
+def evaluate_output_availability(
+    analysis1_data: AnalysisData | None,
+    analysis2_data: AnalysisData | None,
+) -> SolverOutputAvailability:
     """
     Evaluate output availability from currently loaded analysis metadata.
 
@@ -33,12 +38,12 @@ def evaluate_output_availability(analysis1_data, analysis2_data) -> SolverOutput
         )
 
     nodal_forces_available = bool(
-        getattr(analysis1_data, "nodal_forces_available", False)
-        and getattr(analysis2_data, "nodal_forces_available", False)
+        analysis1_data.nodal_forces_available
+        and analysis2_data.nodal_forces_available
     )
     displacement_available = bool(
-        getattr(analysis1_data, "displacement_available", False)
-        and getattr(analysis2_data, "displacement_available", False)
+        analysis1_data.displacement_available
+        and analysis2_data.displacement_available
     )
 
     return SolverOutputAvailability(
