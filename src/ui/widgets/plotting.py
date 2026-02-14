@@ -841,7 +841,8 @@ class PlotlyMaxWidget(QWidget):
         )
         
         # Display
-        self._render_figure(fig, "plot")
+        main_win = self.window()
+        main_win.plotting_handler.load_fig_to_webview(fig, self.web_view)
         
         # Populate table
         headers = ["Time [s]"] + [trace['name'] for trace in traces]
@@ -883,24 +884,6 @@ class PlotlyMaxWidget(QWidget):
         
         QApplication.clipboard().setText('\\n'.join(lines))
 
-    def _render_figure(self, fig, error_context: str) -> None:
-        """Render a Plotly figure with optional main-window plotting handler fallback."""
-        plotting_handler = None
-        try:
-            main_win = self.window()
-            plotting_handler = main_win.plotting_handler
-        except Exception:
-            plotting_handler = None
-
-        if plotting_handler is not None:
-            try:
-                plotting_handler.load_fig_to_webview(fig, self.web_view)
-                return
-            except Exception as e:
-                print(f"Error rendering {error_context}: {e}")
-
-        self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
-    
     def update_envelope_plot(self, node_ids, max_values=None, min_values=None,
                             combo_of_max=None, combo_of_min=None,
                             stress_type="von_mises", combination_names=None,
@@ -1008,7 +991,17 @@ class PlotlyMaxWidget(QWidget):
         )
         
         # Display
-        self._render_figure(fig, "envelope plot")
+        try:
+            main_win = self.window()
+            if hasattr(main_win, 'plotting_handler') and main_win.plotting_handler:
+                main_win.plotting_handler.load_fig_to_webview(fig, self.web_view)
+            else:
+                # Fallback: render HTML directly with embedded plotly.js (offline compatible)
+                self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
+        except Exception as e:
+            print(f"Error rendering envelope plot: {e}")
+            # Use embedded plotly.js for offline compatibility
+            self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
         
         # Populate table with all data (not just top N)
         headers = ["Node ID"]
@@ -1137,7 +1130,15 @@ class PlotlyMaxWidget(QWidget):
         )
         
         # Display
-        self._render_figure(fig, "forces envelope plot")
+        try:
+            main_win = self.window()
+            if hasattr(main_win, 'plotting_handler') and main_win.plotting_handler:
+                main_win.plotting_handler.load_fig_to_webview(fig, self.web_view)
+            else:
+                self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
+        except Exception as e:
+            print(f"Error rendering forces envelope plot: {e}")
+            self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
         
         # Populate table with all data
         headers = ["Node ID", f"Max |F| [{force_unit}]", "Combo of Max", f"Min |F| [{force_unit}]", "Combo of Min"]
@@ -1280,7 +1281,15 @@ class PlotlyMaxWidget(QWidget):
         )
         
         # Display
-        self._render_figure(fig, "max over combinations plot")
+        try:
+            main_win = self.window()
+            if hasattr(main_win, 'plotting_handler') and main_win.plotting_handler:
+                main_win.plotting_handler.load_fig_to_webview(fig, self.web_view)
+            else:
+                self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
+        except Exception as e:
+            print(f"Error rendering max over combinations plot: {e}")
+            self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
         
         # Populate table
         headers = ["Combo #", "Name"]
@@ -1400,7 +1409,15 @@ class PlotlyMaxWidget(QWidget):
         )
         
         # Display
-        self._render_figure(fig, "deformation envelope plot")
+        try:
+            main_win = self.window()
+            if hasattr(main_win, 'plotting_handler') and main_win.plotting_handler:
+                main_win.plotting_handler.load_fig_to_webview(fig, self.web_view)
+            else:
+                self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
+        except Exception as e:
+            print(f"Error rendering deformation envelope plot: {e}")
+            self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
         
         # Populate table with all data
         headers = ["Node ID", f"Max U_mag [{displacement_unit}]", "Combo of Max", 
@@ -1537,7 +1554,15 @@ class PlotlyMaxWidget(QWidget):
         )
         
         # Display
-        self._render_figure(fig, "deformation over combinations plot")
+        try:
+            main_win = self.window()
+            if hasattr(main_win, 'plotting_handler') and main_win.plotting_handler:
+                main_win.plotting_handler.load_fig_to_webview(fig, self.web_view)
+            else:
+                self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
+        except Exception as e:
+            print(f"Error rendering deformation over combinations plot: {e}")
+            self.web_view.setHtml(fig.to_html(include_plotlyjs=True, full_html=True))
         
         # Populate table
         headers = ["Combo #", "Name", 

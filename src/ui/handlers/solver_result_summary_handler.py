@@ -163,6 +163,7 @@ class SolverResultSummaryHandler:
             combination_indices = np.arange(1)
 
         if show_max:
+            self._show_result_tab(self.tab.plot_max_combo_tab, "Maximum Over Combination")
             if max_per_combo is not None:
                 self.tab.plot_max_combo_tab.update_max_over_combinations_plot(
                     combination_indices=combination_indices,
@@ -182,11 +183,11 @@ class SolverResultSummaryHandler:
                     combination_names=combo_names,
                     show_top_n=50,
                 )
-            self._show_result_tab(self.tab.plot_max_combo_tab, "Maximum Over Combination")
         else:
             self._hide_result_tab(self.tab.plot_max_combo_tab)
 
         if show_min:
+            self._show_result_tab(self.tab.plot_min_combo_tab, "Minimum Over Combination")
             if min_per_combo is not None:
                 self.tab.plot_min_combo_tab.update_max_over_combinations_plot(
                     combination_indices=combination_indices,
@@ -206,7 +207,6 @@ class SolverResultSummaryHandler:
                     combination_names=combo_names,
                     show_top_n=50,
                 )
-            self._show_result_tab(self.tab.plot_min_combo_tab, "Minimum Over Combination")
         else:
             self._hide_result_tab(self.tab.plot_min_combo_tab)
 
@@ -279,6 +279,7 @@ class SolverResultSummaryHandler:
         combo_names = self.tab.combination_table.combination_names if self.tab.combination_table else None
 
         if result.max_magnitude_over_combo is not None:
+            self._show_result_tab(self.tab.plot_max_combo_tab, "Max Forces Over Combination")
             self.tab.plot_max_combo_tab.update_forces_envelope_plot(
                 node_ids=result.node_ids,
                 max_magnitude=result.max_magnitude_over_combo,
@@ -289,11 +290,11 @@ class SolverResultSummaryHandler:
                 force_unit=result.force_unit,
                 show_top_n=50,
             )
-            self._show_result_tab(self.tab.plot_max_combo_tab, "Max Forces Over Combination")
         else:
             self._hide_result_tab(self.tab.plot_max_combo_tab)
 
         if result.min_magnitude_over_combo is not None:
+            self._show_result_tab(self.tab.plot_min_combo_tab, "Min Forces Over Combination")
             self.tab.plot_min_combo_tab.update_forces_envelope_plot(
                 node_ids=result.node_ids,
                 max_magnitude=None,
@@ -304,7 +305,6 @@ class SolverResultSummaryHandler:
                 force_unit=result.force_unit,
                 show_top_n=50,
             )
-            self._show_result_tab(self.tab.plot_min_combo_tab, "Min Forces Over Combination")
         else:
             self._hide_result_tab(self.tab.plot_min_combo_tab)
 
