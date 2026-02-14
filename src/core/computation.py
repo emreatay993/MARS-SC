@@ -5,7 +5,7 @@ This module previously contained the AnalysisEngine class for MARS modal
 transient analysis using PyTorch. It has been deprecated in MARS-SC.
 
 For MARS-SC (Solution Combination), use:
-    - solver.combination_engine.CombinationEngine - Linear combination of stress results
+    - solver.stress_engine.StressCombinationEngine - Linear combination of stress results
     - solver.plasticity_engine - Plasticity corrections for combination results
 """
 
@@ -20,12 +20,12 @@ class AnalysisEngine:
     DEPRECATED: Legacy modal transient analysis engine.
     
     This class is not used in MARS-SC. For static stress combination analysis,
-    use solver.combination_engine.CombinationEngine instead.
+    use solver.stress_engine.StressCombinationEngine instead.
     
     Example usage for MARS-SC:
-        from solver.combination_engine import CombinationEngine
+        from solver.stress_engine import StressCombinationEngine
         
-        engine = CombinationEngine(base_reader, combine_reader, combination_table)
+        engine = StressCombinationEngine(base_reader, combine_reader, combination_table)
         engine.preload_stress_data(named_selection, stress_type='von_mises')
         result = engine.compute_full_analysis()
     """
@@ -33,5 +33,5 @@ class AnalysisEngine:
     def __init__(self):
         raise NotImplementedError(
             "AnalysisEngine is deprecated in MARS-SC. "
-            "Use solver.combination_engine.CombinationEngine for static stress combination."
+            "Use solver.stress_engine.StressCombinationEngine for static stress combination."
         )

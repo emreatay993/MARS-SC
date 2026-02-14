@@ -14,8 +14,8 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from core.data_models import CombinationTableData, CombinationResult
-from solver.combination_engine import (
-    CombinationEngine,
+from solver.stress_engine import (
+    StressCombinationEngine,
     RAM_USAGE_FRACTION,
     DEFAULT_CHUNK_SIZE,
     MIN_CHUNK_SIZE,
@@ -28,7 +28,7 @@ class TestMemoryEstimation:
     def test_estimate_memory_requirements(self):
         """Test that memory estimation returns expected keys."""
         # Create mock engine
-        engine = Mock(spec=CombinationEngine)
+        engine = Mock(spec=StressCombinationEngine)
         engine.scoping = Mock()
         engine.scoping.ids = list(range(1000))  # 1000 nodes
         
@@ -38,8 +38,8 @@ class TestMemoryEstimation:
         engine.table.num_combinations = 10
         
         # Use actual method
-        engine.estimate_memory_requirements = CombinationEngine.estimate_memory_requirements.__get__(
-            engine, CombinationEngine
+        engine.estimate_memory_requirements = StressCombinationEngine.estimate_memory_requirements.__get__(
+            engine, StressCombinationEngine
         )
         
         estimates = engine.estimate_memory_requirements(num_nodes=1000)
@@ -61,7 +61,7 @@ class TestMemoryEstimation:
     
     def test_estimate_memory_scaling(self):
         """Test that memory estimates scale with node count."""
-        engine = Mock(spec=CombinationEngine)
+        engine = Mock(spec=StressCombinationEngine)
         engine.scoping = Mock()
         engine.scoping.ids = list(range(100))
         
@@ -70,8 +70,8 @@ class TestMemoryEstimation:
         engine.table.analysis2_step_ids = [1]
         engine.table.num_combinations = 5
         
-        engine.estimate_memory_requirements = CombinationEngine.estimate_memory_requirements.__get__(
-            engine, CombinationEngine
+        engine.estimate_memory_requirements = StressCombinationEngine.estimate_memory_requirements.__get__(
+            engine, StressCombinationEngine
         )
         
         estimates_100 = engine.estimate_memory_requirements(num_nodes=100)
@@ -83,7 +83,7 @@ class TestMemoryEstimation:
     
     def test_calculate_chunk_size_bounds(self):
         """Test that chunk size is bounded correctly."""
-        engine = Mock(spec=CombinationEngine)
+        engine = Mock(spec=StressCombinationEngine)
         engine.table = Mock()
         engine.table.analysis1_step_ids = [1]
         engine.table.analysis2_step_ids = []
@@ -95,8 +95,8 @@ class TestMemoryEstimation:
             'envelope_bytes': 100000,  # 100KB for envelope
         })
         
-        engine._calculate_chunk_size = CombinationEngine._calculate_chunk_size.__get__(
-            engine, CombinationEngine
+        engine._calculate_chunk_size = StressCombinationEngine._calculate_chunk_size.__get__(
+            engine, StressCombinationEngine
         )
         
         # Test with limited memory
@@ -111,7 +111,7 @@ class TestMemoryEstimation:
     
     def test_calculate_chunk_size_small_model(self):
         """Test that chunk size equals num_nodes for small models."""
-        engine = Mock(spec=CombinationEngine)
+        engine = Mock(spec=StressCombinationEngine)
         engine.table = Mock()
         engine.table.analysis1_step_ids = [1]
         engine.table.analysis2_step_ids = []
@@ -122,8 +122,8 @@ class TestMemoryEstimation:
             'envelope_bytes': 1000,
         })
         
-        engine._calculate_chunk_size = CombinationEngine._calculate_chunk_size.__get__(
-            engine, CombinationEngine
+        engine._calculate_chunk_size = StressCombinationEngine._calculate_chunk_size.__get__(
+            engine, StressCombinationEngine
         )
         
         # With plenty of memory, chunk size should equal num_nodes
@@ -140,9 +140,9 @@ class TestChunkedProcessing:
     
     def test_update_envelope_for_chunk(self):
         """Test incremental envelope update."""
-        engine = Mock(spec=CombinationEngine)
-        engine._update_envelope_for_chunk = CombinationEngine._update_envelope_for_chunk.__get__(
-            engine, CombinationEngine
+        engine = Mock(spec=StressCombinationEngine)
+        engine._update_envelope_for_chunk = StressCombinationEngine._update_envelope_for_chunk.__get__(
+            engine, StressCombinationEngine
         )
         
         # Initialize envelope arrays for 10 nodes
@@ -189,7 +189,7 @@ class TestChunkedProcessing:
     
     def test_compute_chunk_combinations(self):
         """Test computing combinations for a chunk."""
-        engine = Mock(spec=CombinationEngine)
+        engine = Mock(spec=StressCombinationEngine)
         engine.table = Mock()
         engine.table.num_combinations = 2
         engine.table.analysis1_step_ids = [1, 2]
@@ -217,11 +217,11 @@ class TestChunkedProcessing:
                      np.array([4, 8])),
         }
         
-        engine.compute_von_mises = CombinationEngine.compute_von_mises
-        engine.compute_principal_stresses_numpy = CombinationEngine.compute_principal_stresses_numpy
+        engine.compute_von_mises = StressCombinationEngine.compute_von_mises
+        engine.compute_principal_stresses_numpy = StressCombinationEngine.compute_principal_stresses_numpy
         
-        engine._compute_chunk_combinations = CombinationEngine._compute_chunk_combinations.__get__(
-            engine, CombinationEngine
+        engine._compute_chunk_combinations = StressCombinationEngine._compute_chunk_combinations.__get__(
+            engine, StressCombinationEngine
         )
         
         results = engine._compute_chunk_combinations(
@@ -237,7 +237,7 @@ class TestMemoryCheckAndChunkedAnalysis:
     
     def test_check_memory_available_sufficient(self):
         """Test memory check when sufficient memory available."""
-        engine = Mock(spec=CombinationEngine)
+        engine = Mock(spec=StressCombinationEngine)
         engine.scoping = Mock()
         engine.scoping.ids = list(range(100))  # Small model
         
@@ -256,8 +256,8 @@ class TestMemoryCheckAndChunkedAnalysis:
         engine._get_available_memory = Mock(return_value=1_000_000_000)  # 1GB available
         engine._calculate_chunk_size = Mock(return_value=100)
         
-        engine.check_memory_available = CombinationEngine.check_memory_available.__get__(
-            engine, CombinationEngine
+        engine.check_memory_available = StressCombinationEngine.check_memory_available.__get__(
+            engine, StressCombinationEngine
         )
         
         is_sufficient, estimates = engine.check_memory_available(raise_on_insufficient=False)
@@ -269,7 +269,7 @@ class TestMemoryCheckAndChunkedAnalysis:
     
     def test_check_memory_available_insufficient(self):
         """Test memory check when insufficient memory."""
-        engine = Mock(spec=CombinationEngine)
+        engine = Mock(spec=StressCombinationEngine)
         engine.scoping = Mock()
         engine.scoping.ids = list(range(100))
         
@@ -288,8 +288,8 @@ class TestMemoryCheckAndChunkedAnalysis:
         engine._get_available_memory = Mock(return_value=1_000_000_000)  # Only 1GB
         engine._calculate_chunk_size = Mock(return_value=MIN_CHUNK_SIZE)
         
-        engine.check_memory_available = CombinationEngine.check_memory_available.__get__(
-            engine, CombinationEngine
+        engine.check_memory_available = StressCombinationEngine.check_memory_available.__get__(
+            engine, StressCombinationEngine
         )
         
         # Should not raise, just return False
@@ -299,7 +299,7 @@ class TestMemoryCheckAndChunkedAnalysis:
     
     def test_check_memory_available_raises(self):
         """Test memory check raises MemoryError when requested."""
-        engine = Mock(spec=CombinationEngine)
+        engine = Mock(spec=StressCombinationEngine)
         engine.scoping = Mock()
         engine.scoping.ids = list(range(100))
         
@@ -310,8 +310,8 @@ class TestMemoryCheckAndChunkedAnalysis:
         engine._get_available_memory = Mock(return_value=1_000_000_000)
         engine._calculate_chunk_size = Mock(return_value=MIN_CHUNK_SIZE)
         
-        engine.check_memory_available = CombinationEngine.check_memory_available.__get__(
-            engine, CombinationEngine
+        engine.check_memory_available = StressCombinationEngine.check_memory_available.__get__(
+            engine, StressCombinationEngine
         )
         
         with pytest.raises(MemoryError):
@@ -403,7 +403,7 @@ class TestEdgeCases:
     
     def test_single_node_no_chunking_needed(self):
         """Test that single node doesn't need chunking."""
-        engine = Mock(spec=CombinationEngine)
+        engine = Mock(spec=StressCombinationEngine)
         engine.scoping = Mock()
         engine.scoping.ids = [1]  # Single node
         
@@ -412,8 +412,8 @@ class TestEdgeCases:
         engine.table.analysis2_step_ids = []
         engine.table.num_combinations = 1
         
-        engine.estimate_memory_requirements = CombinationEngine.estimate_memory_requirements.__get__(
-            engine, CombinationEngine
+        engine.estimate_memory_requirements = StressCombinationEngine.estimate_memory_requirements.__get__(
+            engine, StressCombinationEngine
         )
         
         estimates = engine.estimate_memory_requirements(num_nodes=1)
@@ -423,7 +423,7 @@ class TestEdgeCases:
     
     def test_zero_combinations_error(self):
         """Test handling of zero combinations."""
-        engine = Mock(spec=CombinationEngine)
+        engine = Mock(spec=StressCombinationEngine)
         engine.scoping = Mock()
         engine.scoping.ids = [1, 2, 3]
         
@@ -432,8 +432,8 @@ class TestEdgeCases:
         engine.table.analysis2_step_ids = []
         engine.table.num_combinations = 0
         
-        engine.estimate_memory_requirements = CombinationEngine.estimate_memory_requirements.__get__(
-            engine, CombinationEngine
+        engine.estimate_memory_requirements = StressCombinationEngine.estimate_memory_requirements.__get__(
+            engine, StressCombinationEngine
         )
         
         # Should handle gracefully
@@ -446,16 +446,16 @@ class TestPsutilFallback:
     
     def test_get_available_memory_without_psutil(self):
         """Test memory estimation fallback without psutil."""
-        engine = Mock(spec=CombinationEngine)
+        engine = Mock(spec=StressCombinationEngine)
         
         # Temporarily disable psutil
-        import solver.combination_engine as ce_module
+        import solver.stress_engine as ce_module
         original_psutil = ce_module.PSUTIL_AVAILABLE
         ce_module.PSUTIL_AVAILABLE = False
         
         try:
-            engine._get_available_memory = CombinationEngine._get_available_memory.__get__(
-                engine, CombinationEngine
+            engine._get_available_memory = StressCombinationEngine._get_available_memory.__get__(
+                engine, StressCombinationEngine
             )
             
             available = engine._get_available_memory()

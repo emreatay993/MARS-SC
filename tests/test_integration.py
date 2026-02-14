@@ -21,7 +21,7 @@ from file_io.exporters import (
     export_single_combination,
     export_combination_history,
 )
-from solver.combination_engine import CombinationEngine
+from solver.stress_engine import StressCombinationEngine
 from solver.plasticity_engine import (
     default_material_db,
     apply_plasticity_to_envelope,
@@ -105,7 +105,7 @@ class TestStressComputationWorkflow:
     def test_von_mises_from_tensor_workflow(self, sample_stress_tensor):
         """Test computing von Mises from tensor components."""
         # Use the engine's static method
-        vm = CombinationEngine.compute_von_mises(
+        vm = StressCombinationEngine.compute_von_mises(
             sample_stress_tensor['sx'],
             sample_stress_tensor['sy'],
             sample_stress_tensor['sz'],
@@ -120,7 +120,7 @@ class TestStressComputationWorkflow:
     
     def test_principal_stresses_workflow(self, sample_stress_tensor):
         """Test computing principal stresses from tensor."""
-        s1, s2, s3 = CombinationEngine.compute_principal_stresses_numpy(
+        s1, s2, s3 = StressCombinationEngine.compute_principal_stresses_numpy(
             sample_stress_tensor['sx'],
             sample_stress_tensor['sy'],
             sample_stress_tensor['sz'],
@@ -224,7 +224,7 @@ class TestMathematicalCorrectness:
         syz = np.array([0.0])
         sxz = np.array([0.0])
         
-        vm = CombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
+        vm = StressCombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
         np.testing.assert_almost_equal(vm[0], 100.0)
         
         # Test case: plane stress with shear
@@ -237,7 +237,7 @@ class TestMathematicalCorrectness:
         syz = np.array([0.0])
         sxz = np.array([0.0])
         
-        vm = CombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
+        vm = StressCombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
         expected = np.sqrt(100**2 + 3 * 50**2)
         np.testing.assert_almost_equal(vm[0], expected, decimal=5)
     
@@ -263,10 +263,10 @@ class TestMathematicalCorrectness:
             [15, 25, 45],  # Combo 2
         ])
         
-        max_values, max_indices = CombinationEngine.compute_envelope(
+        max_values, max_indices = StressCombinationEngine.compute_envelope(
             None, all_results, "max"
         )
-        min_values, min_indices = CombinationEngine.compute_envelope(
+        min_values, min_indices = StressCombinationEngine.compute_envelope(
             None, all_results, "min"
         )
         

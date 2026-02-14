@@ -14,7 +14,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from file_io.dpf_reader import DPFAnalysisReader, DPF_AVAILABLE
-from solver.combination_engine import CombinationEngine
+from solver.stress_engine import StressCombinationEngine
 from core.data_models import CombinationTableData, CombinationResult
 
 
@@ -139,7 +139,7 @@ class TestRealRSTCombination:
         print(f"\nTotal nodes in scoping: {len(all_nodes_scoping.ids):,}")
         
         # Create combination engine
-        engine = CombinationEngine(reader1, reader2, all_nodes_scoping, combo_table)
+        engine = StressCombinationEngine(reader1, reader2, all_nodes_scoping, combo_table)
         
         # Preload stress data
         print("Loading stress data...")
@@ -215,7 +215,7 @@ class TestRealRSTCombination:
                     continue
                 
                 # Create combination engine
-                engine = CombinationEngine(reader1, reader2, nodal_scoping, combo_table)
+                engine = StressCombinationEngine(reader1, reader2, nodal_scoping, combo_table)
                 
                 # Preload stress data
                 engine.preload_stress_data()
@@ -289,7 +289,7 @@ class TestRealRSTCombination:
         node_ids, sx, sy, sz, sxy, syz, sxz = reader1.read_stress_tensor_for_loadstep(
             a1_step, all_scoping
         )
-        vm_a1 = CombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
+        vm_a1 = StressCombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
         print_stress_statistics("Von Mises", vm_a1, node_ids)
         
         # Read stress from Analysis 2
@@ -297,7 +297,7 @@ class TestRealRSTCombination:
         node_ids, sx, sy, sz, sxy, syz, sxz = reader2.read_stress_tensor_for_loadstep(
             a2_step, all_scoping
         )
-        vm_a2 = CombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
+        vm_a2 = StressCombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
         print_stress_statistics("Von Mises", vm_a2, node_ids)
         
         assert len(vm_a1) > 0
@@ -333,18 +333,18 @@ class TestRealRSTCombination:
         sxz_manual = sxz1 + sxz2
         
         # Compute von Mises manually
-        vm_manual = CombinationEngine.compute_von_mises(
+        vm_manual = StressCombinationEngine.compute_von_mises(
             sx_manual, sy_manual, sz_manual, sxy_manual, syz_manual, sxz_manual
         )
         
         # Use combination engine
         combo_table = create_simple_combination_table(a1_step, a2_step)
-        engine = CombinationEngine(reader1, reader2, all_scoping, combo_table)
+        engine = StressCombinationEngine(reader1, reader2, all_scoping, combo_table)
         engine.preload_stress_data()
         
         # Get combined stress from engine
         sx_eng, sy_eng, sz_eng, sxy_eng, syz_eng, sxz_eng = engine.compute_combination_numpy(0)
-        vm_engine = CombinationEngine.compute_von_mises(
+        vm_engine = StressCombinationEngine.compute_von_mises(
             sx_eng, sy_eng, sz_eng, sxy_eng, syz_eng, sxz_eng
         )
         

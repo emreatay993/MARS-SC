@@ -40,7 +40,7 @@ Generated: `2026-02-14 03:05:45`
 | `src/file_io/validators.py` | `src.file_io.validators` | 341 | 1 | 6 | File validation helpers for MARS-SC (Solution Combination). |
 | `src/main.py` | `src.main` | 40 | 0 | 1 | Entry point for the MARS-SC: Solution Combination application. |
 | `src/solver/__init__.py` | `src.solver.__init__` | 6 | 0 | 0 | Solver engines for MARS-SC solution combination analysis. |
-| `src/solver/combination_engine.py` | `src.solver.combination_engine` | 1098 | 1 | 0 | Combination Engine for MARS-SC (Solution Combination). |
+| `src/solver/stress_engine.py` | `src.solver.stress_engine` | 1098 | 1 | 0 | Stress Combination Engine for MARS-SC (Solution Combination). |
 | `src/solver/deformation_engine.py` | `src.solver.deformation_engine` | 555 | 2 | 0 | Deformation (Displacement) Combination Engine for MARS-SC (Solution Combination). |
 | `src/solver/nodal_forces_engine.py` | `src.solver.nodal_forces_engine` | 486 | 1 | 0 | Nodal Forces Combination Engine for MARS-SC (Solution Combination). |
 | `src/solver/plasticity_engine.py` | `src.solver.plasticity_engine` | 856 | 1 | 27 | Plasticity correction solvers for Neuber, Glinka, and IBG methods. |
@@ -52,7 +52,7 @@ Generated: `2026-02-14 03:05:45`
 | `src/ui/dialogs/__init__.py` | `src.ui.dialogs.__init__` | 5 | 0 | 0 | Dialog components for the UI package. |
 | `src/ui/dialogs/material_profile_dialog.py` | `src.ui.dialogs.material_profile_dialog` | 515 | 1 | 0 | Material profile dialog providing editors for temperature-dependent properties. |
 | `src/ui/display_tab.py` | `src.ui.display_tab` | 890 | 1 | 0 | Display tab: 3D visualization of FEA results (PyVista). |
-| `src/ui/handlers/analysis_handler.py` | `src.ui.handlers.analysis_handler` | 1299 | 1 | 0 | Runs combination analysis from the Solver tab: validates inputs, builds SolverConfig, calls CombinationEngine, and shows results. |
+| `src/ui/handlers/analysis_handler.py` | `src.ui.handlers.analysis_handler` | 1299 | 1 | 0 | Runs combination analysis from the Solver tab: validates inputs, builds SolverConfig, calls StressCombinationEngine, and shows results. |
 | `src/ui/handlers/display_base_handler.py` | `src.ui.handlers.display_base_handler` | 26 | 1 | 0 | Base utilities for Display tab handler classes. |
 | `src/ui/handlers/display_contour_context.py` | `src.ui.handlers.display_contour_context` | 144 | 1 | 3 | No module docstring. |
 | `src/ui/handlers/display_contour_policy.py` | `src.ui.handlers.display_contour_policy` | 77 | 0 | 5 | No module docstring. |
@@ -84,4 +84,3 @@ Generated: `2026-02-14 03:05:45`
 | `src/utils/file_utils.py` | `src.utils.file_utils` | 235 | 0 | 2 | File utility helpers for MARS-SC (Solution Combination). |
 | `src/utils/node_utils.py` | `src.utils.node_utils` | 26 | 0 | 1 | Node-related utility helpers for MARS-SC (Solution Combination). |
 | `src/utils/tooltips.py` | `src.utils.tooltips` | 508 | 0 | 0 | Tooltip text constants for MARS-SC (Solution Combination). |
-| `src/utils/torch_setup.py` | `src.utils.torch_setup` | 295 | 0 | 8 | PyTorch initialization module for Windows CUDA compatibility. |

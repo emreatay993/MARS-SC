@@ -1,5 +1,5 @@
 """
-Combination Engine for MARS-SC (Solution Combination).
+Stress Combination Engine for MARS-SC (Solution Combination).
 
 Performs linear combination of stress tensors from two analyses and computes
 stress envelopes over combinations.
@@ -47,7 +47,7 @@ if DPF_AVAILABLE:
     from ansys.dpf import core as dpf
 
 
-class CombinationEngine:
+class StressCombinationEngine:
     """
     Performs linear combination of stress tensors from two analyses.
     
@@ -69,7 +69,7 @@ class CombinationEngine:
         combination_table: CombinationTableData
     ):
         """
-        Initialize the combination engine.
+        Initialize the stress combination engine.
         
         Args:
             reader1: DPFAnalysisReader for Analysis 1 (base).

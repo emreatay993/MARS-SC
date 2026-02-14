@@ -107,7 +107,7 @@ manual_app_imports = [
     'file_io.loaders',
     'file_io.validators',
     'solver',
-    'solver.combination_engine',
+    'solver.stress_engine',
     'solver.nodal_forces_engine',
     'solver.plasticity_engine',
     'ui',
@@ -147,7 +147,6 @@ manual_app_imports = [
     'utils.file_utils',
     'utils.node_utils',
     'utils.tooltips',
-    'utils.torch_setup',
 ]
 hiddenimports += manual_app_imports
 

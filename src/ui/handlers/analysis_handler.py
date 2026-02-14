@@ -1,6 +1,6 @@
 """
 Runs combination analysis from the Solver tab: validates inputs, builds SolverConfig,
-calls CombinationEngine, and shows results. DPF runs in the main thread (gRPC doesn't
+calls StressCombinationEngine, and shows results. DPF runs in the main thread (gRPC doesn't
 play nice with threads); processEvents() keeps the GUI responsive.
 """
 
@@ -13,7 +13,7 @@ import numpy as np
 from PyQt5.QtCore import pyqtSlot, QTimer
 from PyQt5.QtWidgets import QMessageBox, QApplication
 
-from solver.combination_engine import CombinationEngine
+from solver.stress_engine import StressCombinationEngine
 from solver.nodal_forces_engine import NodalForcesCombinationEngine
 from solver.deformation_engine import DeformationCombinationEngine, CylindricalCSNotFoundError
 from file_io.dpf_reader import (
@@ -36,7 +36,7 @@ class SolverAnalysisHandler:
         """tab: the SolverTab we're attached to."""
         self.tab = tab
         self._solve_start_time: Optional[datetime] = None
-        self._combination_engine: Optional[CombinationEngine] = None
+        self._combination_engine: Optional[StressCombinationEngine] = None
         self._nodal_forces_engine: Optional[NodalForcesCombinationEngine] = None
         self._deformation_engine: Optional[DeformationCombinationEngine] = None
 
@@ -162,7 +162,7 @@ class SolverAnalysisHandler:
     
     def _run_analysis(
         self, 
-        engine: CombinationEngine, 
+        engine: StressCombinationEngine, 
         config: SolverConfig, 
         stress_type: str,
         use_chunked: bool
@@ -171,7 +171,7 @@ class SolverAnalysisHandler:
         Run the actual analysis computation in main thread.
         
         Args:
-            engine: Configured CombinationEngine.
+            engine: Configured StressCombinationEngine.
             config: SolverConfig with analysis settings.
             stress_type: Type of stress to compute.
             use_chunked: Whether to use chunked processing.
@@ -560,15 +560,15 @@ class SolverAnalysisHandler:
             return "min_principal"
         return None
     
-    def _create_combination_engine(self, config: SolverConfig) -> Optional[CombinationEngine]:
+    def _create_combination_engine(self, config: SolverConfig) -> Optional[StressCombinationEngine]:
         """
-        Create and configure the CombinationEngine.
+        Create and configure the StressCombinationEngine.
         
         Args:
             config: SolverConfig with analysis settings.
             
         Returns:
-            Configured CombinationEngine or None if creation fails.
+            Configured StressCombinationEngine or None if creation fails.
         """
         try:
             # Get readers from file handler
@@ -585,7 +585,7 @@ class SolverAnalysisHandler:
             combo_table = self.tab.get_combination_table_data()
             
             # Create engine
-            engine = CombinationEngine(
+            engine = StressCombinationEngine(
                 reader1=reader1,
                 reader2=reader2,
                 nodal_scoping=nodal_scoping,
@@ -601,7 +601,7 @@ class SolverAnalysisHandler:
             )
             return None
     
-    def _should_use_chunked_processing(self, engine: CombinationEngine) -> bool:
+    def _should_use_chunked_processing(self, engine: StressCombinationEngine) -> bool:
         """
         Determine if chunked processing should be used based on memory estimates.
         
@@ -1174,7 +1174,7 @@ class SolverAnalysisHandler:
         self.tab.console_textbox.append(msg)
         self._solve_start_time = None
     
-    def get_combination_engine(self) -> Optional[CombinationEngine]:
+    def get_combination_engine(self) -> Optional[StressCombinationEngine]:
         """Get the current combination engine (if available)."""
         return self._combination_engine
     

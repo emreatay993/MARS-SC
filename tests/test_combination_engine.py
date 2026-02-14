@@ -15,7 +15,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from core.data_models import CombinationTableData, CombinationResult
-from solver.combination_engine import CombinationEngine
+from solver.stress_engine import StressCombinationEngine
 
 
 class TestVonMisesComputation:
@@ -30,7 +30,7 @@ class TestVonMisesComputation:
         syz = np.array([0.0])
         sxz = np.array([0.0])
         
-        vm = CombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
+        vm = StressCombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
         
         # For uniaxial: σvm = σx
         np.testing.assert_almost_equal(vm[0], 100.0)
@@ -44,7 +44,7 @@ class TestVonMisesComputation:
         syz = np.array([0.0])
         sxz = np.array([0.0])
         
-        vm = CombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
+        vm = StressCombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
         
         # For σx = σy: σvm = σx
         np.testing.assert_almost_equal(vm[0], 100.0)
@@ -58,7 +58,7 @@ class TestVonMisesComputation:
         syz = np.array([0.0])
         sxz = np.array([0.0])
         
-        vm = CombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
+        vm = StressCombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
         
         # For pure shear: σvm = √3 * τxy
         expected = np.sqrt(3) * 100.0
@@ -74,7 +74,7 @@ class TestVonMisesComputation:
         syz = np.array([0.0])
         sxz = np.array([0.0])
         
-        vm = CombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
+        vm = StressCombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
         
         # Hydrostatic stress has σvm = 0
         np.testing.assert_almost_equal(vm[0], 0.0)
@@ -88,7 +88,7 @@ class TestVonMisesComputation:
         syz = np.array([20.0])
         sxz = np.array([10.0])
         
-        vm = CombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
+        vm = StressCombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
         
         # Manual calculation
         expected = np.sqrt(0.5 * (
@@ -107,7 +107,7 @@ class TestVonMisesComputation:
         syz = np.random.rand(n_nodes) * 50
         sxz = np.random.rand(n_nodes) * 50
         
-        vm = CombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
+        vm = StressCombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
         
         assert len(vm) == n_nodes
         assert np.all(vm >= 0)  # Von Mises should always be non-negative
@@ -125,7 +125,7 @@ class TestPrincipalStressComputation:
         syz = np.array([0.0])
         sxz = np.array([0.0])
         
-        s1, s2, s3 = CombinationEngine.compute_principal_stresses_numpy(
+        s1, s2, s3 = StressCombinationEngine.compute_principal_stresses_numpy(
             sx, sy, sz, sxy, syz, sxz
         )
         
@@ -145,7 +145,7 @@ class TestPrincipalStressComputation:
             syz = np.random.rand(1) * 100 - 50
             sxz = np.random.rand(1) * 100 - 50
             
-            s1, s2, s3 = CombinationEngine.compute_principal_stresses_numpy(
+            s1, s2, s3 = StressCombinationEngine.compute_principal_stresses_numpy(
                 sx, sy, sz, sxy, syz, sxz
             )
             
@@ -162,7 +162,7 @@ class TestPrincipalStressComputation:
         syz = np.array([0.0])
         sxz = np.array([0.0])
         
-        s1, s2, s3 = CombinationEngine.compute_principal_stresses_numpy(
+        s1, s2, s3 = StressCombinationEngine.compute_principal_stresses_numpy(
             sx, sy, sz, sxy, syz, sxz
         )
         
@@ -181,7 +181,7 @@ class TestPrincipalStressComputation:
         syz = np.array([0.0])
         sxz = np.array([0.0])
         
-        s1, s2, s3 = CombinationEngine.compute_principal_stresses_numpy(
+        s1, s2, s3 = StressCombinationEngine.compute_principal_stresses_numpy(
             sx, sy, sz, sxy, syz, sxz
         )
         
@@ -195,8 +195,8 @@ class TestEnvelopeComputation:
     """Tests for envelope (max/min over combinations) computation."""
     
     def create_mock_engine(self, num_nodes=5, num_combos=3):
-        """Create a mock CombinationEngine for envelope testing."""
-        engine = Mock(spec=CombinationEngine)
+        """Create a mock StressCombinationEngine for envelope testing."""
+        engine = Mock(spec=StressCombinationEngine)
         engine._node_ids = np.arange(num_nodes)
         engine._node_coords = np.random.rand(num_nodes, 3)
         engine.node_ids = engine._node_ids
@@ -213,7 +213,7 @@ class TestEnvelopeComputation:
             [12, 22, 35, 38, 55],  # Combo 2
         ])
         
-        max_values, combo_indices = CombinationEngine.compute_envelope(
+        max_values, combo_indices = StressCombinationEngine.compute_envelope(
             None, all_combo_results, "max"
         )
         
@@ -232,7 +232,7 @@ class TestEnvelopeComputation:
             [12, 22, 35, 38, 55],  # Combo 2
         ])
         
-        min_values, combo_indices = CombinationEngine.compute_envelope(
+        min_values, combo_indices = StressCombinationEngine.compute_envelope(
             None, all_combo_results, "min"
         )
         
@@ -247,7 +247,7 @@ class TestEnvelopeComputation:
         all_combo_results = np.array([[1, 2, 3]])
         
         with pytest.raises(ValueError, match="Unknown envelope type"):
-            CombinationEngine.compute_envelope(None, all_combo_results, "average")
+            StressCombinationEngine.compute_envelope(None, all_combo_results, "average")
 
 
 class TestCombinationComputation:
@@ -301,8 +301,8 @@ class TestCombinationComputation:
         engine.num_nodes = 3
         
         # Use actual method
-        engine.compute_combination_numpy = CombinationEngine.compute_combination_numpy.__get__(
-            engine, CombinationEngine
+        engine.compute_combination_numpy = StressCombinationEngine.compute_combination_numpy.__get__(
+            engine, StressCombinationEngine
         )
         
         sx, sy, sz, sxy, syz, sxz = engine.compute_combination_numpy(0)
@@ -346,8 +346,8 @@ class TestCombinationComputation:
         engine._node_ids = node_ids
         engine.num_nodes = 2
         
-        engine.compute_combination_numpy = CombinationEngine.compute_combination_numpy.__get__(
-            engine, CombinationEngine
+        engine.compute_combination_numpy = StressCombinationEngine.compute_combination_numpy.__get__(
+            engine, StressCombinationEngine
         )
         
         sx, sy, sz, sxy, syz, sxz = engine.compute_combination_numpy(0)
@@ -372,8 +372,8 @@ class TestCombinationEngineHelpers:
         
         engine = Mock()
         engine.table = table
-        engine.get_combination_names = CombinationEngine.get_combination_names.__get__(
-            engine, CombinationEngine
+        engine.get_combination_names = StressCombinationEngine.get_combination_names.__get__(
+            engine, StressCombinationEngine
         )
         
         names = engine.get_combination_names()
@@ -430,8 +430,8 @@ class TestEdgeCases:
         syz = np.array([0.0])
         sxz = np.array([0.0])
         
-        vm = CombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
-        s1, s2, s3 = CombinationEngine.compute_principal_stresses_numpy(
+        vm = StressCombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
+        s1, s2, s3 = StressCombinationEngine.compute_principal_stresses_numpy(
             sx, sy, sz, sxy, syz, sxz
         )
         
@@ -442,7 +442,7 @@ class TestEdgeCases:
         """Test envelope with single combination."""
         all_results = np.array([[10, 20, 30, 40, 50]])  # 1 combo, 5 nodes
         
-        max_values, combo_indices = CombinationEngine.compute_envelope(
+        max_values, combo_indices = StressCombinationEngine.compute_envelope(
             None, all_results, "max"
         )
         
@@ -454,7 +454,7 @@ class TestEdgeCases:
         n = 10
         zeros = np.zeros(n)
         
-        vm = CombinationEngine.compute_von_mises(
+        vm = StressCombinationEngine.compute_von_mises(
             zeros, zeros, zeros, zeros, zeros, zeros
         )
         
@@ -469,7 +469,7 @@ class TestEdgeCases:
         syz = np.array([0.0])
         sxz = np.array([0.0])
         
-        vm = CombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
+        vm = StressCombinationEngine.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
         
         # Von Mises should still be positive (100)
         np.testing.assert_almost_equal(vm[0], 100.0)

@@ -694,7 +694,7 @@ def apply_plasticity_to_envelope(
         Tuple of (corrected_stress, plastic_strain) arrays.
     
     Example:
-        >>> from solver.combination_engine import CombinationEngine
+        >>> from solver.stress_engine import StressCombinationEngine
         >>> result = engine.compute_full_analysis()
         >>> corrected, strain = apply_plasticity_to_envelope(
         ...     result.max_over_combo, temperature_field, material_db
