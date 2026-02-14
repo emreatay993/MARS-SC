@@ -19,6 +19,7 @@ from ui.handlers.display_interaction_handler import DisplayInteractionHandler
 from ui.handlers.display_export_handler import DisplayExportHandler
 from ui.handlers.display_results_handler import DisplayResultsHandler
 from ui.handlers.display_contour_sync_handler import DisplayContourSyncHandler
+from ui.display_payload import DisplayResultPayload, SolverOutputFlags
 
 
 class DisplayTab(QWidget):
@@ -73,9 +74,11 @@ class DisplayTab(QWidget):
         # Combination results metadata (for scalar display and hover annotations)
         self.combination_names = []  # List of combination names
         self.current_result_type = None  # "von_mises", "max_principal", or "min_principal"
+        self.stress_result = None  # CombinationResult for stress-based visualization/export
         self.all_combo_results = None  # Full results array, shape (num_combinations, num_nodes)
         self.nodal_forces_result = None  # NodalForcesResult for force-based visualization
         self.deformation_result = None  # DeformationResult for displacement visualization
+        self.output_flags = SolverOutputFlags()
         self.current_contour_type = None  # "Stress", "Forces", or "Deformation"
         self.temp_solver = None
         self.time_values = None
@@ -497,7 +500,7 @@ class DisplayTab(QWidget):
         Update visibility of Export Output CSV button.
         
         The button should be visible when ANY result type is available:
-        - Stress results (combination_result from solver tab)
+        - Stress results
         - Nodal forces results
         - Deformation results
         """
@@ -505,17 +508,9 @@ class DisplayTab(QWidget):
             return
         
         # Check for any available results
-        has_stress = False
+        has_stress = self.stress_result is not None
         has_forces = self.nodal_forces_result is not None
         has_deformation = self.deformation_result is not None
-        
-        # Check stress result from solver tab
-        try:
-            solver_tab = self.window().solver_tab
-            if solver_tab and solver_tab.combination_result is not None:
-                has_stress = True
-        except (AttributeError, RuntimeError):
-            pass
         
         # Show button if any result type is available
         show_button = has_stress or has_forces or has_deformation
@@ -653,20 +648,27 @@ class DisplayTab(QWidget):
         
         For MARS-SC, this requests recalculation for the selected combination.
         """
-        # Get main tab (solver tab) to check which outputs are selected
-        main_tab = self.window().solver_tab
-        if main_tab is None:
+        has_output_context = any([
+            self.output_flags.compute_von_mises,
+            self.output_flags.compute_max_principal,
+            self.output_flags.compute_min_principal,
+            self.output_flags.compute_nodal_forces,
+            self.output_flags.compute_deformation,
+        ])
+        if not has_output_context:
             QMessageBox.warning(
                 self, "Not Ready",
-                "Solver tab not initialized."
+                "No solver output context is available."
             )
             return
         
         # Gather options - updated for MARS-SC
         options = {
-            'compute_von_mises': main_tab.von_mises_checkbox.isChecked(),
-            'compute_max_principal': main_tab.max_principal_stress_checkbox.isChecked(),
-            'compute_min_principal': main_tab.min_principal_stress_checkbox.isChecked(),
+            'compute_von_mises': self.output_flags.compute_von_mises,
+            'compute_max_principal': self.output_flags.compute_max_principal,
+            'compute_min_principal': self.output_flags.compute_min_principal,
+            'compute_nodal_forces': self.output_flags.compute_nodal_forces,
+            'compute_deformation': self.output_flags.compute_deformation,
             # MARS-SC specific options
             'combination_index': self.get_selected_combination_index(),
             'combination_name': self.get_selected_combination_name(),
@@ -684,6 +686,31 @@ class DisplayTab(QWidget):
         combo_name = self.get_selected_combination_name()
         print(f"DisplayTab: Requesting update for combination #{combo_idx}: {combo_name}")
         self.time_point_update_requested.emit(selected_time, options)
+
+    @pyqtSlot(object)
+    def update_view_with_payload(self, payload):
+        """Update visualization state from a typed solver payload."""
+        if payload is None:
+            return
+        if not isinstance(payload, DisplayResultPayload):
+            QMessageBox.warning(self, "Invalid Payload", "Display payload has an unexpected type.")
+            return
+
+        self.stress_result = payload.stress_result
+        self.all_combo_results = (
+            payload.stress_result.all_combo_results if payload.stress_result is not None else None
+        )
+        self.nodal_forces_result = payload.forces_result
+        self.deformation_result = payload.deformation_result
+        self.combination_names = list(payload.combination_names or [])
+        self.output_flags = payload.output_flags or SolverOutputFlags()
+
+        self.update_view_with_results(
+            payload.mesh,
+            payload.scalar_bar_title,
+            payload.data_min,
+            payload.data_max,
+        )
     
     @pyqtSlot(bool)
     def save_time_point_results(self, checked=False):
@@ -738,38 +765,14 @@ class DisplayTab(QWidget):
             result_type = mesh.field_data['result_type'][0]
             self.current_result_type = result_type
         
-        # Get combination names and all_combo_results from solver tab if available
-        try:
-            solver_tab = self.window().solver_tab
-            if solver_tab and solver_tab.combination_table:
-                self.combination_names = solver_tab.combination_table.combination_names
-            else:
-                self.combination_names = []
-            
-            # Get all_combo_results for viewing individual combinations (stress results)
-            if solver_tab and solver_tab.combination_result:
-                self.all_combo_results = solver_tab.combination_result.all_combo_results
-            else:
-                self.all_combo_results = None
-            
-            # Get nodal forces result for viewing individual force combinations
-            if solver_tab and solver_tab.nodal_forces_result:
-                self.nodal_forces_result = solver_tab.nodal_forces_result
-            else:
-                self.nodal_forces_result = None
-            
-            # Get deformation result for deformed mesh and displacement component selection
-            if solver_tab and solver_tab.deformation_result:
-                self.deformation_result = solver_tab.deformation_result
-                # Store original coordinates for deformation scaling
-                self.original_node_coords = mesh.points.copy()
-            else:
-                self.deformation_result = None
-        except (AttributeError, RuntimeError):
-            self.combination_names = []
-            self.all_combo_results = None
-            self.nodal_forces_result = None
-            self.deformation_result = None
+        # Keep all-combination stress arrays aligned with cached stress result.
+        self.all_combo_results = (
+            self.stress_result.all_combo_results if self.stress_result is not None else None
+        )
+
+        # Store original coordinates for deformation scaling.
+        if self.deformation_result is not None:
+            self.original_node_coords = mesh.points.copy()
         
         # Deformation scale controls depend only on deformation availability
         has_deformation = (
@@ -828,10 +831,12 @@ class DisplayTab(QWidget):
         self.file_path.clear()
         
         # Clear combination data
+        self.stress_result = None
         self.all_combo_results = None
         self.nodal_forces_result = None
         self.deformation_result = None
         self.combination_names = []
+        self.output_flags = SolverOutputFlags()
         
         # Reset and hide view combination controls
         self.view_combination_combo.blockSignals(True)

@@ -64,6 +64,7 @@ from ui.handlers.log_handler import SolverLogHandler
 from ui.dialogs.material_profile_dialog import MaterialProfileDialog
 from ui.widgets.console import Logger
 from ui.widgets.plotting import MatplotlibWidget
+from ui.display_payload import DisplayResultPayload, SolverOutputFlags
 from core.data_models import (
     AnalysisData, CombinationTableData, CombinationResult, NodalForcesResult,
     DeformationResult, TemperatureFieldData, MaterialProfileData, SolverConfig
@@ -80,12 +81,12 @@ class SolverTab(QWidget):
 
     Signals:
         initial_data_loaded: Emitted when initial RST data is loaded
-        combination_result_ready: Emitted when combination results are ready
+        display_payload_ready: Emitted when display results payload is ready
     """
     
     # Signals
     initial_data_loaded = pyqtSignal(object)
-    combination_result_ready = pyqtSignal(object, str, float, float)
+    display_payload_ready = pyqtSignal(object)
     
     def __init__(self, parent=None):
         """Initialize the Solver Tab."""
@@ -933,6 +934,33 @@ class SolverTab(QWidget):
         return reader.get_nodal_scoping_from_named_selection(ns_name)
     
     # ========== Result Handling ==========
+
+    def _build_display_output_flags(self) -> SolverOutputFlags:
+        """Build display output flags from results produced in the current solve."""
+        stress_type = self.combination_result.result_type if self.combination_result is not None else None
+        return SolverOutputFlags(
+            compute_von_mises=stress_type == "von_mises",
+            compute_max_principal=stress_type == "max_principal",
+            compute_min_principal=stress_type == "min_principal",
+            compute_nodal_forces=self.nodal_forces_result is not None,
+            compute_deformation=self.deformation_result is not None,
+        )
+
+    def _emit_display_payload(self, mesh, scalar_bar_title: str, data_min: float, data_max: float):
+        """Emit a typed payload for display updates."""
+        combo_names = self.combination_table.combination_names if self.combination_table is not None else []
+        payload = DisplayResultPayload(
+            mesh=mesh,
+            scalar_bar_title=scalar_bar_title,
+            data_min=data_min,
+            data_max=data_max,
+            combination_names=list(combo_names),
+            stress_result=self.combination_result,
+            forces_result=self.nodal_forces_result,
+            deformation_result=self.deformation_result,
+            output_flags=self._build_display_output_flags(),
+        )
+        self.display_payload_ready.emit(payload)
     
     def on_analysis_complete(self, result: CombinationResult):
         """Handle stress analysis completion."""
@@ -953,8 +981,8 @@ class SolverTab(QWidget):
         data_min = float(np.min(result.max_over_combo)) if result.max_over_combo is not None else 0.0
         data_max = float(np.max(result.max_over_combo)) if result.max_over_combo is not None else 0.0
         
-        # Emit signal for display tab with mesh
-        self.combination_result_ready.emit(mesh, scalar_bar_title, data_min, data_max)
+        # Emit signal for display tab with payload
+        self._emit_display_payload(mesh, scalar_bar_title, data_min, data_max)
     
     def on_forces_analysis_complete(self, result: NodalForcesResult):
         """Handle nodal forces analysis completion."""
@@ -970,8 +998,8 @@ class SolverTab(QWidget):
         data_min = float(np.min(result.max_magnitude_over_combo)) if result.max_magnitude_over_combo is not None else 0.0
         data_max = float(np.max(result.max_magnitude_over_combo)) if result.max_magnitude_over_combo is not None else 0.0
         
-        # Emit signal for display tab with mesh
-        self.combination_result_ready.emit(mesh, scalar_bar_title, data_min, data_max)
+        # Emit signal for display tab with payload
+        self._emit_display_payload(mesh, scalar_bar_title, data_min, data_max)
     
     def on_deformation_analysis_complete(self, result: DeformationResult, is_standalone: bool = False):
         """
@@ -1011,8 +1039,8 @@ class SolverTab(QWidget):
             data_min = float(np.min(result.max_magnitude_over_combo)) if result.max_magnitude_over_combo is not None else 0.0
             data_max = float(np.max(result.max_magnitude_over_combo)) if result.max_magnitude_over_combo is not None else 0.0
             
-            # Emit signal for display tab with mesh
-            self.combination_result_ready.emit(mesh, scalar_bar_title, data_min, data_max)
+            # Emit signal for display tab with payload
+            self._emit_display_payload(mesh, scalar_bar_title, data_min, data_max)
     
     def _create_mesh_from_forces_result(self, result: NodalForcesResult):
         """

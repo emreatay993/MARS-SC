@@ -221,9 +221,9 @@ class ApplicationController(QMainWindow):
             self.display_tab._setup_initial_view
         )
         
-        # Connect combination result to display tab
-        self.solver_tab.combination_result_ready.connect(
-            self.display_tab.update_view_with_results
+        # Connect solver display payload to display tab
+        self.solver_tab.display_payload_ready.connect(
+            self.display_tab.update_view_with_payload
         )
         
         # Connect display tab node picker if available

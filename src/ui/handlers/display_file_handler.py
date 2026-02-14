@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import QFileDialog, QMessageBox
 
 from ui.handlers.display_base_handler import DisplayBaseHandler
 from core.visualization import VisualizationManager
+from ui.display_payload import SolverOutputFlags
 
 
 class DisplayFileHandler(DisplayBaseHandler):
@@ -62,9 +63,11 @@ class DisplayFileHandler(DisplayBaseHandler):
         mesh = self.viz_manager.create_mesh_from_coords(coords, node_ids)
 
         # Loading external CSV replaces solver-backed result references.
+        self.tab.stress_result = None
         self.tab.all_combo_results = None
         self.tab.nodal_forces_result = None
         self.tab.deformation_result = None
+        self.tab.output_flags = SolverOutputFlags()
 
         # Check if this is an envelope file and handle accordingly
         is_envelope, result_type = self._detect_envelope_file(filename, df.columns)

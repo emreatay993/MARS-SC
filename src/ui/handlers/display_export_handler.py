@@ -360,18 +360,12 @@ class DisplayExportHandler(DisplayBaseHandler):
 
     def _get_stress_result(self):
         """
-        Get stress result from solver tab.
+        Get cached stress result from display state.
         
         Returns:
             CombinationResult or None if not available.
         """
-        try:
-            solver_tab = self.tab.window().solver_tab
-            if solver_tab and solver_tab.combination_result is not None:
-                return solver_tab.combination_result
-        except (AttributeError, RuntimeError):
-            pass
-        return None
+        return self.tab.stress_result
 
     def _get_envelope_export_mode(self) -> Tuple[bool, bool]:
         """
