@@ -9,6 +9,7 @@ from typing import Optional
 from PyQt5.QtWidgets import QMessageBox
 
 from core.data_models import SolverConfig
+from ui.handlers.solver_output_availability import evaluate_output_availability
 
 
 class SolverInputValidator:
@@ -57,18 +58,29 @@ class SolverInputValidator:
             )
             return False
 
+        availability = evaluate_output_availability(
+            self.tab.analysis1_data,
+            self.tab.analysis2_data,
+        )
+
         # Validate nodal forces availability if selected.
-        if config.calculate_nodal_forces:
-            a1 = self.tab.analysis1_data
-            a2 = self.tab.analysis2_data
-            if a1 is None or a2 is None or not (a1.nodal_forces_available and a2.nodal_forces_available):
-                QMessageBox.warning(
-                    self.tab, "Nodal Forces Not Available",
-                    "Nodal forces are not available in one or both RST files.\n\n"
-                    "To enable nodal forces output, ensure 'Write element nodal forces' "
-                    "is enabled in ANSYS Output Controls before running the analysis."
-                )
-                return False
+        if config.calculate_nodal_forces and not availability.nodal_forces:
+            QMessageBox.warning(
+                self.tab, "Nodal Forces Not Available",
+                "Nodal forces are not available in one or both RST files.\n\n"
+                "To enable nodal forces output, ensure 'Write element nodal forces' "
+                "is enabled in ANSYS Output Controls before running the analysis."
+            )
+            return False
+
+        # Validate displacement availability if selected.
+        if config.calculate_deformation and not availability.displacement:
+            QMessageBox.warning(
+                self.tab, "Displacement Not Available",
+                "Displacement results are not available in one or both RST files.\n\n"
+                "Ensure displacement output is enabled in ANSYS Output Controls before running the analysis."
+            )
+            return False
 
         # Check combination table
         combo_table = self.tab.get_combination_table_data()

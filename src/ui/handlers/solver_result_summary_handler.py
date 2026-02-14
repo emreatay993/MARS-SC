@@ -22,7 +22,7 @@ from file_io.exporters import (
 )
 
 
-class AnalysisResultsHandler:
+class SolverResultSummaryHandler:
     """Handle and present stress, force, and deformation results in the UI."""
 
     def __init__(self, tab):

@@ -7,69 +7,28 @@ import os
 import sys
 from typing import Optional
 
-import numpy as np
-from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot
-from PyQt5.QtGui import QPalette, QColor, QDoubleValidator, QBrush
+from PyQt5.QtCore import pyqtSignal, pyqtSlot
 from PyQt5.QtWidgets import (
     QMessageBox, QWidget, QDialog, QVBoxLayout,
-    QTableWidgetItem, QStyledItemDelegate, QLineEdit
+    QTableWidgetItem
 )
 
-from ui.styles.style_constants import NONZERO_COEFFICIENT_BG_COLOR
-
-
-class NumericDelegate(QStyledItemDelegate):
-    """Delegate for coefficient columns: only numeric (float) input allowed."""
-    
-    def createEditor(self, parent, option, index):
-        """Create a line edit with numeric validation."""
-        editor = QLineEdit(parent)
-        validator = QDoubleValidator()
-        validator.setNotation(QDoubleValidator.StandardNotation)
-        editor.setValidator(validator)
-        return editor
-    
-    def setEditorData(self, editor, index):
-        """Set the editor's initial value from the model."""
-        value = index.model().data(index, Qt.EditRole)
-        if value:
-            editor.setText(str(value))
-        else:
-            editor.setText("0.0")
-    
-    def setModelData(self, editor, model, index):
-        """Validate and set the model data from the editor."""
-        text = editor.text()
-        try:
-            # Try to parse as float
-            value = float(text) if text else 0.0
-            model.setData(index, str(value), Qt.EditRole)
-        except ValueError:
-            # If invalid, set to 0.0
-            model.setData(index, "0.0", Qt.EditRole)
-
-
-class ReadOnlyDelegate(QStyledItemDelegate):
-    """Delegate for the Type column (read-only; only Linear is supported)."""
-    
-    def createEditor(self, parent, option, index):
-        """Return None to prevent editing."""
-        return None
 
 # Import builders and managers
 from ui.builders.solver_ui import SolverTabUIBuilder
 from ui.handlers.file_handler import SolverFileHandler
-from ui.handlers.analysis_handler import SolverAnalysisHandler
+from ui.handlers.solve_run_controller import SolveRunController
+from ui.handlers.solver_result_payload_handler import SolverResultPayloadHandler
+from ui.handlers.solver_combination_table_handler import SolverCombinationTableHandler
+from ui.handlers.solver_named_selection_handler import SolverNamedSelectionHandler
+from ui.handlers.solver_output_state_handler import SolverOutputStateHandler
 from ui.handlers.log_handler import SolverLogHandler
 from ui.dialogs.material_profile_dialog import MaterialProfileDialog
 from ui.widgets.console import Logger
-from ui.widgets.plotting import MatplotlibWidget
-from ui.display_payload import DisplayResultPayload, SolverOutputFlags
 from core.data_models import (
     AnalysisData, CombinationTableData, CombinationResult, NodalForcesResult,
     DeformationResult, TemperatureFieldData, MaterialProfileData, SolverConfig
 )
-from utils.constants import MSG_NODAL_FORCES_ANSYS
 
 
 class SolverTab(QWidget):
@@ -111,7 +70,11 @@ class SolverTab(QWidget):
         
         # Handlers
         self.file_handler = SolverFileHandler(self)
-        self.analysis_handler = SolverAnalysisHandler(self)
+        self.solve_run_controller = SolveRunController(self)
+        self.result_payload_handler = SolverResultPayloadHandler(self)
+        self.combination_table_handler = SolverCombinationTableHandler(self)
+        self.named_selection_handler = SolverNamedSelectionHandler(self)
+        self.output_state_handler = SolverOutputStateHandler(self)
         self.log_handler = SolverLogHandler(self)
         
         # Flags for loaded data
@@ -373,186 +336,37 @@ class SolverTab(QWidget):
     
     def _on_named_selection_source_changed(self, index: int):
         """Refresh list when the named selection source filter changes."""
-        if self.analysis1_data and self.analysis2_data:
-            self._update_named_selections()
+        self.named_selection_handler.on_named_selection_source_changed(index)
 
     def _get_named_selection_source_mode(self) -> str:
         """Return active source mode for named selection list."""
-        mode = self.named_selection_source_combo.currentData()
-        if mode in ("common", "analysis1", "analysis2"):
-            return mode
-        return "common"
+        return self.named_selection_handler.get_named_selection_source_mode()
 
     def _get_named_selection_sets(self):
         """Get named selection name sets for both analyses."""
-        ns1 = set(self.analysis1_data.named_selections) if self.analysis1_data else set()
-        ns2 = set(self.analysis2_data.named_selections) if self.analysis2_data else set()
-        return ns1, ns2
+        return self.named_selection_handler.get_named_selection_sets()
 
     def _update_named_selections(self):
         """Update named selections dropdown based on current source filter."""
-        previous_selection = self.get_selected_named_selection()
-        self.named_selection_combo.clear()
-        
-        has_analysis1 = self.analysis1_data is not None
-        has_analysis2 = self.analysis2_data is not None
-        self.named_selection_source_combo.setEnabled(has_analysis1 and has_analysis2)
-        self.refresh_ns_button.setEnabled(has_analysis1 or has_analysis2)
-        
-        if has_analysis1 and has_analysis2:
-            ns1, ns2 = self._get_named_selection_sets()
-            source_mode = self._get_named_selection_source_mode()
-            
-            if source_mode == "analysis1":
-                selections = sorted(ns1)
-                empty_text = "(No named selections in Analysis 1)"
-            elif source_mode == "analysis2":
-                selections = sorted(ns2)
-                empty_text = "(No named selections in Analysis 2)"
-            else:
-                selections = sorted(ns1.intersection(ns2))
-                empty_text = "(No common named selections)"
-            
-            if selections:
-                self.named_selection_combo.addItems(selections)
-                self.named_selection_combo.setEnabled(True)
-                if previous_selection and previous_selection in selections:
-                    self.named_selection_combo.setCurrentText(previous_selection)
-            else:
-                self.named_selection_combo.addItem(empty_text)
-                self.named_selection_combo.setEnabled(False)
-        elif has_analysis1:
-            if self.analysis1_data.named_selections:
-                self.named_selection_combo.addItems(self.analysis1_data.named_selections)
-            else:
-                self.named_selection_combo.addItem("(No named selections)")
-            self.named_selection_combo.setEnabled(False)
-        elif has_analysis2:
-            if self.analysis2_data.named_selections:
-                self.named_selection_combo.addItems(self.analysis2_data.named_selections)
-            else:
-                self.named_selection_combo.addItem("(No named selections)")
-            self.named_selection_combo.setEnabled(False)
-        else:
-            self.named_selection_combo.addItem("(Load RST files first)")
-            self.named_selection_combo.setEnabled(False)
+        self.named_selection_handler.update_named_selections()
     
     def _update_combination_table_columns(self):
-        """Update the combination table columns based on loaded RST files."""
-        # Build column headers
-        columns = ["Combination Name", "Type"]
-        
-        # Add Analysis 1 columns with time values
-        if self.analysis1_data:
-            for step_id in self.analysis1_data.load_step_ids:
-                # Use time-based label if available
-                label = self.analysis1_data.format_time_label(step_id, prefix="A1")
-                columns.append(label)
-        
-        # Add Analysis 2 columns with time values
-        if self.analysis2_data:
-            for step_id in self.analysis2_data.load_step_ids:
-                # Use time-based label if available
-                label = self.analysis2_data.format_time_label(step_id, prefix="A2")
-                columns.append(label)
-        
-        # Update table
-        current_rows = self.combo_table.rowCount()
-        self.combo_table.setColumnCount(len(columns))
-        self.combo_table.setHorizontalHeaderLabels(columns)
-        
-        # Initialize cells with default values
-        for row in range(current_rows):
-            # Make Type column read-only
-            type_item = self.combo_table.item(row, 1)
-            if type_item:
-                type_item.setFlags(type_item.flags() & ~Qt.ItemIsEditable)
-                type_item.setToolTip("Only 'Linear' combination type is currently supported")
-            
-            for col in range(2, len(columns)):
-                if self.combo_table.item(row, col) is None:
-                    self.combo_table.setItem(row, col, QTableWidgetItem("0.0"))
-        
-        # Reapply numeric delegate to new columns
-        self._apply_numeric_delegate_to_columns()
+        """Update combination-table columns from the current analysis metadata."""
+        self.combination_table_handler.update_combination_table_columns()
     
     def _enable_output_checkboxes(self):
         """Enable output checkboxes when both RST files are loaded."""
-        enabled = self.base_rst_loaded and self.combine_rst_loaded
-        
-        self.von_mises_checkbox.setEnabled(enabled)
-        self.max_principal_stress_checkbox.setEnabled(enabled)
-        self.min_principal_stress_checkbox.setEnabled(enabled)
-        self.combination_history_checkbox.setEnabled(enabled)
-        self.plasticity_correction_checkbox.setEnabled(enabled)
-        
-        # Enable nodal forces checkbox only if both files have nodal forces
-        nodal_forces_available = False
-        if enabled and self.analysis1_data and self.analysis2_data:
-            nodal_forces_available = (
-                self.analysis1_data.nodal_forces_available and 
-                self.analysis2_data.nodal_forces_available
-            )
-        
-        self.nodal_forces_checkbox.setEnabled(nodal_forces_available)
-        if not nodal_forces_available and enabled:
-            self.nodal_forces_checkbox.setToolTip(
-                "Nodal forces not available.\n"
-                "At least one RST file does not contain nodal forces.\n"
-                + MSG_NODAL_FORCES_ANSYS
-            )
-        else:
-            self.nodal_forces_checkbox.setToolTip(
-                "Combine nodal forces from both analyses.\n"
-                "Requires 'Write element nodal forces' to be enabled in ANSYS Output Controls."
-            )
-        
-        # Enable deformation checkbox only if both files have displacement results
-        displacement_available = False
-        if enabled and self.analysis1_data and self.analysis2_data:
-            displacement_available = (
-                self.analysis1_data.displacement_available and 
-                self.analysis2_data.displacement_available
-            )
-        
-        self.deformation_checkbox.setEnabled(displacement_available)
-        if not displacement_available and enabled:
-            self.deformation_checkbox.setToolTip(
-                "Displacement results not available.\n"
-                "At least one RST file does not contain displacement results."
-            )
-        else:
-            self.deformation_checkbox.setToolTip(
-                "Calculate combined displacement/deformation (UX, UY, UZ, U_mag).\n"
-                "Can be selected alongside stress outputs.\n"
-                "Enables deformed mesh visualization with scale control."
-            )
+        self.output_state_handler.enable_output_checkboxes()
     
     # ========== Combination Table Methods ==========
     
     def _setup_table_delegates(self):
-        """
-        Setup delegates for the combination table.
-        
-        - Column 0 (Name): Default delegate (editable text)
-        - Column 1 (Type): ReadOnlyDelegate (non-editable, "Linear" only)
-        - Columns 2+: NumericDelegate (only allow float/integer values)
-        """
-        # Make Type column (column 1) read-only
-        self._readonly_delegate = ReadOnlyDelegate(self.combo_table)
-        self.combo_table.setItemDelegateForColumn(1, self._readonly_delegate)
-        
-        # Apply numeric delegate to coefficient columns (will be updated when columns change)
-        self._numeric_delegate = NumericDelegate(self.combo_table)
-        self._apply_numeric_delegate_to_columns()
-        
-        # Connect to column count changes
-        self.combo_table.model().columnsInserted.connect(self._apply_numeric_delegate_to_columns)
+        """Setup delegates for combination-table editing and validation."""
+        self.combination_table_handler.setup_table_delegates()
     
     def _apply_numeric_delegate_to_columns(self):
         """Apply numeric delegate to all coefficient columns (column 2 onwards)."""
-        for col in range(2, self.combo_table.columnCount()):
-            self.combo_table.setItemDelegateForColumn(col, self._numeric_delegate)
+        self.combination_table_handler.apply_numeric_delegate_to_columns()
 
     def _update_coefficient_cell_highlight(self, item: QTableWidgetItem):
         """
@@ -564,20 +378,7 @@ class SolverTab(QWidget):
         Args:
             item: The QTableWidgetItem to update.
         """
-        if item is None:
-            return
-        
-        try:
-            value = float(item.text())
-            is_nonzero = value != 0.0
-        except (ValueError, TypeError):
-            is_nonzero = False
-        
-        if is_nonzero:
-            item.setBackground(QBrush(QColor(NONZERO_COEFFICIENT_BG_COLOR)))
-        else:
-            # Reset to default (no background)
-            item.setBackground(QBrush())
+        self.combination_table_handler.update_coefficient_cell_highlight(item)
 
     def _on_coefficient_cell_changed(self, row: int, column: int):
         """
@@ -590,37 +391,15 @@ class SolverTab(QWidget):
             row: The row index of the changed cell.
             column: The column index of the changed cell.
         """
-        # Only apply highlighting to coefficient columns (column 2 onwards)
-        if column < 2:
-            return
-        
-        item = self.combo_table.item(row, column)
-        self._update_coefficient_cell_highlight(item)
+        self.combination_table_handler.on_coefficient_cell_changed(row, column)
 
     def _add_table_row(self):
         """Add a new row to the combination table."""
-        row_count = self.combo_table.rowCount()
-        self.combo_table.insertRow(row_count)
-        
-        # Set default values
-        self.combo_table.setItem(row_count, 0, QTableWidgetItem(f"Combination {row_count + 1}"))
-        
-        # Type column is read-only (only "Linear" supported)
-        type_item = QTableWidgetItem("Linear")
-        type_item.setFlags(type_item.flags() & ~Qt.ItemIsEditable)  # Make non-editable
-        type_item.setToolTip("Only 'Linear' combination type is currently supported")
-        self.combo_table.setItem(row_count, 1, type_item)
-        
-        for col in range(2, self.combo_table.columnCount()):
-            self.combo_table.setItem(row_count, col, QTableWidgetItem("0.0"))
+        self.combination_table_handler.add_table_row()
     
     def _delete_table_row(self):
         """Delete the selected row from the combination table."""
-        selected_rows = self.combo_table.selectionModel().selectedRows()
-        if selected_rows:
-            self.combo_table.removeRow(selected_rows[0].row())
-        elif self.combo_table.rowCount() > 1:
-            self.combo_table.removeRow(self.combo_table.rowCount() - 1)
+        self.combination_table_handler.delete_table_row()
     
     def get_combination_table_data(self) -> Optional[CombinationTableData]:
         """
@@ -629,57 +408,7 @@ class SolverTab(QWidget):
         Returns:
             CombinationTableData or None if invalid.
         """
-        if not self.analysis1_data or not self.analysis2_data:
-            return None
-        
-        row_count = self.combo_table.rowCount()
-        if row_count == 0:
-            return None
-        
-        names = []
-        types = []
-        a1_coeffs = []
-        a2_coeffs = []
-        
-        n_a1 = len(self.analysis1_data.load_step_ids)
-        n_a2 = len(self.analysis2_data.load_step_ids)
-        
-        for row in range(row_count):
-            # Get name and type
-            name_item = self.combo_table.item(row, 0)
-            type_item = self.combo_table.item(row, 1)
-            
-            names.append(name_item.text() if name_item else f"Combination {row+1}")
-            types.append(type_item.text() if type_item else "Linear")
-            
-            # Get A1 coefficients (columns 2 to 2+n_a1)
-            a1_row = []
-            for col in range(2, 2 + n_a1):
-                item = self.combo_table.item(row, col)
-                try:
-                    a1_row.append(float(item.text()) if item else 0.0)
-                except ValueError:
-                    a1_row.append(0.0)
-            a1_coeffs.append(a1_row)
-            
-            # Get A2 coefficients (columns 2+n_a1 onwards)
-            a2_row = []
-            for col in range(2 + n_a1, 2 + n_a1 + n_a2):
-                item = self.combo_table.item(row, col)
-                try:
-                    a2_row.append(float(item.text()) if item else 0.0)
-                except ValueError:
-                    a2_row.append(0.0)
-            a2_coeffs.append(a2_row)
-        
-        return CombinationTableData(
-            combination_names=names,
-            combination_types=types,
-            analysis1_coeffs=np.array(a1_coeffs),
-            analysis2_coeffs=np.array(a2_coeffs),
-            analysis1_step_ids=list(self.analysis1_data.load_step_ids),
-            analysis2_step_ids=list(self.analysis2_data.load_step_ids),
-        )
+        return self.combination_table_handler.get_combination_table_data()
     
     def set_combination_table_data(self, data: CombinationTableData):
         """
@@ -688,93 +417,33 @@ class SolverTab(QWidget):
         Args:
             data: CombinationTableData to display.
         """
-        self.combination_table = data
-        
-        # Update columns first
-        self._update_combination_table_columns()
-        
-        # Set row count
-        self.combo_table.setRowCount(data.num_combinations)
-        
-        # Populate data
-        for row in range(data.num_combinations):
-            self.combo_table.setItem(row, 0, QTableWidgetItem(data.combination_names[row]))
-            
-            # Type column is read-only
-            type_item = QTableWidgetItem(data.combination_types[row])
-            type_item.setFlags(type_item.flags() & ~Qt.ItemIsEditable)
-            type_item.setToolTip("Only 'Linear' combination type is currently supported")
-            self.combo_table.setItem(row, 1, type_item)
-            
-            # A1 coefficients
-            for i, coeff in enumerate(data.analysis1_coeffs[row]):
-                item = QTableWidgetItem(str(coeff))
-                self._update_coefficient_cell_highlight(item)
-                self.combo_table.setItem(row, 2 + i, item)
-            
-            # A2 coefficients
-            offset = 2 + data.num_analysis1_steps
-            for i, coeff in enumerate(data.analysis2_coeffs[row]):
-                item = QTableWidgetItem(str(coeff))
-                self._update_coefficient_cell_highlight(item)
-                self.combo_table.setItem(row, offset + i, item)
+        self.combination_table_handler.set_combination_table_data(data)
     
     # ========== UI State Methods ==========
     
     def _update_solve_button_state(self):
         """Update solve button enabled state."""
-        can_solve = (
-            self.base_rst_loaded and 
-            self.combine_rst_loaded and
-            self.combo_table.rowCount() > 0 and
-            any([
-                self.von_mises_checkbox.isChecked(),
-                self.max_principal_stress_checkbox.isChecked(),
-                self.min_principal_stress_checkbox.isChecked(),
-                self.nodal_forces_checkbox.isChecked(),
-                self.deformation_checkbox.isChecked()
-            ])
-        )
-        self.solve_button.setEnabled(can_solve)
+        self.output_state_handler.update_solve_button_state()
     
     def _toggle_combination_history_mode(self, checked: bool):
         """Toggle combination history mode (single node analysis)."""
-        self.single_node_group.setVisible(checked)
-        self._update_solve_button_state()
+        self.output_state_handler.toggle_combination_history_mode(checked)
     
     def _toggle_plasticity_options(self, checked: bool):
         """Toggle plasticity correction options visibility."""
-        self.plasticity_options_group.setVisible(checked)
+        self.output_state_handler.toggle_plasticity_options(checked)
     
     def _toggle_nodal_forces_csys_combo(self, checked: bool):
         """Toggle nodal forces coordinate system combo visibility."""
-        self.nodal_forces_csys_combo.setVisible(checked)
+        self.output_state_handler.toggle_nodal_forces_csys_combo(checked)
     
     def _toggle_deformation_csys_options(self, checked: bool):
         """Toggle deformation coordinate system options visibility."""
-        self.deformation_csys_combo.setVisible(checked)
-        if checked:
-            # Show CS ID input only if Cylindrical is selected
-            is_cylindrical = self.deformation_csys_combo.currentIndex() == 1
-            self.deformation_cs_id_label.setVisible(is_cylindrical)
-            self.deformation_cs_input.setVisible(is_cylindrical)
-        else:
-            # Hide all CS options when deformation is unchecked
-            self.deformation_cs_id_label.setVisible(False)
-            self.deformation_cs_input.setVisible(False)
-            # Reset to Cartesian and clear CS ID
-            self.deformation_csys_combo.setCurrentIndex(0)
-            self.deformation_cs_input.clear()
+        self.output_state_handler.toggle_deformation_csys_options(checked)
     
     def _on_deformation_csys_changed(self, index: int):
         """Handle deformation coordinate system selection change."""
-        # index 0 = Cartesian (Global), index 1 = Cylindrical
-        is_cylindrical = (index == 1)
-        self.deformation_cs_id_label.setVisible(is_cylindrical)
-        self.deformation_cs_input.setVisible(is_cylindrical)
-        if not is_cylindrical:
-            # Clear CS ID when switching back to Cartesian
-            self.deformation_cs_input.clear()
+        self.output_state_handler.on_deformation_csys_changed(index)
     
     def _on_output_checkbox_toggled(self, source_checkbox, checked: bool):
         """
@@ -791,34 +460,7 @@ class SolverTab(QWidget):
             source_checkbox: The checkbox that was toggled.
             checked: Whether the checkbox was checked or unchecked.
         """
-        if not checked:
-            # Allow unchecking without side effects
-            self._update_solve_button_state()
-            return
-        
-        # List of mutually exclusive output type checkboxes
-        output_checkboxes = [
-            self.von_mises_checkbox,
-            self.max_principal_stress_checkbox,
-            self.min_principal_stress_checkbox,
-            self.nodal_forces_checkbox,
-        ]
-        
-        # Block signals to prevent recursive calls
-        for checkbox in output_checkboxes:
-            checkbox.blockSignals(True)
-        
-        try:
-            # Uncheck all other output type checkboxes
-            for checkbox in output_checkboxes:
-                if checkbox is not source_checkbox:
-                    checkbox.setChecked(False)
-        finally:
-            # Re-enable signals
-            for checkbox in output_checkboxes:
-                checkbox.blockSignals(False)
-        
-        self._update_solve_button_state()
+        self.output_state_handler.on_output_checkbox_toggled(source_checkbox, checked)
     
     # ========== Analysis Methods ==========
     
@@ -831,7 +473,7 @@ class SolverTab(QWidget):
         config = self._build_solver_config()
         
         # Run analysis
-        self.analysis_handler.solve(config)
+        self.solve_run_controller.solve(config)
     
     def _build_solver_config(self) -> SolverConfig:
         """Build solver configuration from UI state."""
@@ -884,10 +526,7 @@ class SolverTab(QWidget):
     
     def get_selected_named_selection(self) -> Optional[str]:
         """Get the currently selected named selection."""
-        text = self.named_selection_combo.currentText()
-        if not text or text.startswith("("):
-            return None
-        return text
+        return self.named_selection_handler.get_selected_named_selection()
 
     def get_scoping_reader_for_named_selection(self, ns_name: str):
         """
@@ -896,110 +535,21 @@ class SolverTab(QWidget):
         If the same named selection exists in both analyses, Analysis 1 takes
         precedence to avoid mismatched node content.
         """
-        if not ns_name:
-            raise ValueError("Named selection name is required.")
-        
-        base_reader = self.file_handler.base_reader
-        combine_reader = self.file_handler.combine_reader
-        ns1, ns2 = self._get_named_selection_sets()
-        
-        in_analysis1 = ns_name in ns1
-        in_analysis2 = ns_name in ns2
-        
-        if in_analysis1 and base_reader is not None:
-            if in_analysis2:
-                return base_reader, "Analysis 1 (base precedence for common name)"
-            return base_reader, "Analysis 1"
-        
-        if in_analysis2 and combine_reader is not None:
-            return combine_reader, "Analysis 2"
-        
-        source_mode = self._get_named_selection_source_mode()
-        if source_mode == "analysis2" and combine_reader is not None:
-            return combine_reader, "Analysis 2"
-        if base_reader is not None:
-            return base_reader, "Analysis 1"
-        if combine_reader is not None:
-            return combine_reader, "Analysis 2"
-        
-        raise ValueError("DPF readers are not available. Please reload RST files.")
+        return self.named_selection_handler.get_scoping_reader_for_named_selection(ns_name)
 
     def get_nodal_scoping_for_selected_named_selection(self):
         """Get nodal scoping for current selection based on the active source mode."""
-        ns_name = self.get_selected_named_selection()
-        if ns_name is None:
-            raise ValueError("Please select a valid named selection.")
-        
-        reader, _ = self.get_scoping_reader_for_named_selection(ns_name)
-        return reader.get_nodal_scoping_from_named_selection(ns_name)
+        return self.named_selection_handler.get_nodal_scoping_for_selected_named_selection()
     
     # ========== Result Handling ==========
-
-    def _build_display_output_flags(self) -> SolverOutputFlags:
-        """Build display output flags from results produced in the current solve."""
-        stress_type = self.combination_result.result_type if self.combination_result is not None else None
-        return SolverOutputFlags(
-            compute_von_mises=stress_type == "von_mises",
-            compute_max_principal=stress_type == "max_principal",
-            compute_min_principal=stress_type == "min_principal",
-            compute_nodal_forces=self.nodal_forces_result is not None,
-            compute_deformation=self.deformation_result is not None,
-        )
-
-    def _emit_display_payload(self, mesh, scalar_bar_title: str, data_min: float, data_max: float):
-        """Emit a typed payload for display updates."""
-        combo_names = self.combination_table.combination_names if self.combination_table is not None else []
-        payload = DisplayResultPayload(
-            mesh=mesh,
-            scalar_bar_title=scalar_bar_title,
-            data_min=data_min,
-            data_max=data_max,
-            combination_names=list(combo_names),
-            stress_result=self.combination_result,
-            forces_result=self.nodal_forces_result,
-            deformation_result=self.deformation_result,
-            output_flags=self._build_display_output_flags(),
-        )
-        self.display_payload_ready.emit(payload)
     
     def on_analysis_complete(self, result: CombinationResult):
         """Handle stress analysis completion."""
-        self.combination_result = result
-        
-        # Create a PyVista mesh for display tab
-        mesh = self._create_mesh_from_result(result)
-        
-        # Determine scalar bar title based on result type (stresses are in MPa)
-        scalar_bar_titles = {
-            'von_mises': 'Von Mises Stress [MPa]',
-            'max_principal': 'Max Principal Stress (S1) [MPa]',
-            'min_principal': 'Min Principal Stress (S3) [MPa]'
-        }
-        scalar_bar_title = scalar_bar_titles.get(result.result_type, 'Stress [MPa]')
-        
-        # Get data range from max envelope
-        data_min = float(np.min(result.max_over_combo)) if result.max_over_combo is not None else 0.0
-        data_max = float(np.max(result.max_over_combo)) if result.max_over_combo is not None else 0.0
-        
-        # Emit signal for display tab with payload
-        self._emit_display_payload(mesh, scalar_bar_title, data_min, data_max)
+        self.result_payload_handler.on_analysis_complete(result)
     
     def on_forces_analysis_complete(self, result: NodalForcesResult):
         """Handle nodal forces analysis completion."""
-        self.nodal_forces_result = result
-        
-        # Create a PyVista mesh for display tab with force magnitude
-        mesh = self._create_mesh_from_forces_result(result)
-        
-        # Determine scalar bar title
-        scalar_bar_title = f'Force Magnitude [{result.force_unit}]'
-        
-        # Get data range from max envelope
-        data_min = float(np.min(result.max_magnitude_over_combo)) if result.max_magnitude_over_combo is not None else 0.0
-        data_max = float(np.max(result.max_magnitude_over_combo)) if result.max_magnitude_over_combo is not None else 0.0
-        
-        # Emit signal for display tab with payload
-        self._emit_display_payload(mesh, scalar_bar_title, data_min, data_max)
+        self.result_payload_handler.on_forces_analysis_complete(result)
     
     def on_deformation_analysis_complete(self, result: DeformationResult, is_standalone: bool = False):
         """
@@ -1009,222 +559,10 @@ class SolverTab(QWidget):
             result: DeformationResult with displacement data.
             is_standalone: If True, deformation is the only output type - create and emit mesh.
         """
-        self.deformation_result = result
-        
-        # Log summary
-        self.console_textbox.append(
-            f"\nDeformation analysis complete\n"
-            f"  Nodes: {result.num_nodes}\n"
-            f"  Combinations: {result.num_combinations}\n"
-            f"  Displacement Unit: {result.displacement_unit}\n"
+        self.result_payload_handler.on_deformation_analysis_complete(
+            result,
+            is_standalone=is_standalone,
         )
-        
-        if result.max_magnitude_over_combo is not None:
-            max_val = np.max(result.max_magnitude_over_combo)
-            max_node_idx = np.argmax(result.max_magnitude_over_combo)
-            max_node_id = result.node_ids[max_node_idx]
-            
-            self.console_textbox.append(
-                f"  Maximum Displacement: {max_val:.6f} {result.displacement_unit} at Node {max_node_id}\n"
-            )
-        
-        # If deformation is the only output, create and emit mesh for display
-        if is_standalone:
-            mesh = self._create_mesh_from_deformation_result(result)
-            
-            # Determine scalar bar title
-            scalar_bar_title = f'Displacement Magnitude [{result.displacement_unit}]'
-            
-            # Get data range from max envelope
-            data_min = float(np.min(result.max_magnitude_over_combo)) if result.max_magnitude_over_combo is not None else 0.0
-            data_max = float(np.max(result.max_magnitude_over_combo)) if result.max_magnitude_over_combo is not None else 0.0
-            
-            # Emit signal for display tab with payload
-            self._emit_display_payload(mesh, scalar_bar_title, data_min, data_max)
-    
-    def _create_mesh_from_forces_result(self, result: NodalForcesResult):
-        """
-        Create a PyVista mesh from NodalForcesResult for visualization.
-        
-        Args:
-            result: NodalForcesResult with node coordinates and force values.
-            
-        Returns:
-            PyVista PolyData mesh with force magnitude as scalars.
-        """
-        import pyvista as pv
-        
-        # Create point cloud mesh from node coordinates
-        mesh = pv.PolyData(result.node_coords)
-        
-        # Add node IDs (must be 'NodeID' for hover functionality to work)
-        mesh['NodeID'] = result.node_ids
-        
-        # Add max force magnitude as the primary scalar
-        if result.max_magnitude_over_combo is not None:
-            mesh['Max_Force_Magnitude'] = result.max_magnitude_over_combo
-            mesh['Force_Magnitude'] = result.max_magnitude_over_combo  # Alias for component switching
-            mesh.set_active_scalars('Max_Force_Magnitude')
-        
-        # Add min force magnitude
-        if result.min_magnitude_over_combo is not None:
-            mesh['Min_Force_Magnitude'] = result.min_magnitude_over_combo
-        
-        # Add combination indices
-        if result.combo_of_max is not None:
-            mesh['Combo_of_Max'] = result.combo_of_max
-        if result.combo_of_min is not None:
-            mesh['Combo_of_Min'] = result.combo_of_min
-        
-        # Add max values for each force component (for envelope view component selection)
-        # Compute max absolute value over combinations for FX, FY, FZ
-        if result.all_combo_fx is not None:
-            # Take the value from the combination that had max magnitude (for consistency)
-            num_nodes = result.num_nodes
-            fx_at_max = np.zeros(num_nodes)
-            fy_at_max = np.zeros(num_nodes)
-            fz_at_max = np.zeros(num_nodes)
-            
-            if result.combo_of_max is not None:
-                for node_idx in range(num_nodes):
-                    combo_idx = int(result.combo_of_max[node_idx])
-                    fx_at_max[node_idx] = result.all_combo_fx[combo_idx, node_idx]
-                    fy_at_max[node_idx] = result.all_combo_fy[combo_idx, node_idx]
-                    fz_at_max[node_idx] = result.all_combo_fz[combo_idx, node_idx]
-            
-            mesh['FX'] = fx_at_max
-            mesh['FY'] = fy_at_max
-            mesh['FZ'] = fz_at_max
-            # Add shear variants for different axis pairs
-            mesh['Shear_XY'] = np.sqrt(fx_at_max**2 + fy_at_max**2)
-            mesh['Shear_XZ'] = np.sqrt(fx_at_max**2 + fz_at_max**2)
-            mesh['Shear_YZ'] = np.sqrt(fy_at_max**2 + fz_at_max**2)
-            # Backward-compatible alias for legacy shear (FY/FZ)
-            mesh['Shear_Force'] = mesh['Shear_YZ']
-
-            # Add per-component envelope arrays (max/min over combinations)
-            mesh['Max_FX'] = np.max(result.all_combo_fx, axis=0)
-            mesh['Min_FX'] = np.min(result.all_combo_fx, axis=0)
-            mesh['Max_FY'] = np.max(result.all_combo_fy, axis=0)
-            mesh['Min_FY'] = np.min(result.all_combo_fy, axis=0)
-            mesh['Max_FZ'] = np.max(result.all_combo_fz, axis=0)
-            mesh['Min_FZ'] = np.min(result.all_combo_fz, axis=0)
-            mesh['Combo_of_Max_FX'] = np.argmax(result.all_combo_fx, axis=0)
-            mesh['Combo_of_Min_FX'] = np.argmin(result.all_combo_fx, axis=0)
-            mesh['Combo_of_Max_FY'] = np.argmax(result.all_combo_fy, axis=0)
-            mesh['Combo_of_Min_FY'] = np.argmin(result.all_combo_fy, axis=0)
-            mesh['Combo_of_Max_FZ'] = np.argmax(result.all_combo_fz, axis=0)
-            mesh['Combo_of_Min_FZ'] = np.argmin(result.all_combo_fz, axis=0)
-
-            shear_xy_all = np.sqrt(result.all_combo_fx**2 + result.all_combo_fy**2)
-            shear_xz_all = np.sqrt(result.all_combo_fx**2 + result.all_combo_fz**2)
-            shear_yz_all = np.sqrt(result.all_combo_fy**2 + result.all_combo_fz**2)
-            mesh['Max_Shear_XY'] = np.max(shear_xy_all, axis=0)
-            mesh['Min_Shear_XY'] = np.min(shear_xy_all, axis=0)
-            mesh['Max_Shear_XZ'] = np.max(shear_xz_all, axis=0)
-            mesh['Min_Shear_XZ'] = np.min(shear_xz_all, axis=0)
-            mesh['Max_Shear_YZ'] = np.max(shear_yz_all, axis=0)
-            mesh['Min_Shear_YZ'] = np.min(shear_yz_all, axis=0)
-            mesh['Combo_of_Max_Shear_XY'] = np.argmax(shear_xy_all, axis=0)
-            mesh['Combo_of_Min_Shear_XY'] = np.argmin(shear_xy_all, axis=0)
-            mesh['Combo_of_Max_Shear_XZ'] = np.argmax(shear_xz_all, axis=0)
-            mesh['Combo_of_Min_Shear_XZ'] = np.argmin(shear_xz_all, axis=0)
-            mesh['Combo_of_Max_Shear_YZ'] = np.argmax(shear_yz_all, axis=0)
-            mesh['Combo_of_Min_Shear_YZ'] = np.argmin(shear_yz_all, axis=0)
-        
-        return mesh
-    
-    def _create_mesh_from_deformation_result(self, result: DeformationResult):
-        """
-        Create a PyVista mesh from DeformationResult for visualization.
-        
-        Args:
-            result: DeformationResult with node coordinates and displacement values.
-            
-        Returns:
-            PyVista PolyData mesh with displacement magnitude as scalars.
-        """
-        import pyvista as pv
-        
-        # Create point cloud mesh from node coordinates
-        mesh = pv.PolyData(result.node_coords)
-        
-        # Add node IDs (must be 'NodeID' for hover functionality to work)
-        mesh['NodeID'] = result.node_ids
-        
-        # Add max displacement magnitude as the primary scalar (for envelope view)
-        if result.max_magnitude_over_combo is not None:
-            mesh['Max_U_mag'] = result.max_magnitude_over_combo
-            mesh['U_mag'] = result.max_magnitude_over_combo  # Alias for component switching
-            mesh.set_active_scalars('Max_U_mag')
-        
-        # Add min displacement magnitude
-        if result.min_magnitude_over_combo is not None:
-            mesh['Min_U_mag'] = result.min_magnitude_over_combo
-        
-        # Add combination indices
-        if result.combo_of_max is not None:
-            mesh['Combo_of_Max'] = result.combo_of_max
-        if result.combo_of_min is not None:
-            mesh['Combo_of_Min'] = result.combo_of_min
-        
-        # Add displacement components at the combination of max magnitude (for envelope view component selection)
-        if result.all_combo_ux is not None:
-            num_nodes = result.num_nodes
-            ux_at_max = np.zeros(num_nodes)
-            uy_at_max = np.zeros(num_nodes)
-            uz_at_max = np.zeros(num_nodes)
-            
-            if result.combo_of_max is not None:
-                for node_idx in range(num_nodes):
-                    combo_idx = int(result.combo_of_max[node_idx])
-                    ux_at_max[node_idx] = result.all_combo_ux[combo_idx, node_idx]
-                    uy_at_max[node_idx] = result.all_combo_uy[combo_idx, node_idx]
-                    uz_at_max[node_idx] = result.all_combo_uz[combo_idx, node_idx]
-            
-            mesh['UX'] = ux_at_max
-            mesh['UY'] = uy_at_max
-            mesh['UZ'] = uz_at_max
-        
-        return mesh
-    
-    def _create_mesh_from_result(self, result: CombinationResult):
-        """
-        Create a PyVista mesh from CombinationResult for visualization.
-        
-        Args:
-            result: CombinationResult with node coordinates and stress values.
-            
-        Returns:
-            PyVista PolyData mesh with stress values as scalars.
-        """
-        import pyvista as pv
-        
-        # Create point cloud mesh from node coordinates
-        mesh = pv.PolyData(result.node_coords)
-        
-        # Add node IDs (must be 'NodeID' for hover functionality to work)
-        mesh['NodeID'] = result.node_ids
-        
-        # Add max stress values as the primary scalar
-        if result.max_over_combo is not None:
-            mesh['Max_Stress'] = result.max_over_combo
-            mesh.set_active_scalars('Max_Stress')
-        
-        # Add min stress values
-        if result.min_over_combo is not None:
-            mesh['Min_Stress'] = result.min_over_combo
-        
-        # Add combination indices
-        if result.combo_of_max is not None:
-            mesh['Combo_of_Max'] = result.combo_of_max
-        if result.combo_of_min is not None:
-            mesh['Combo_of_Min'] = result.combo_of_min
-        
-        # Store result type as field data (metadata) for display tab
-        mesh.field_data['result_type'] = [result.result_type]
-        
-        return mesh
     
     def _on_node_entered(self):
         """Handle Enter key press in node ID field."""
