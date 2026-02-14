@@ -78,11 +78,37 @@
 
 - [ ] Load Visualization File tooltip explains required `X,Y,Z` columns
 - [ ] Tooltip includes optional `NodeID` and example header
+- [ ] Contour Type tooltip explains available families and validity behavior
 - [ ] Visualization controls show relevant tooltips
 
 ---
 
-## 7. Global Tooltip Toggle
+## 7. Display Contour Workflow Checks
+
+- [ ] Visualization Controls appear in two rows (base controls on row 1, contour/result controls on row 2)
+- [ ] `Contour Type` appears only when at least two families are available
+- [ ] `Contour Type` options list only valid families for loaded result set
+- [ ] In envelope view, `Display` updates active contour field for selected family
+- [ ] In specific-combination view, contouring updates correctly for selected family
+- [ ] `Force Component` controls appear only when `Contour Type = Forces`
+- [ ] `Displacement` controls appear only when `Contour Type = Deformation`
+- [ ] Deformation scale changes geometry regardless of active contour family
+- [ ] Deformation contour values appear true to expected result behavior
+- [ ] Legend updates correctly when switching deformation components/families
+- [ ] Hover annotation values for deformation are correct
+
+---
+
+## 8. Export Output CSV Checks
+
+- [ ] Envelope export keeps legacy deformation magnitude columns
+- [ ] Envelope export includes UX/UY/UZ component envelope columns when available
+- [ ] Combination index/name columns for UX/UY/UZ are populated correctly
+- [ ] Single-combination export behavior remains unchanged
+
+---
+
+## 9. Global Tooltip Toggle
 
 - [ ] With `Enable Tooltips` checked, tooltips appear
 - [ ] Uncheck `Enable Tooltips`, hover controls, tooltips do not appear
@@ -91,7 +117,7 @@
 
 ---
 
-## 8. Tooltip Visual Consistency
+## 10. Tooltip Visual Consistency
 
 - [ ] Tooltip colors and border match sibling `MARS_` look
 - [ ] Font and spacing are consistent and readable
