@@ -823,7 +823,7 @@ class SolverTab(QWidget):
     
     def _on_solve_clicked(self):
         """Handle solve button click."""
-        # Refresh combination table snapshot for downstream consumers.
+        # Cache current combination table data.
         self.combination_table = self.get_combination_table_data()
         
         # Build solver config
@@ -1210,45 +1210,11 @@ class SolverTab(QWidget):
         
         This method is called when a node is picked from the Display tab's
         right-click context menu "Plot Combination History for Selected Node".
-        It validates inputs and triggers the combination history solve.
+        Sets the selected node and starts the solve path.
         
         Args:
             node_id: The node ID to compute combination history for.
         """
-        # Validate that data is loaded
-        if not self.base_rst_loaded or not self.combine_rst_loaded:
-            QMessageBox.warning(
-                self, "Missing Data",
-                "Please load both RST files before plotting combination history."
-            )
-            return
-        
-        # Validate that at least one output is selected (stress, deformation, or nodal forces)
-        has_stress_output = any([
-            self.von_mises_checkbox.isChecked(),
-            self.max_principal_stress_checkbox.isChecked(),
-            self.min_principal_stress_checkbox.isChecked()
-        ])
-        has_deformation_output = self.deformation_checkbox.isChecked()
-        has_nodal_forces_output = self.nodal_forces_checkbox.isChecked()
-        has_output = has_stress_output or has_deformation_output or has_nodal_forces_output
-        
-        if not has_output:
-            QMessageBox.warning(
-                self,
-                "No Output Selected",
-                "Please select at least one output type (stress, deformation, or nodal forces)."
-            )
-            return
-        
-        # Validate combination table
-        if self.combo_table.rowCount() == 0:
-            QMessageBox.warning(
-                self, "Missing Combinations",
-                "Please define at least one combination in the table."
-            )
-            return
-        
         # Update node ID in the UI
         self.node_line_edit.setText(str(node_id))
         
