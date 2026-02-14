@@ -4,7 +4,6 @@ calls StressCombinationEngine, and shows results. DPF runs in the main thread (g
 play nice with threads); processEvents() keeps the GUI responsive.
 """
 
-import os
 import traceback
 from datetime import datetime
 from typing import Optional
@@ -20,9 +19,12 @@ from file_io.dpf_reader import (
     NodalForcesNotAvailableError, DisplacementNotAvailableError
 )
 from core.data_models import (
-    SolverConfig, CombinationResult, CombinationTableData, PlasticityConfig,
+    SolverConfig, CombinationResult,
     NodalForcesResult, DeformationResult
 )
+from ui.handlers.analysis_results_handler import AnalysisResultsHandler
+from ui.handlers.solver_engine_factory import SolverEngineFactory
+from ui.handlers.solver_input_validator import SolverInputValidator
 from utils.constants import MSG_NODAL_FORCES_ANSYS
 
 
@@ -35,6 +37,9 @@ class SolverAnalysisHandler:
     def __init__(self, tab):
         """tab: the SolverTab we're attached to."""
         self.tab = tab
+        self.input_validator = SolverInputValidator(tab)
+        self.engine_factory = SolverEngineFactory()
+        self.results_handler = AnalysisResultsHandler(tab)
         self._solve_start_time: Optional[datetime] = None
         self._combination_engine: Optional[StressCombinationEngine] = None
         self._nodal_forces_engine: Optional[NodalForcesCombinationEngine] = None
@@ -141,8 +146,8 @@ class SolverAnalysisHandler:
                 f"Out of Memory Error\n\n"
                 f"The analysis requires more RAM than available.\n\n"
                 f"Suggestions:\n"
-                f"• Use a smaller Named Selection to reduce nodes\n"
-                f"• Close other applications to free memory\n\n"
+                f"- Use a smaller Named Selection to reduce nodes\n"
+                f"- Close other applications to free memory\n\n"
                 f"Details: {str(e)}"
             )
             QMessageBox.critical(self.tab, "Memory Error", error_msg)
@@ -187,7 +192,7 @@ class SolverAnalysisHandler:
             is_sufficient, estimates = engine.check_memory_available(raise_on_insufficient=False)
             if not is_sufficient:
                 self.tab.console_textbox.append(
-                    f"\n⚠ Memory Warning: Limited RAM detected.\n"
+                    f"\n[Warning] Memory Warning: Limited RAM detected.\n"
                     f"  Available: {estimates['available_bytes'] / 1e9:.2f} GB\n"
                     f"  Using memory-efficient processing.\n"
                 )
@@ -328,29 +333,17 @@ class SolverAnalysisHandler:
             Configured NodalForcesCombinationEngine or None if creation fails.
         """
         try:
-            # Get readers from file handler
             reader1 = self.tab.file_handler.base_reader
             reader2 = self.tab.file_handler.combine_reader
-            
-            if reader1 is None or reader2 is None:
-                raise ValueError("DPF readers not available. Please reload RST files.")
-            
-            # Get nodal scoping from selected named selection source
             nodal_scoping = self.tab.get_nodal_scoping_for_selected_named_selection()
-            
-            # Get combination table
             combo_table = self.tab.get_combination_table_data()
-            
-            # Create engine with coordinate system option
-            engine = NodalForcesCombinationEngine(
+            return self.engine_factory.create_nodal_forces_engine(
                 reader1=reader1,
                 reader2=reader2,
                 nodal_scoping=nodal_scoping,
-                combination_table=combo_table,
-                rotate_to_global=config.nodal_forces_rotate_to_global
+                combo_table=combo_table,
+                rotate_to_global=config.nodal_forces_rotate_to_global,
             )
-            
-            return engine
             
         except Exception as e:
             QMessageBox.critical(
@@ -459,29 +452,17 @@ class SolverAnalysisHandler:
             Configured DeformationCombinationEngine or None if creation fails.
         """
         try:
-            # Get readers from file handler
             reader1 = self.tab.file_handler.base_reader
             reader2 = self.tab.file_handler.combine_reader
-            
-            if reader1 is None or reader2 is None:
-                raise ValueError("DPF readers not available. Please reload RST files.")
-            
-            # Get nodal scoping from selected named selection source
             nodal_scoping = self.tab.get_nodal_scoping_for_selected_named_selection()
-            
-            # Get combination table
             combo_table = self.tab.get_combination_table_data()
-            
-            # Create engine with optional cylindrical CS
-            engine = DeformationCombinationEngine(
+            return self.engine_factory.create_deformation_engine(
                 reader1=reader1,
                 reader2=reader2,
                 nodal_scoping=nodal_scoping,
-                combination_table=combo_table,
+                combo_table=combo_table,
                 cylindrical_cs_id=config.deformation_cylindrical_cs_id,
             )
-            
-            return engine
             
         except Exception as e:
             QMessageBox.critical(
@@ -492,166 +473,15 @@ class SolverAnalysisHandler:
     
     def _validate_inputs(self, config: SolverConfig) -> bool:
         """Validate inputs before running analysis."""
-        if not self.tab.base_rst_loaded:
-            QMessageBox.warning(
-                self.tab, "Missing Input",
-                "Please load a Base Analysis RST file."
-            )
-            return False
-
-        if not self.tab.combine_rst_loaded:
-            QMessageBox.warning(
-                self.tab, "Missing Input",
-                "Please load an Analysis to Combine RST file."
-            )
-            return False
-
-        # Check named selection
-        ns_name = self.tab.get_selected_named_selection()
-        if ns_name is None:
-            QMessageBox.warning(
-                self.tab, "Missing Input",
-                "Please select a valid Named Selection."
-            )
-            return False
-
-        # At least one output must be selected.
-        if not any([
-            config.calculate_von_mises,
-            config.calculate_max_principal_stress,
-            config.calculate_min_principal_stress,
-            config.calculate_nodal_forces,
-            config.calculate_deformation,
-        ]):
-            QMessageBox.warning(
-                self.tab,
-                "No Output Selected",
-                "Please select at least one output type (stress, deformation, or nodal forces)."
-            )
-            return False
-
-        # Validate nodal forces availability if selected.
-        if config.calculate_nodal_forces:
-            a1 = self.tab.analysis1_data
-            a2 = self.tab.analysis2_data
-            if a1 is None or a2 is None or not (a1.nodal_forces_available and a2.nodal_forces_available):
-                QMessageBox.warning(
-                    self.tab, "Nodal Forces Not Available",
-                    "Nodal forces are not available in one or both RST files.\n\n"
-                    "To enable nodal forces output, ensure 'Write element nodal forces' "
-                    "is enabled in ANSYS Output Controls before running the analysis."
-                )
-                return False
-
-        # Check combination table
-        combo_table = self.tab.get_combination_table_data()
-        if combo_table is None or combo_table.num_combinations == 0:
-            QMessageBox.warning(
-                self.tab, "Invalid Table",
-                "Please enter at least one combination."
-            )
-            return False
-        self.tab.combination_table = combo_table
-
-        # Validate combination table (check for all-zero coefficients)
-        is_valid, error_msg = combo_table.validate()
-        if not is_valid:
-            QMessageBox.warning(
-                self.tab, "Invalid Combination Coefficients",
-                error_msg
-            )
-            return False
-
-        # Validate stress outputs are not selected for beam-element named selections.
-        stress_outputs_selected = any([
-            config.calculate_von_mises,
-            config.calculate_max_principal_stress,
-            config.calculate_min_principal_stress,
-        ])
-        if stress_outputs_selected:
-            try:
-                scoping_reader, source_label = self.tab.get_scoping_reader_for_named_selection(ns_name)
-                has_beams = scoping_reader.check_named_selection_has_beam_elements(ns_name)
-                if has_beams:
-                    QMessageBox.warning(
-                        self.tab, "Stress Output Not Supported",
-                        f"The selected Named Selection '{ns_name}' contains beam elements.\n\n"
-                        f"Scoping source: {source_label}\n\n"
-                        "Stress tensor output (Von Mises, Max Principal, Min Principal) is not "
-                        "supported for beam elements.\n\n"
-                        "Please either:\n"
-                        "  • Select a Named Selection that contains only solid/shell elements, or\n"
-                        "  • Use 'Nodal Forces' output instead (if available)"
-                    )
-                    return False
-            except Exception as e:
-                # Log the error but don't block - let downstream operations handle it.
-                self.tab.console_textbox.append(
-                    f"[Warning] Could not verify element types for named selection: {e}"
-                )
-
-        # Validate node ID for history mode.
-        if config.combination_history_mode:
-            node_id = config.selected_node_id
-
-            if node_id is None:
-                node_text = self.tab.node_line_edit.text().strip()
-                if not node_text:
-                    QMessageBox.warning(
-                        self.tab, "Missing Node ID",
-                        "Please enter a Node ID for combination history mode."
-                    )
-                    return False
-                try:
-                    node_id = int(node_text)
-                except ValueError:
-                    node_id = None
-
-            if node_id is None or int(node_id) <= 0:
-                QMessageBox.warning(
-                    self.tab, "Invalid Node ID",
-                    f"'{self.tab.node_line_edit.text().strip()}' is not a valid Node ID.\n\n"
-                    "Please enter a positive integer."
-                )
-                return False
-            node_id = int(node_id)
-            config.selected_node_id = node_id
-
-            # Check if node exists in current named-selection scoping.
-            try:
-                scoping_reader, source_label = self.tab.get_scoping_reader_for_named_selection(ns_name)
-                scoping = scoping_reader.get_nodal_scoping_from_named_selection(ns_name)
-                scoping_ids = list(scoping.ids)
-                if node_id not in scoping_ids:
-                    QMessageBox.warning(
-                        self.tab, "Node Not Found",
-                        f"Node ID {node_id} was not found in Named Selection '{ns_name}'.\n\n"
-                        f"Scoping source: {source_label}\n"
-                        f"The selected Named Selection contains {len(scoping_ids):,} nodes.\n"
-                        f"Please enter a valid Node ID from this selection."
-                    )
-                    return False
-            except Exception as e:
-                # Log but do not block; downstream checks can still fail with details.
-                self.tab.console_textbox.append(
-                    f"[Warning] Could not validate node ID: {e}"
-                )
-
-        return True
+        return self.input_validator.validate_inputs(config)
     
     def _get_stress_type(self, config: SolverConfig) -> Optional[str]:
         """
         Determine which stress type to compute based on config.
-        
+
         Returns None if only nodal forces are requested (no stress calculation).
         """
-        if config.calculate_von_mises:
-            return "von_mises"
-        elif config.calculate_max_principal_stress:
-            return "max_principal"
-        elif config.calculate_min_principal_stress:
-            return "min_principal"
-        return None
+        return self.input_validator.get_selected_stress_type(config)
     
     def _create_combination_engine(self, config: SolverConfig) -> Optional[StressCombinationEngine]:
         """
@@ -664,28 +494,16 @@ class SolverAnalysisHandler:
             Configured StressCombinationEngine or None if creation fails.
         """
         try:
-            # Get readers from file handler
             reader1 = self.tab.file_handler.base_reader
             reader2 = self.tab.file_handler.combine_reader
-            
-            if reader1 is None or reader2 is None:
-                raise ValueError("DPF readers not available. Please reload RST files.")
-            
-            # Get nodal scoping from selected named selection source
             nodal_scoping = self.tab.get_nodal_scoping_for_selected_named_selection()
-            
-            # Get combination table
             combo_table = self.tab.get_combination_table_data()
-            
-            # Create engine
-            engine = StressCombinationEngine(
+            return self.engine_factory.create_stress_engine(
                 reader1=reader1,
                 reader2=reader2,
                 nodal_scoping=nodal_scoping,
-                combination_table=combo_table
+                combo_table=combo_table,
             )
-            
-            return engine
             
         except Exception as e:
             QMessageBox.critical(
@@ -735,7 +553,7 @@ class SolverAnalysisHandler:
     
     def _on_memory_warning(self, warning_msg: str):
         """Handle memory warning from solver thread."""
-        self.tab.console_textbox.append(f"\n⚠ Memory Warning: {warning_msg}\n")
+        self.tab.console_textbox.append(f"\n[Warning] Memory Warning: {warning_msg}\n")
     
     def _on_solve_complete(
         self, 
@@ -808,418 +626,31 @@ class SolverAnalysisHandler:
     
     def _handle_history_result(self, result: CombinationResult, config: SolverConfig):
         """Handle results from combination history mode (single node)."""
-        metadata = result.metadata or {}
-        node_id = metadata.get('node_id', config.selected_node_id)
-        combo_indices = metadata.get('combination_indices', np.arange(result.num_combinations))
-        stress_values = metadata.get('stress_values', result.all_combo_results[:, 0])
-        
-        # Update combination history plot
-        combo_names = self.tab.combination_table.combination_names if self.tab.combination_table else None
-        
-        self.tab.plot_combo_history_tab.update_combination_history_plot(
-            combo_indices,
-            stress_values,
-            node_id=node_id,
-            stress_type=result.result_type,
-            combination_names=combo_names
-        )
-        
-        # Show the plot tab
-        plot_idx = self.tab.show_output_tab_widget.indexOf(self.tab.plot_combo_history_tab)
-        if plot_idx >= 0:
-            self.tab.show_output_tab_widget.setTabVisible(plot_idx, True)
-            self.tab.show_output_tab_widget.setCurrentIndex(plot_idx)
-        
-        # Log completion
-        self.tab.console_textbox.append(
-            f"\nCombination history computed for Node {node_id}\n"
-            f"  Combinations: {len(combo_indices)}\n"
-            f"  Max {result.result_type}: {np.max(stress_values):.4f}\n"
-            f"  Min {result.result_type}: {np.min(stress_values):.4f}\n"
-        )
-    
+        self.results_handler.handle_stress_history_result(result, config)
+
     def _handle_envelope_result(self, result: CombinationResult, config: SolverConfig):
         """Handle results from envelope (batch) analysis."""
-        # Determine if chunked processing was used
-        used_chunked = result.all_combo_results is None
-        
-        # Determine which envelope to show based on result type:
-        # - For min_principal stress: show MIN over combinations (most compressive = critical)
-        # - For von_mises/max_principal: show MAX over combinations (highest stress = critical)
-        is_min_principal = result.result_type == "min_principal"
-        show_max = not is_min_principal
-        show_min = is_min_principal
-        
-        # Log summary
-        num_combos = self.tab.combination_table.num_combinations if self.tab.combination_table else 0
-        self.tab.console_textbox.append(
-            f"\nEnvelope analysis complete\n"
-            f"  Nodes: {result.num_nodes}\n"
-            f"  Combinations: {num_combos}\n"
-            f"  Result type: {result.result_type}\n"
-            f"  Processing mode: {'Chunked (memory-efficient)' if used_chunked else 'Standard'}\n"
-        )
-        
-        # Log max results (only for von_mises and max_principal)
-        if show_max and result.max_over_combo is not None:
-            max_val = np.max(result.max_over_combo)
-            max_node_idx = np.argmax(result.max_over_combo)
-            max_node_id = result.node_ids[max_node_idx]
-            max_combo_idx = result.combo_of_max[max_node_idx] if result.combo_of_max is not None else -1
-            
-            # Get combination name if available
-            combo_name = ""
-            if self.tab.combination_table and 0 <= max_combo_idx < len(self.tab.combination_table.combination_names):
-                combo_name = f" ({self.tab.combination_table.combination_names[max_combo_idx]})"
-            
-            # Display 1-based combination number for user-friendliness
-            self.tab.console_textbox.append(
-                f"  Maximum {result.result_type}: {max_val:.4f} at Node {max_node_id} "
-                f"(Combination {max_combo_idx + 1}{combo_name})\n"
-            )
-        
-        # Log min results (only for min_principal)
-        if show_min and result.min_over_combo is not None:
-            min_val = np.min(result.min_over_combo)
-            min_node_idx = np.argmin(result.min_over_combo)
-            min_node_id = result.node_ids[min_node_idx]
-            min_combo_idx = result.combo_of_min[min_node_idx] if result.combo_of_min is not None else -1
-            
-            # Get combination name if available
-            combo_name = ""
-            if self.tab.combination_table and 0 <= min_combo_idx < len(self.tab.combination_table.combination_names):
-                combo_name = f" ({self.tab.combination_table.combination_names[min_combo_idx]})"
-            
-            # Display 1-based combination number for user-friendliness
-            self.tab.console_textbox.append(
-                f"  Minimum {result.result_type}: {min_val:.4f} at Node {min_node_id} "
-                f"(Combination {min_combo_idx + 1}{combo_name})\n"
-            )
-        
-        # Get combination names
-        combo_names = self.tab.combination_table.combination_names if self.tab.combination_table else None
-        
-        # Compute max/min per combination (across all nodes) for the value vs combination plots
-        max_per_combo = None
-        min_per_combo = None
-        
-        if result.all_combo_results is not None:
-            # all_combo_results has shape (num_combinations, num_nodes)
-            # Compute max across all nodes for each combination
-            if show_max:
-                max_per_combo = np.max(result.all_combo_results, axis=1)
-            if show_min:
-                min_per_combo = np.min(result.all_combo_results, axis=1)
-            combination_indices = np.arange(result.all_combo_results.shape[0])
-        elif num_combos > 0:
-            # Chunked mode - we only have per-node envelope values, not per-combination data
-            combination_indices = np.arange(num_combos)
-            # We don't have per-combo data in chunked mode, so we can't show this plot accurately
-            max_per_combo = None
-            min_per_combo = None
-        else:
-            combination_indices = np.arange(1)
-        
-        # Update max over combination plot (only for von_mises and max_principal)
-        max_idx = self.tab.show_output_tab_widget.indexOf(self.tab.plot_max_combo_tab)
-        if max_idx >= 0:
-            if show_max:
-                if max_per_combo is not None:
-                    # Use the new value-vs-combination plot (like original MARS)
-                    self.tab.plot_max_combo_tab.update_max_over_combinations_plot(
-                        combination_indices=combination_indices,
-                        max_values_per_combo=max_per_combo,
-                        min_values_per_combo=None,
-                        combination_names=combo_names,
-                        stress_type=result.result_type
-                    )
-                else:
-                    # Fallback to bar chart for chunked mode (limited data available)
-                    self.tab.plot_max_combo_tab.update_envelope_plot(
-                        node_ids=result.node_ids,
-                        max_values=result.max_over_combo,
-                        min_values=None,
-                        combo_of_max=result.combo_of_max,
-                        combo_of_min=None,
-                        stress_type=result.result_type,
-                        combination_names=combo_names,
-                        show_top_n=50
-                    )
-                self.tab.show_output_tab_widget.setTabVisible(max_idx, True)
-                self.tab.show_output_tab_widget.setTabText(max_idx, "Maximum Over Combination")
-            else:
-                # Hide max tab for min_principal stress
-                self.tab.show_output_tab_widget.setTabVisible(max_idx, False)
-        
-        # Update min over combination plot (only for min_principal)
-        min_idx = self.tab.show_output_tab_widget.indexOf(self.tab.plot_min_combo_tab)
-        if min_idx >= 0:
-            if show_min:
-                if min_per_combo is not None:
-                    # Use the new value-vs-combination plot (like original MARS)
-                    self.tab.plot_min_combo_tab.update_max_over_combinations_plot(
-                        combination_indices=combination_indices,
-                        max_values_per_combo=None,
-                        min_values_per_combo=min_per_combo,
-                        combination_names=combo_names,
-                        stress_type=result.result_type
-                    )
-                else:
-                    # Fallback to bar chart for chunked mode (limited data available)
-                    self.tab.plot_min_combo_tab.update_envelope_plot(
-                        node_ids=result.node_ids,
-                        max_values=None,
-                        min_values=result.min_over_combo,
-                        combo_of_max=None,
-                        combo_of_min=result.combo_of_min,
-                        stress_type=result.result_type,
-                        combination_names=combo_names,
-                        show_top_n=50
-                    )
-                self.tab.show_output_tab_widget.setTabVisible(min_idx, True)
-                self.tab.show_output_tab_widget.setTabText(min_idx, "Minimum Over Combination")
-            else:
-                # Hide min tab for von_mises and max_principal stress
-                self.tab.show_output_tab_widget.setTabVisible(min_idx, False)
-        
-        if used_chunked:
-            # Log that per-combination plots are not available in chunked mode
-            self.tab.console_textbox.append(
-                f"  Note: Value-vs-combination plots not available in chunked mode.\n"
-                f"  Showing top nodes by envelope value instead.\n"
-            )
-        
-        # Auto-export envelope results to CSV
-        output_dir = self._get_output_directory()
-        if output_dir:
-            self._export_envelope_csv(result, config, output_dir)
-    
+        self.results_handler.handle_stress_envelope_result(result, config)
+
     def _handle_forces_history_result(self, result: NodalForcesResult, config: SolverConfig):
         """Handle results from nodal forces combination history mode (single node)."""
-        metadata = getattr(result, 'metadata', {}) or {}
-        node_id = metadata.get('node_id', config.selected_node_id)
-        combo_indices = metadata.get('combination_indices', np.arange(result.num_combinations))
-        fx = metadata.get('fx', result.all_combo_fx[:, 0] if result.all_combo_fx is not None else np.array([]))
-        fy = metadata.get('fy', result.all_combo_fy[:, 0] if result.all_combo_fy is not None else np.array([]))
-        fz = metadata.get('fz', result.all_combo_fz[:, 0] if result.all_combo_fz is not None else np.array([]))
-        magnitude = metadata.get('magnitude', np.sqrt(fx**2 + fy**2 + fz**2))
-        
-        # Log results
-        self.tab.console_textbox.append(
-            f"\nNodal forces history computed for Node {node_id}\n"
-            f"  Combinations: {len(combo_indices)}\n"
-            f"  Max Force Magnitude: {np.max(magnitude):.4f} {result.force_unit}\n"
-            f"  Min Force Magnitude: {np.min(magnitude):.4f} {result.force_unit}\n"
-        )
-    
+        self.results_handler.handle_forces_history_result(result, config)
+
     def _handle_forces_envelope_result(self, result: NodalForcesResult, config: SolverConfig):
         """Handle results from nodal forces envelope (batch) analysis."""
-        # Log summary
-        self.tab.console_textbox.append(
-            f"\nNodal forces envelope analysis complete\n"
-            f"  Nodes: {result.num_nodes}\n"
-            f"  Combinations: {self.tab.combination_table.num_combinations if self.tab.combination_table else 'N/A'}\n"
-            f"  Force Unit: {result.force_unit}\n"
-        )
-        
-        if result.max_magnitude_over_combo is not None:
-            max_val = np.max(result.max_magnitude_over_combo)
-            max_node_idx = np.argmax(result.max_magnitude_over_combo)
-            max_node_id = result.node_ids[max_node_idx]
-            max_combo_idx = result.combo_of_max[max_node_idx] if result.combo_of_max is not None else -1
-            
-            # Get combination name if available
-            combo_name = ""
-            if self.tab.combination_table and 0 <= max_combo_idx < len(self.tab.combination_table.combination_names):
-                combo_name = f" ({self.tab.combination_table.combination_names[max_combo_idx]})"
-            
-            self.tab.console_textbox.append(
-                f"  Maximum Force Magnitude: {max_val:.4f} {result.force_unit} at Node {max_node_id} "
-                f"(Combination {max_combo_idx + 1}{combo_name})\n"
-            )
-        
-        if result.min_magnitude_over_combo is not None:
-            min_val = np.min(result.min_magnitude_over_combo)
-            min_node_idx = np.argmin(result.min_magnitude_over_combo)
-            min_node_id = result.node_ids[min_node_idx]
-            min_combo_idx = result.combo_of_min[min_node_idx] if result.combo_of_min is not None else -1
-            
-            # Get combination name if available
-            combo_name = ""
-            if self.tab.combination_table and 0 <= min_combo_idx < len(self.tab.combination_table.combination_names):
-                combo_name = f" ({self.tab.combination_table.combination_names[min_combo_idx]})"
-            
-            self.tab.console_textbox.append(
-                f"  Minimum Force Magnitude: {min_val:.4f} {result.force_unit} at Node {min_node_id} "
-                f"(Combination {min_combo_idx + 1}{combo_name})\n"
-            )
-        
-        # Update the plot tabs with nodal forces envelope
-        combo_names = self.tab.combination_table.combination_names if self.tab.combination_table else None
-        
-        # Use the max combo tab for nodal forces (shows nodes with highest force magnitude)
-        max_idx = self.tab.show_output_tab_widget.indexOf(self.tab.plot_max_combo_tab)
-        if max_idx >= 0 and result.max_magnitude_over_combo is not None:
-            self.tab.plot_max_combo_tab.update_forces_envelope_plot(
-                node_ids=result.node_ids,
-                max_magnitude=result.max_magnitude_over_combo,
-                min_magnitude=None,
-                combo_of_max=result.combo_of_max,
-                combo_of_min=None,
-                combination_names=combo_names,
-                force_unit=result.force_unit,
-                show_top_n=50
-            )
-            self.tab.show_output_tab_widget.setTabVisible(max_idx, True)
-            # Rename tab to indicate it's showing forces
-            self.tab.show_output_tab_widget.setTabText(max_idx, "Max Forces Over Combination")
-        
-        # Use the min combo tab for min nodal forces
-        min_idx = self.tab.show_output_tab_widget.indexOf(self.tab.plot_min_combo_tab)
-        if min_idx >= 0 and result.min_magnitude_over_combo is not None:
-            self.tab.plot_min_combo_tab.update_forces_envelope_plot(
-                node_ids=result.node_ids,
-                max_magnitude=None,
-                min_magnitude=result.min_magnitude_over_combo,
-                combo_of_max=None,
-                combo_of_min=result.combo_of_min,
-                combination_names=combo_names,
-                force_unit=result.force_unit,
-                show_top_n=50
-            )
-            self.tab.show_output_tab_widget.setTabVisible(min_idx, True)
-            # Rename tab to indicate it's showing forces
-            self.tab.show_output_tab_widget.setTabText(min_idx, "Min Forces Over Combination")
-        
-        # Auto-export nodal forces envelope results to CSV
-        output_dir = self._get_output_directory()
-        if output_dir:
-            self._export_forces_envelope_csv(result, output_dir)
-    
+        self.results_handler.handle_forces_envelope_result(result, config)
+
     def _handle_deformation_history_result(self, result: DeformationResult, config: SolverConfig):
         """Handle results from deformation combination history mode (single node)."""
-        metadata = getattr(result, 'metadata', {}) or {}
-        node_id = metadata.get('node_id', config.selected_node_id)
-        combo_indices = metadata.get('combination_indices', np.arange(result.num_combinations))
-        ux = metadata.get('ux', result.all_combo_ux[:, 0] if result.all_combo_ux is not None else np.array([]))
-        uy = metadata.get('uy', result.all_combo_uy[:, 0] if result.all_combo_uy is not None else np.array([]))
-        uz = metadata.get('uz', result.all_combo_uz[:, 0] if result.all_combo_uz is not None else np.array([]))
-        magnitude = metadata.get('magnitude', np.sqrt(ux**2 + uy**2 + uz**2))
+        self.results_handler.handle_deformation_history_result(result, config)
 
-        # Update combination history plot for deformation
-        combo_names = self.tab.combination_table.combination_names if self.tab.combination_table else None
-        deformation_data = {
-            'ux': ux,
-            'uy': uy,
-            'uz': uz,
-            'u_mag': magnitude
-        }
-        self.tab.plot_combo_history_tab.update_combination_history_plot(
-            combo_indices,
-            stress_values=None,
-            node_id=node_id,
-            combination_names=combo_names,
-            deformation_data=deformation_data,
-            displacement_unit=result.displacement_unit
-        )
-
-        # Show the plot tab
-        plot_idx = self.tab.show_output_tab_widget.indexOf(self.tab.plot_combo_history_tab)
-        if plot_idx >= 0:
-            self.tab.show_output_tab_widget.setTabVisible(plot_idx, True)
-            self.tab.show_output_tab_widget.setCurrentIndex(plot_idx)
-        
-        # Log results
-        self.tab.console_textbox.append(
-            f"\nDeformation history computed for Node {node_id}\n"
-            f"  Combinations: {len(combo_indices)}\n"
-            f"  Max Displacement Magnitude: {np.max(magnitude):.6f} {result.displacement_unit}\n"
-            f"  Min Displacement Magnitude: {np.min(magnitude):.6f} {result.displacement_unit}\n"
-        )
-    
     def _handle_deformation_envelope_result(self, result: DeformationResult, config: SolverConfig):
         """Handle results from deformation envelope (batch) analysis."""
-        # Log summary
-        self.tab.console_textbox.append(
-            f"\nDeformation envelope analysis complete\n"
-            f"  Nodes: {result.num_nodes}\n"
-            f"  Combinations: {self.tab.combination_table.num_combinations if self.tab.combination_table else 'N/A'}\n"
-            f"  Displacement Unit: {result.displacement_unit}\n"
-        )
-        
-        if result.max_magnitude_over_combo is not None:
-            max_val = np.max(result.max_magnitude_over_combo)
-            max_node_idx = np.argmax(result.max_magnitude_over_combo)
-            max_node_id = result.node_ids[max_node_idx]
-            max_combo_idx = result.combo_of_max[max_node_idx] if result.combo_of_max is not None else -1
-            
-            # Get combination name if available
-            combo_name = ""
-            if self.tab.combination_table and 0 <= max_combo_idx < len(self.tab.combination_table.combination_names):
-                combo_name = f" ({self.tab.combination_table.combination_names[max_combo_idx]})"
-            
-            self.tab.console_textbox.append(
-                f"  Maximum Displacement: {max_val:.6f} {result.displacement_unit} at Node {max_node_id} "
-                f"(Combination {max_combo_idx + 1}{combo_name})\n"
-            )
-        
-        if result.min_magnitude_over_combo is not None:
-            min_val = np.min(result.min_magnitude_over_combo)
-            min_node_idx = np.argmin(result.min_magnitude_over_combo)
-            min_node_id = result.node_ids[min_node_idx]
-            min_combo_idx = result.combo_of_min[min_node_idx] if result.combo_of_min is not None else -1
-            
-            # Get combination name if available
-            combo_name = ""
-            if self.tab.combination_table and 0 <= min_combo_idx < len(self.tab.combination_table.combination_names):
-                combo_name = f" ({self.tab.combination_table.combination_names[min_combo_idx]})"
-            
-            self.tab.console_textbox.append(
-                f"  Minimum Displacement: {min_val:.6f} {result.displacement_unit} at Node {min_node_id} "
-                f"(Combination {min_combo_idx + 1}{combo_name})\n"
-            )
-        
-        # Auto-export deformation envelope results to CSV
-        output_dir = self._get_output_directory()
-        if output_dir:
-            self._export_deformation_envelope_csv(result, output_dir)
-    
-    def _export_deformation_envelope_csv(
-        self, 
-        result: DeformationResult, 
-        output_dir: str
-    ):
-        """
-        Export deformation envelope results to CSV files.
-        
-        Args:
-            result: DeformationResult containing envelope data.
-            output_dir: Directory to write the CSV file.
-        """
-        from file_io.exporters import export_deformation_envelope
-        
-        try:
-            combo_names = self.tab.combination_table.combination_names if self.tab.combination_table else None
-            
-            # Build filename
-            filename = os.path.join(output_dir, "envelope_deformation.csv")
-            
-            export_deformation_envelope(
-                filename=filename,
-                node_ids=result.node_ids,
-                node_coords=result.node_coords,
-                max_magnitude=result.max_magnitude_over_combo,
-                min_magnitude=result.min_magnitude_over_combo,
-                combo_of_max=result.combo_of_max,
-                combo_of_min=result.combo_of_min,
-                combination_names=combo_names,
-                displacement_unit=result.displacement_unit
-            )
-            
-            self.tab.console_textbox.append(f"  Exported deformation envelope to: {filename}\n")
-            
-        except Exception as e:
-            self.tab.console_textbox.append(f"  Warning: Failed to export deformation CSV: {e}\n")
+        self.results_handler.handle_deformation_envelope_result(result, config)
+
+    def _export_deformation_envelope_csv(self, result: DeformationResult, output_dir: str):
+        """Export deformation envelope results to CSV files."""
+        self.results_handler.export_deformation_envelope_csv(result, output_dir)
     
     def _log_solve_start(self, config: SolverConfig):
         """Log solve start information."""
@@ -1272,27 +703,8 @@ class SolverAnalysisHandler:
         return self._combination_engine
     
     def _get_output_directory(self) -> Optional[str]:
-        """
-        Get output directory for CSV export.
-        
-        Priority:
-        1. Project directory if set
-        2. Directory of the base RST file
-        
-        Returns:
-            Output directory path or None if not available.
-        """
-        # First try project directory
-        if self.tab.project_directory:
-            return self.tab.project_directory
-        
-        # Fallback to RST file directory
-        if self.tab.file_handler.base_reader:
-            rst_path = getattr(self.tab.file_handler.base_reader, 'rst_path', None)
-            if rst_path:
-                return os.path.dirname(rst_path)
-        
-        return None
+        """Get output directory for CSV export."""
+        return self.results_handler.get_output_directory()
     
     def _export_envelope_csv(
         self, 
@@ -1314,36 +726,7 @@ class SolverAnalysisHandler:
             config: SolverConfig with analysis settings.
             output_dir: Directory to write the CSV file.
         """
-        from file_io.exporters import export_envelope_results
-        
-        try:
-            combo_names = self.tab.combination_table.combination_names if self.tab.combination_table else None
-            result_type = result.result_type  # e.g., "von_mises"
-            
-            # Determine which envelope to export based on result type
-            is_min_principal = result_type == "min_principal"
-            
-            # Build filename based on result type
-            filename = os.path.join(output_dir, f"envelope_{result_type}.csv")
-            
-            # For min_principal: export only min values
-            # For von_mises/max_principal: export only max values
-            export_envelope_results(
-                filename=filename,
-                node_ids=result.node_ids,
-                node_coords=result.node_coords,
-                max_values=None if is_min_principal else result.max_over_combo,
-                min_values=result.min_over_combo if is_min_principal else None,
-                combo_of_max=None if is_min_principal else result.combo_of_max,
-                combo_of_min=result.combo_of_min if is_min_principal else None,
-                result_type=result_type,
-                combination_names=combo_names
-            )
-            
-            self.tab.console_textbox.append(f"  Exported envelope results to: {filename}\n")
-            
-        except Exception as e:
-            self.tab.console_textbox.append(f"  Warning: Failed to export envelope CSV: {e}\n")
+        self.results_handler.export_stress_envelope_csv(result, config, output_dir)
     
     def _export_forces_envelope_csv(
         self, 
@@ -1360,33 +743,5 @@ class SolverAnalysisHandler:
             result: NodalForcesResult containing envelope data.
             output_dir: Directory to write the CSV file.
         """
-        from file_io.exporters import export_nodal_forces_envelope
-        
-        try:
-            combo_names = self.tab.combination_table.combination_names if self.tab.combination_table else None
-            
-            # Build filename
-            filename = os.path.join(output_dir, "envelope_nodal_forces.csv")
-            
-            export_nodal_forces_envelope(
-                filename=filename,
-                node_ids=result.node_ids,
-                node_coords=result.node_coords,
-                max_magnitude=result.max_magnitude_over_combo,
-                min_magnitude=result.min_magnitude_over_combo,
-                combo_of_max=result.combo_of_max,
-                combo_of_min=result.combo_of_min,
-                combination_names=combo_names,
-                force_unit=result.force_unit,
-                all_combo_fx=result.all_combo_fx,
-                all_combo_fy=result.all_combo_fy,
-                all_combo_fz=result.all_combo_fz,
-                include_shear_variants=True,
-                include_component_envelopes=True,
-                include_component_combo_indices=True
-            )
-            
-            self.tab.console_textbox.append(f"  Exported nodal forces envelope to: {filename}\n")
-            
-        except Exception as e:
-            self.tab.console_textbox.append(f"  Warning: Failed to export nodal forces CSV: {e}\n")
+        self.results_handler.export_forces_envelope_csv(result, output_dir)
+
