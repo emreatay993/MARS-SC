@@ -21,6 +21,7 @@ from utils.tooltips import (
     TOOLTIP_DISPLAY_LOAD_FILE, TOOLTIP_DISPLAY_FILE_PATH,
     TOOLTIP_DISPLAY_VISUALIZATION_CONTROLS, TOOLTIP_DISPLAY_POINT_SIZE,
     TOOLTIP_DISPLAY_LEGEND_RANGE, TOOLTIP_DISPLAY_SCALAR,
+    TOOLTIP_DISPLAY_CONTOUR_TYPE,
     TOOLTIP_DISPLAY_VIEW_COMBINATION, TOOLTIP_DISPLAY_FORCE_COMPONENT,
     TOOLTIP_DISPLAY_EXPORT_FORCES, TOOLTIP_DISPLAY_DISPLACEMENT_COMPONENT,
     TOOLTIP_DISPLAY_EXPORT_OUTPUT, TOOLTIP_DISPLAY_DEFORMATION_SCALE,
@@ -108,6 +109,16 @@ class DisplayTabUIBuilder:
         scalar_display_combo.addItem("Combo # of Max")
         scalar_display_label.setVisible(False)  # Hidden until batch results are loaded
         scalar_display_combo.setVisible(False)
+
+        # Contour family selector (shown only when 2+ contour families are available)
+        contour_type_label = QLabel("Contour Type:")
+        contour_type_combo = QComboBox()
+        contour_type_combo.setMinimumWidth(130)
+        contour_type_combo.addItems(["Stress", "Forces", "Deformation"])
+        contour_type_label.setToolTip(TOOLTIP_DISPLAY_CONTOUR_TYPE)
+        contour_type_combo.setToolTip(TOOLTIP_DISPLAY_CONTOUR_TYPE)
+        contour_type_label.setVisible(False)
+        contour_type_combo.setVisible(False)
         
         # View specific combination controls (for batch solve results)
         view_combination_label = QLabel("View Combination:")
@@ -162,25 +173,36 @@ class DisplayTabUIBuilder:
         legend_range_label = QLabel("Legend Range:")
         legend_range_label.setToolTip(TOOLTIP_DISPLAY_LEGEND_RANGE)
 
-        graphics_control_layout = QHBoxLayout()
-        graphics_control_layout.addWidget(node_point_size_label)
-        graphics_control_layout.addWidget(point_size)
-        graphics_control_layout.addWidget(legend_range_label)
-        graphics_control_layout.addWidget(scalar_min_spin)
-        graphics_control_layout.addWidget(scalar_max_spin)
-        graphics_control_layout.addWidget(scalar_display_label)
-        graphics_control_layout.addWidget(scalar_display_combo)
-        graphics_control_layout.addWidget(view_combination_label)
-        graphics_control_layout.addWidget(view_combination_combo)
-        graphics_control_layout.addWidget(force_component_label)
-        graphics_control_layout.addWidget(force_component_combo)
-        graphics_control_layout.addWidget(export_forces_button)
-        graphics_control_layout.addWidget(displacement_component_label)
-        graphics_control_layout.addWidget(displacement_component_combo)
-        graphics_control_layout.addWidget(export_output_button)
-        graphics_control_layout.addWidget(deformation_scale_label)
-        graphics_control_layout.addWidget(deformation_scale_edit)
-        graphics_control_layout.addStretch()
+        # Row 1: base visualization controls
+        graphics_control_row1 = QHBoxLayout()
+        graphics_control_row1.addWidget(node_point_size_label)
+        graphics_control_row1.addWidget(point_size)
+        graphics_control_row1.addWidget(legend_range_label)
+        graphics_control_row1.addWidget(scalar_min_spin)
+        graphics_control_row1.addWidget(scalar_max_spin)
+        graphics_control_row1.addWidget(deformation_scale_label)
+        graphics_control_row1.addWidget(deformation_scale_edit)
+        graphics_control_row1.addStretch()
+
+        # Row 2: contour/result controls
+        graphics_control_row2 = QHBoxLayout()
+        graphics_control_row2.addWidget(contour_type_label)
+        graphics_control_row2.addWidget(contour_type_combo)
+        graphics_control_row2.addWidget(scalar_display_label)
+        graphics_control_row2.addWidget(scalar_display_combo)
+        graphics_control_row2.addWidget(view_combination_label)
+        graphics_control_row2.addWidget(view_combination_combo)
+        graphics_control_row2.addWidget(force_component_label)
+        graphics_control_row2.addWidget(force_component_combo)
+        graphics_control_row2.addWidget(displacement_component_label)
+        graphics_control_row2.addWidget(displacement_component_combo)
+        graphics_control_row2.addWidget(export_forces_button)
+        graphics_control_row2.addWidget(export_output_button)
+        graphics_control_row2.addStretch()
+
+        graphics_control_layout = QVBoxLayout()
+        graphics_control_layout.addLayout(graphics_control_row1)
+        graphics_control_layout.addLayout(graphics_control_row2)
         
         graphics_control_group = QGroupBox("Visualization Controls")
         graphics_control_group.setStyleSheet(GROUP_BOX_STYLE)
@@ -193,6 +215,8 @@ class DisplayTabUIBuilder:
         self.components['scalar_max_spin'] = scalar_max_spin
         self.components['scalar_display_label'] = scalar_display_label
         self.components['scalar_display_combo'] = scalar_display_combo
+        self.components['contour_type_label'] = contour_type_label
+        self.components['contour_type_combo'] = contour_type_combo
         self.components['view_combination_label'] = view_combination_label
         self.components['view_combination_combo'] = view_combination_combo
         self.components['force_component_label'] = force_component_label

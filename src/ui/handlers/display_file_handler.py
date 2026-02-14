@@ -61,6 +61,11 @@ class DisplayFileHandler(DisplayBaseHandler):
 
         mesh = self.viz_manager.create_mesh_from_coords(coords, node_ids)
 
+        # Loading external CSV replaces solver-backed result references.
+        self.tab.all_combo_results = None
+        self.tab.nodal_forces_result = None
+        self.tab.deformation_result = None
+
         # Check if this is an envelope file and handle accordingly
         is_envelope, result_type = self._detect_envelope_file(filename, df.columns)
         
@@ -82,8 +87,11 @@ class DisplayFileHandler(DisplayBaseHandler):
         self.tab.current_mesh = mesh
         self.tab.file_path.setText(filename)
 
-        # Refresh the 3D view via the widget API
-        self.tab.update_visualization()
+        # Refresh the 3D view via contour-sync pipeline
+        if hasattr(self.tab, "contour_sync_handler") and self.tab.contour_sync_handler is not None:
+            self.tab.contour_sync_handler.sync_from_current_state()
+        else:
+            self.tab.update_visualization()
         self.tab.plotter.reset_camera()
 
     @staticmethod

@@ -293,8 +293,29 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
                 has_combo_of_max = "Combo_of_Max" in current_mesh.array_names
                 has_combo_of_min = "Combo_of_Min" in current_mesh.array_names
                 has_force_envelope = "Max_Force_Magnitude" in current_mesh.array_names
-                
-                if has_max_stress or has_min_stress:
+                active_contour_type = (
+                    getattr(self.state, "current_contour_type", None)
+                    or getattr(self.tab, "current_contour_type", None)
+                )
+
+                handled_deformation = (
+                    active_contour_type == "Deformation"
+                    and self._append_deformation_hover_lines(lines, current_mesh, point_id)
+                )
+
+                if active_contour_type == "Stress":
+                    show_stress_block = has_max_stress or has_min_stress
+                    show_force_block = False
+                elif active_contour_type == "Forces":
+                    show_stress_block = False
+                    show_force_block = has_force_envelope
+                else:
+                    show_stress_block = has_max_stress or has_min_stress
+                    show_force_block = has_force_envelope and not show_stress_block
+
+                if handled_deformation:
+                    pass
+                elif show_stress_block:
                     # This is batch solve result - show enhanced information
                     
                     # Get combination names if available
@@ -327,7 +348,7 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
                             lines.append(f"Min: {min_val:.5f} {stress_unit} (Combo #{combo_idx + 1})")
                         else:
                             lines.append(f"Min: {min_val:.5f} {stress_unit}")
-                elif has_force_envelope:
+                elif show_force_block:
                     # Force envelope visualization - show current scalar and combo info if available
                     combo_names = getattr(self.tab, 'combination_names', [])
                     force_unit = "N"
@@ -421,7 +442,7 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
                         unit = ""
                         if "Stress" in active_name or active_name.endswith("_Stress"):
                             unit = "MPa"
-                        elif active_name in ("U_mag", "UX", "UY", "UZ", "Max_U_mag", "Min_U_mag"):
+                        elif active_name in ("U_mag", "UX", "UY", "UZ", "Max_U_mag", "Min_U_mag") or active_name.startswith("Def_"):
                             disp_unit = "mm"
                             if getattr(self.tab, 'deformation_result', None) is not None:
                                 disp_unit = self.tab.deformation_result.displacement_unit
@@ -453,6 +474,69 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
         )
         self.state.hover_observer = observer_id
         self.tab.hover_observer = observer_id
+
+    def _append_deformation_hover_lines(self, lines, mesh, point_id: int) -> bool:
+        """Append deformation-family hover text. Returns True when handled."""
+        active_name = mesh.active_scalars_name or self.tab.data_column
+        deformation_fields = {
+            "U_mag", "UX", "UY", "UZ", "Max_U_mag", "Min_U_mag"
+        }
+        if not active_name:
+            return False
+
+        is_deformation_field = active_name.startswith("Def_") or active_name in deformation_fields
+        if not is_deformation_field:
+            return False
+
+        disp_unit = "mm"
+        if getattr(self.tab, "deformation_result", None) is not None:
+            disp_unit = self.tab.deformation_result.displacement_unit
+
+        combo_names = getattr(self.tab, "combination_names", [])
+
+        if active_name in mesh.array_names:
+            value = mesh[active_name][point_id]
+            if active_name.startswith("Def_Combo_of_"):
+                combo_idx = int(value)
+                if combo_names and 0 <= combo_idx < len(combo_names):
+                    lines.append(f"{active_name}: {combo_names[combo_idx]}")
+                else:
+                    lines.append(f"{active_name}: Combo #{combo_idx + 1}")
+            else:
+                lines.append(f"{active_name} [{disp_unit}]: {value:.5f}")
+
+        # Envelope detail lines for Def_* arrays
+        component = None
+        for suffix in ("U_mag", "UX", "UY", "UZ"):
+            if active_name.endswith(suffix):
+                component = suffix
+                break
+
+        if component and active_name.startswith("Def_"):
+            max_field = f"Def_Max_{component}"
+            min_field = f"Def_Min_{component}"
+            combo_max_field = f"Def_Combo_of_Max_{component}"
+            combo_min_field = f"Def_Combo_of_Min_{component}"
+
+            if max_field in mesh.array_names:
+                lines.append(f"Max [{disp_unit}]: {mesh[max_field][point_id]:.5f}")
+            if combo_max_field in mesh.array_names:
+                combo_idx = int(mesh[combo_max_field][point_id])
+                if combo_names and 0 <= combo_idx < len(combo_names):
+                    lines.append(f"Combo of Max: {combo_names[combo_idx]}")
+                else:
+                    lines.append(f"Combo of Max: Combo #{combo_idx + 1}")
+
+            if min_field in mesh.array_names:
+                lines.append(f"Min [{disp_unit}]: {mesh[min_field][point_id]:.5f}")
+            if combo_min_field in mesh.array_names:
+                combo_idx = int(mesh[combo_min_field][point_id])
+                if combo_names and 0 <= combo_idx < len(combo_names):
+                    lines.append(f"Combo of Min: {combo_names[combo_idx]}")
+                else:
+                    lines.append(f"Combo of Min: Combo #{combo_idx + 1}")
+
+        return True
 
     def clear_hover_elements(self) -> None:
         """Remove hover annotation text and observer callbacks."""

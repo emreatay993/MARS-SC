@@ -355,6 +355,14 @@ TOOLTIP_DISPLAY_SCALAR = (
     "- Combo # of Min: Combination index producing the minimum"
 )
 
+TOOLTIP_DISPLAY_CONTOUR_TYPE = (
+    "Select contour result family:\n"
+    "- Stress\n"
+    "- Forces\n"
+    "- Deformation\n\n"
+    "Only contour families available in current results are listed."
+)
+
 TOOLTIP_DISPLAY_VIEW_COMBINATION = (
     "Select a specific combination to visualize its results.\n"
     "Choose '(Envelope View)' to return to Max/Min envelope view."
@@ -375,7 +383,8 @@ TOOLTIP_DISPLAY_EXPORT_FORCES = (
 TOOLTIP_DISPLAY_DISPLACEMENT_COMPONENT = (
     "Select which displacement component to display:\n"
     "- U_mag: Total displacement magnitude\n"
-    "- UX, UY, UZ: Directional displacement components"
+    "- UX, UY, UZ: Directional displacement components\n\n"
+    "Works in both Envelope View and specific-combination view."
 )
 
 TOOLTIP_DISPLAY_EXPORT_OUTPUT = (

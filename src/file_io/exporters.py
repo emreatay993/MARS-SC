@@ -782,7 +782,8 @@ def export_deformation_envelope(
     combo_of_max: Optional[np.ndarray] = None,
     combo_of_min: Optional[np.ndarray] = None,
     combination_names: Optional[List[str]] = None,
-    displacement_unit: str = "mm"
+    displacement_unit: str = "mm",
+    component_payload: Optional[Dict[str, np.ndarray]] = None
 ) -> None:
     """
     Export deformation envelope results (max/min magnitude over combinations) to CSV.
@@ -797,6 +798,10 @@ def export_deformation_envelope(
         combo_of_min: Array of combination indices where min occurred.
         combination_names: Optional list of combination names for labeling.
         displacement_unit: Displacement unit string (e.g., "mm", "m").
+        component_payload: Optional component-envelope payload with keys:
+            max_ux, min_ux, combo_of_max_ux, combo_of_min_ux,
+            max_uy, min_uy, combo_of_max_uy, combo_of_min_uy,
+            max_uz, min_uz, combo_of_max_uz, combo_of_min_uz.
     """
     df = pd.DataFrame()
     
@@ -830,6 +835,89 @@ def export_deformation_envelope(
                     combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
                     for idx in combo_of_min
                 ]
+
+    # Optional component envelope columns
+    payload = component_payload or {}
+    num_rows = len(df.index)
+
+    def _payload_array(key: str) -> Optional[np.ndarray]:
+        values = payload.get(key)
+        if values is None:
+            return None
+        arr = np.asarray(values).reshape(-1)
+        if arr.shape[0] != num_rows:
+            return None
+        return arr
+
+    def _combo_name_list(combo_indices: np.ndarray) -> List[str]:
+        if combination_names is None:
+            return []
+        return [
+            combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
+            for idx in combo_indices
+        ]
+
+    if max_magnitude is not None:
+        max_ux = _payload_array("max_ux")
+        max_uy = _payload_array("max_uy")
+        max_uz = _payload_array("max_uz")
+        combo_max_ux = _payload_array("combo_of_max_ux")
+        combo_max_uy = _payload_array("combo_of_max_uy")
+        combo_max_uz = _payload_array("combo_of_max_uz")
+
+        if max_ux is not None:
+            df[f"Max UX [{displacement_unit}]"] = max_ux
+        if max_uy is not None:
+            df[f"Max UY [{displacement_unit}]"] = max_uy
+        if max_uz is not None:
+            df[f"Max UZ [{displacement_unit}]"] = max_uz
+
+        if combo_max_ux is not None:
+            combo_max_ux_int = combo_max_ux.astype(int)
+            df["Combination of Max UX (#)"] = combo_max_ux_int + 1
+            if combination_names is not None:
+                df["Combination of Max UX (Name)"] = _combo_name_list(combo_max_ux_int)
+        if combo_max_uy is not None:
+            combo_max_uy_int = combo_max_uy.astype(int)
+            df["Combination of Max UY (#)"] = combo_max_uy_int + 1
+            if combination_names is not None:
+                df["Combination of Max UY (Name)"] = _combo_name_list(combo_max_uy_int)
+        if combo_max_uz is not None:
+            combo_max_uz_int = combo_max_uz.astype(int)
+            df["Combination of Max UZ (#)"] = combo_max_uz_int + 1
+            if combination_names is not None:
+                df["Combination of Max UZ (Name)"] = _combo_name_list(combo_max_uz_int)
+
+    if min_magnitude is not None:
+        min_ux = _payload_array("min_ux")
+        min_uy = _payload_array("min_uy")
+        min_uz = _payload_array("min_uz")
+        combo_min_ux = _payload_array("combo_of_min_ux")
+        combo_min_uy = _payload_array("combo_of_min_uy")
+        combo_min_uz = _payload_array("combo_of_min_uz")
+
+        if min_ux is not None:
+            df[f"Min UX [{displacement_unit}]"] = min_ux
+        if min_uy is not None:
+            df[f"Min UY [{displacement_unit}]"] = min_uy
+        if min_uz is not None:
+            df[f"Min UZ [{displacement_unit}]"] = min_uz
+
+        if combo_min_ux is not None:
+            combo_min_ux_int = combo_min_ux.astype(int)
+            df["Combination of Min UX (#)"] = combo_min_ux_int + 1
+            if combination_names is not None:
+                df["Combination of Min UX (Name)"] = _combo_name_list(combo_min_ux_int)
+        if combo_min_uy is not None:
+            combo_min_uy_int = combo_min_uy.astype(int)
+            df["Combination of Min UY (#)"] = combo_min_uy_int + 1
+            if combination_names is not None:
+                df["Combination of Min UY (Name)"] = _combo_name_list(combo_min_uy_int)
+        if combo_min_uz is not None:
+            combo_min_uz_int = combo_min_uz.astype(int)
+            df["Combination of Min UZ (#)"] = combo_min_uz_int + 1
+            if combination_names is not None:
+                df["Combination of Min UZ (Name)"] = _combo_name_list(combo_min_uz_int)
     
     df.to_csv(filename, index=False)
 

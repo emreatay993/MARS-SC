@@ -5,6 +5,7 @@ Export-related functionality for the Display tab.
 import os
 from typing import Optional, List, Tuple
 
+import numpy as np
 from PyQt5.QtWidgets import QFileDialog, QMessageBox
 
 from file_io.exporters import (
@@ -13,6 +14,7 @@ from file_io.exporters import (
     export_envelope_results, export_single_combination,
     export_nodal_forces_envelope, export_deformation_envelope
 )
+from ui.handlers.display_mesh_arrays import build_deformation_component_payload_from_result
 from ui.handlers.display_base_handler import DisplayBaseHandler
 
 
@@ -390,8 +392,44 @@ class DisplayExportHandler(DisplayBaseHandler):
         # If neither (shouldn't happen), default to max
         if not export_max and not export_min:
             export_max = True
-        
+
         return export_max, export_min
+
+    def _build_deformation_component_payload(self, deformation_result) -> Optional[dict]:
+        """
+        Build optional deformation component-envelope payload for CSV export.
+
+        Priority:
+        1) Use Def_* arrays already attached to the active mesh.
+        2) Fallback to compute from deformation_result all-combination arrays.
+        """
+        mesh = self.state.current_mesh or self.tab.current_mesh
+        payload: dict[str, np.ndarray] = {}
+
+        if mesh is not None:
+            mesh_map = {
+                "max_ux": "Def_Max_UX",
+                "min_ux": "Def_Min_UX",
+                "combo_of_max_ux": "Def_Combo_of_Max_UX",
+                "combo_of_min_ux": "Def_Combo_of_Min_UX",
+                "max_uy": "Def_Max_UY",
+                "min_uy": "Def_Min_UY",
+                "combo_of_max_uy": "Def_Combo_of_Max_UY",
+                "combo_of_min_uy": "Def_Combo_of_Min_UY",
+                "max_uz": "Def_Max_UZ",
+                "min_uz": "Def_Min_UZ",
+                "combo_of_max_uz": "Def_Combo_of_Max_UZ",
+                "combo_of_min_uz": "Def_Combo_of_Min_UZ",
+            }
+
+            for key, array_name in mesh_map.items():
+                if array_name in mesh.array_names:
+                    payload[key] = np.asarray(mesh[array_name]).reshape(-1)
+
+        if payload:
+            return payload
+
+        return build_deformation_component_payload_from_result(deformation_result)
 
     def _export_envelope_view(
         self,
@@ -506,6 +544,7 @@ class DisplayExportHandler(DisplayBaseHandler):
         if deformation_result is not None:
             try:
                 filename = os.path.join(output_dir, f"deformation_{envelope_suffix}.csv")
+                component_payload = self._build_deformation_component_payload(deformation_result)
                 
                 export_deformation_envelope(
                     filename=filename,
@@ -516,7 +555,8 @@ class DisplayExportHandler(DisplayBaseHandler):
                     combo_of_max=deformation_result.combo_of_max if export_max else None,
                     combo_of_min=deformation_result.combo_of_min if export_min else None,
                     combination_names=combination_names,
-                    displacement_unit=deformation_result.displacement_unit
+                    displacement_unit=deformation_result.displacement_unit,
+                    component_payload=component_payload
                 )
                 exported_files.append(os.path.basename(filename))
             except Exception as e:

@@ -40,4 +40,5 @@ class DisplayState:
     target_node_marker_actor: Optional[Any] = None
     last_goto_node_id: Optional[int] = None
     pick_indicator_actor: Optional[Any] = None
+    current_contour_type: Optional[str] = None
     scalar_bar_digits: int = 4  # Number of decimal places for legend labels

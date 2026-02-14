@@ -656,13 +656,10 @@ class SolverAnalysisHandler:
         self.tab.setEnabled(True)
         self.tab.progress_bar.setVisible(False)
         
-        # Store results
-        if stress_result is not None:
-            self.tab.combination_result = stress_result
-        if forces_result is not None:
-            self.tab.nodal_forces_result = forces_result
-        if deformation_result is not None:
-            self.tab.deformation_result = deformation_result
+        # Store current-run results (clear stale outputs when not computed)
+        self.tab.combination_result = stress_result
+        self.tab.nodal_forces_result = forces_result
+        self.tab.deformation_result = deformation_result
         
         # Handle stress results based on mode
         if stress_result is not None:

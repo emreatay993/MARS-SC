@@ -19,6 +19,7 @@ from file_io.exporters import (
     export_time_point_results,
     export_results_with_headers,
     export_envelope_results,
+    export_deformation_envelope,
     export_single_combination,
     export_combination_history,
     export_all_combinations_batch,
@@ -68,7 +69,7 @@ class TestExportEnvelopeResults:
         assert "Z" in df.columns
         assert "Max Von Mises [MPa]" in df.columns
         assert "Min Von Mises [MPa]" in df.columns
-        assert "Combination of Max (Index)" in df.columns
+        assert "Combination of Max (#)" in df.columns
         assert "Combination of Max (Name)" in df.columns
         
         # Verify values
@@ -115,6 +116,107 @@ class TestExportEnvelopeResults:
         
         assert "NodeID" in df.columns
         assert "X" not in df.columns
+
+
+class TestExportDeformationEnvelope:
+    """Tests for deformation envelope export, including optional component columns."""
+
+    def test_deformation_envelope_with_component_payload(self, tmp_path):
+        csv_path = tmp_path / "deformation_envelope_components.csv"
+
+        node_ids = np.array([1, 2, 3])
+        node_coords = np.array([
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+        ])
+        max_mag = np.array([1.0, 2.0, 3.0])
+        min_mag = np.array([0.1, 0.2, 0.3])
+        combo_of_max = np.array([0, 1, 2])
+        combo_of_min = np.array([2, 1, 0])
+        combination_names = ["C1", "C2", "C3"]
+
+        payload = {
+            "max_ux": np.array([0.5, 0.6, 0.7]),
+            "min_ux": np.array([-0.5, -0.6, -0.7]),
+            "combo_of_max_ux": np.array([0, 1, 2]),
+            "combo_of_min_ux": np.array([2, 1, 0]),
+            "max_uy": np.array([1.5, 1.6, 1.7]),
+            "min_uy": np.array([-1.5, -1.6, -1.7]),
+            "combo_of_max_uy": np.array([1, 1, 1]),
+            "combo_of_min_uy": np.array([0, 0, 0]),
+            "max_uz": np.array([2.5, 2.6, 2.7]),
+            "min_uz": np.array([-2.5, -2.6, -2.7]),
+            "combo_of_max_uz": np.array([2, 2, 2]),
+            "combo_of_min_uz": np.array([0, 1, 2]),
+        }
+
+        export_deformation_envelope(
+            filename=str(csv_path),
+            node_ids=node_ids,
+            node_coords=node_coords,
+            max_magnitude=max_mag,
+            min_magnitude=min_mag,
+            combo_of_max=combo_of_max,
+            combo_of_min=combo_of_min,
+            combination_names=combination_names,
+            displacement_unit="mm",
+            component_payload=payload,
+        )
+
+        df = pd.read_csv(csv_path)
+
+        # Legacy magnitude columns remain unchanged
+        assert "Max Displacement Magnitude [mm]" in df.columns
+        assert "Min Displacement Magnitude [mm]" in df.columns
+        assert "Combination of Max (#)" in df.columns
+        assert "Combination of Max (Name)" in df.columns
+        assert "Combination of Min (#)" in df.columns
+        assert "Combination of Min (Name)" in df.columns
+
+        # New component envelope columns
+        assert "Max UX [mm]" in df.columns
+        assert "Min UX [mm]" in df.columns
+        assert "Combination of Max UX (#)" in df.columns
+        assert "Combination of Max UX (Name)" in df.columns
+        assert "Combination of Min UX (#)" in df.columns
+        assert "Combination of Min UX (Name)" in df.columns
+
+        assert "Max UY [mm]" in df.columns
+        assert "Min UY [mm]" in df.columns
+        assert "Combination of Max UY (#)" in df.columns
+        assert "Combination of Max UY (Name)" in df.columns
+        assert "Combination of Min UY (#)" in df.columns
+        assert "Combination of Min UY (Name)" in df.columns
+
+        assert "Max UZ [mm]" in df.columns
+        assert "Min UZ [mm]" in df.columns
+        assert "Combination of Max UZ (#)" in df.columns
+        assert "Combination of Max UZ (Name)" in df.columns
+        assert "Combination of Min UZ (#)" in df.columns
+        assert "Combination of Min UZ (Name)" in df.columns
+
+    def test_deformation_envelope_without_component_payload_keeps_legacy_columns(self, tmp_path):
+        csv_path = tmp_path / "deformation_envelope_legacy.csv"
+
+        export_deformation_envelope(
+            filename=str(csv_path),
+            node_ids=np.array([10, 20]),
+            node_coords=None,
+            max_magnitude=np.array([1.2, 3.4]),
+            min_magnitude=np.array([0.2, 0.4]),
+            combo_of_max=np.array([0, 1]),
+            combo_of_min=np.array([1, 0]),
+            combination_names=["A", "B"],
+            displacement_unit="mm",
+            component_payload=None,
+        )
+
+        df = pd.read_csv(csv_path)
+        assert "Max Displacement Magnitude [mm]" in df.columns
+        assert "Min Displacement Magnitude [mm]" in df.columns
+        assert "Max UX [mm]" not in df.columns
+        assert "Min UX [mm]" not in df.columns
 
 
 class TestExportSingleCombination:
@@ -203,7 +305,7 @@ class TestExportCombinationHistory:
         df = pd.read_csv(csv_path)
         
         assert len(df) == 5
-        assert "Combination Index" in df.columns
+        assert "Combination #" in df.columns
         assert "Combination Name" in df.columns
         assert "Von Mises [MPa]" in df.columns
         assert "Node ID" in df.columns

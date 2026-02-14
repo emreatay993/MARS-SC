@@ -18,6 +18,7 @@ from ui.handlers.display_visualization_handler import DisplayVisualizationHandle
 from ui.handlers.display_interaction_handler import DisplayInteractionHandler
 from ui.handlers.display_export_handler import DisplayExportHandler
 from ui.handlers.display_results_handler import DisplayResultsHandler
+from ui.handlers.display_contour_sync_handler import DisplayContourSyncHandler
 
 
 class DisplayTab(QWidget):
@@ -48,6 +49,7 @@ class DisplayTab(QWidget):
         self.interaction_handler = DisplayInteractionHandler(self, self.state, self.hotspot_detector)
         self.export_handler = DisplayExportHandler(self, self.state)
         self.results_handler = DisplayResultsHandler(self, self.state, self.visual_handler)
+        self.contour_sync_handler = DisplayContourSyncHandler(self, self.state)
         self.plotting_handler = None
         
         # Build UI using builder
@@ -74,6 +76,7 @@ class DisplayTab(QWidget):
         self.all_combo_results = None  # Full results array, shape (num_combinations, num_nodes)
         self.nodal_forces_result = None  # NodalForcesResult for force-based visualization
         self.deformation_result = None  # DeformationResult for displacement visualization
+        self.current_contour_type = None  # "Stress", "Forces", or "Deformation"
         self.temp_solver = None
         self.time_values = None
         self.original_node_coords = None
@@ -133,6 +136,8 @@ class DisplayTab(QWidget):
         self.scalar_max_spin = self.components['scalar_max_spin']
         self.scalar_display_label = self.components['scalar_display_label']
         self.scalar_display_combo = self.components['scalar_display_combo']
+        self.contour_type_label = self.components.get('contour_type_label')
+        self.contour_type_combo = self.components.get('contour_type_combo')
         self.deformation_scale_label = self.components['deformation_scale_label']
         self.deformation_scale_edit = self.components['deformation_scale_edit']
         
@@ -182,6 +187,10 @@ class DisplayTab(QWidget):
         self.scalar_display_combo.currentIndexChanged.connect(
             self._on_scalar_display_changed
         )
+        if self.contour_type_combo is not None:
+            self.contour_type_combo.currentIndexChanged.connect(
+                self._on_contour_type_changed
+            )
         self.view_combination_combo.currentIndexChanged.connect(
             self._on_view_combination_changed
         )
@@ -271,244 +280,46 @@ class DisplayTab(QWidget):
         if index >= 0:
             combo_name = self.combination_combo.currentText()
             print(f"DisplayTab: Combination changed to #{index}: {combo_name}")
+
+    @pyqtSlot(int)
+    def _on_contour_type_changed(self, index):
+        """Handle contour family selection changes."""
+        self.contour_sync_handler.on_contour_type_changed(index)
     
     @pyqtSlot(int)
     def _on_scalar_display_changed(self, index):
         """
         Handle scalar display selection change.
-        
-        Switches the active scalar field displayed on the mesh based on user selection.
-        Options are: Max Value, Min Value (min principal only), Combo # of Max, Combo # of Min.
-        Supports both stress results and force results.
-        
-        Args:
-            index: Index of the selected item in the scalar display combo box.
         """
-        if self.current_mesh is None:
-            return
-        
-        selected_text = self.scalar_display_combo.currentText()
-        
-        # Map display text to mesh array names - stress results
-        scalar_map = {
-            "Max Value": "Max_Stress",
-            "Min Value": "Min_Stress",
-            "Combo # of Max": "Combo_of_Max",
-            "Combo # of Min": "Combo_of_Min",
-        }
-        
-        # Map display text to mesh array names - force results (fallback)
-        force_scalar_map = {
-            "Max Value": "Max_Force_Magnitude",
-            "Min Value": "Min_Force_Magnitude",
-            "Combo # of Max": "Combo_of_Max",
-            "Combo # of Min": "Combo_of_Min",
-        }
-        
-        # Try stress array first, then force array
-        array_name = scalar_map.get(selected_text)
-        is_force_result = False
-        if array_name not in self.current_mesh.array_names:
-            array_name = force_scalar_map.get(selected_text)
-            is_force_result = True
-        
-        if array_name and array_name in self.current_mesh.array_names:
-            # Update active scalars
-            self.current_mesh.set_active_scalars(array_name)
-            
-            # Generate descriptive legend title
-            if "Combo_of_Max" in array_name or "Combo_of_Min" in array_name:
-                # For combination index display, use simple name without units
-                legend_title = array_name
-            elif is_force_result:
-                # Force results
-                if "Max" in array_name:
-                    legend_title = "Max_Force [N]"
-                else:
-                    legend_title = "Min_Force [N]"
-            else:
-                # Stress results - use descriptive title
-                stress_label = self._get_stress_type_label()
-                if "Max" in array_name:
-                    legend_title = f"Max_{stress_label} [MPa]"
-                else:
-                    legend_title = f"Min_{stress_label} [MPa]"
-            
-            self.data_column = legend_title
-            self.state.data_column = legend_title
-            
-            # Update scalar range based on new data
-            data = self.current_mesh[array_name]
-            data_min = float(np.min(data))
-            data_max = float(np.max(data))
-            
-            # Update spinboxes
-            self.scalar_min_spin.blockSignals(True)
-            self.scalar_max_spin.blockSignals(True)
-            self.scalar_min_spin.setRange(data_min, data_max)
-            self.scalar_max_spin.setRange(data_min, 1e30)
-            self.scalar_min_spin.setValue(data_min)
-            self.scalar_max_spin.setValue(data_max)
-            self.scalar_min_spin.blockSignals(False)
-            self.scalar_max_spin.blockSignals(False)
-            
-            # Refresh visualization
-            self.update_visualization()
-            
-            print(f"DisplayTab: Scalar display changed to '{selected_text}' (legend: {legend_title})")
+        self.contour_sync_handler.on_scalar_display_changed(index)
     
     @pyqtSlot(int)
     def _on_view_combination_changed(self, index):
         """
         Handle view combination selection change.
-        
-        When a specific combination is selected, updates the mesh with that
-        combination's results. When "(Envelope View)" is selected, reverts to
-        showing the envelope data (Max/Min across all combinations).
-        
-        Args:
-            index: Index of the selected item (0 = Envelope View, 1+ = specific combination).
         """
-        if self.current_mesh is None:
-            return
-        
-        if index == 0:
-            # Envelope View - show the Max/Min envelope data
-            self._show_envelope_view()
-            # Re-enable the scalar display combo for envelope options
-            self.scalar_display_combo.setEnabled(True)
-            self.scalar_display_label.setEnabled(True)
-        else:
-            # Specific combination selected
-            combo_idx = index - 1  # Account for "(Envelope View)" being at index 0
-            self._show_specific_combination(combo_idx)
-            # Disable the scalar display combo since we're showing specific combination
-            self.scalar_display_combo.setEnabled(False)
-            self.scalar_display_label.setEnabled(False)
+        self.contour_sync_handler.on_view_combination_changed(index)
     
     def _show_envelope_view(self):
         """
         Switch visualization back to envelope view (Max/Min across combinations).
-        
-        Restores the display to show envelope data based on current scalar_display_combo selection.
         """
-        if self.current_mesh is None:
-            return
-        
-        # For force results, keep force component controls visible in envelope view
-        # For stress results, hide them (stress doesn't have component selection)
-        if self.nodal_forces_result is not None and self.all_combo_results is None:
-            # Force results - keep controls visible
-            has_beam_nodes = self.nodal_forces_result.has_beam_nodes
-            self._show_force_component_controls(True, has_beam_nodes)
-        else:
-            # Stress results or no results - hide force controls
-            self._show_force_component_controls(False)
-        
-        # Show displacement controls if deformation result is available
-        if self.deformation_result is not None:
-            self._show_displacement_component_controls(True)
-        else:
-            self._show_displacement_component_controls(False)
-        
-        # Trigger the scalar display handler to refresh the view
-        self._on_scalar_display_changed(self.scalar_display_combo.currentIndex())
-        print("DisplayTab: Switched to Envelope View")
+        if self.view_combination_combo is not None:
+            self.view_combination_combo.setCurrentIndex(0)
+        self.contour_sync_handler.sync_from_current_state()
     
     def _show_specific_combination(self, combo_idx: int):
         """
         Update visualization to show results for a specific combination.
         
-        Handles both stress results (from all_combo_results) and force results
-        (from nodal_forces_result).
-        
         Args:
             combo_idx: Index of the combination to display (0-based).
         """
-        if self.current_mesh is None:
-            print(f"DisplayTab: Cannot show combination {combo_idx} - no mesh available")
-            return
-        
-        combo_name = self.combination_names[combo_idx] if combo_idx < len(self.combination_names) else f"Combination {combo_idx + 1}"
-        is_force_result = False
-        
-        # Try stress results first
-        if self.all_combo_results is not None:
-            if combo_idx < 0 or combo_idx >= self.all_combo_results.shape[0]:
-                print(f"DisplayTab: Invalid combination index {combo_idx}")
-                return
-            
-            # Get the stress values for this specific combination
-            # all_combo_results shape is (num_combinations, num_nodes)
-            combo_values = self.all_combo_results[combo_idx, :]
-            array_name = f"Combo_{combo_idx}_Stress"
-            
-        # Try force results
-        elif self.nodal_forces_result is not None:
-            try:
-                # Set up all force component arrays for this combination
-                self._setup_force_component_arrays(combo_idx)
-                
-                # Get force magnitude as default display
-                combo_values = self.nodal_forces_result.get_force_magnitude(combo_idx)
-                array_name = 'Force_Magnitude'  # Use consistent array name
-                is_force_result = True
-                
-                # Show force component controls
-                has_beam_nodes = self.nodal_forces_result.has_beam_nodes
-                self._show_force_component_controls(True, has_beam_nodes)
-            except (ValueError, IndexError) as e:
-                print(f"DisplayTab: Cannot get force magnitude for combination {combo_idx}: {e}")
-                return
-        else:
-            print(f"DisplayTab: Cannot show combination {combo_idx} - no data available")
-            return
-        
-        # Add this data to the mesh (for stress results - force arrays already set up above)
-        if not is_force_result:
-            array_name = f"Combo_{combo_idx}_Stress"
-            self.current_mesh[array_name] = combo_values
-            # Hide force component controls for stress results
-            self._show_force_component_controls(False)
-        self.current_mesh.set_active_scalars(array_name)
-        
-        # Show displacement controls if deformation result is available
-        if self.deformation_result is not None:
-            self._show_displacement_component_controls(True)
-            # Also set up displacement component arrays for this combination
-            self._setup_displacement_component_arrays(combo_idx)
-        else:
-            self._show_displacement_component_controls(False)
-        
-        # Generate descriptive legend title
-        if is_force_result:
-            force_unit = self.nodal_forces_result.force_unit
-            legend_title = f"Force_Magnitude [{force_unit}]"
-        else:
-            stress_label = self._get_stress_type_label()
-            legend_title = f"Combo_{combo_idx + 1}_{stress_label} [MPa]"
-        
-        self.data_column = legend_title
-        self.state.data_column = legend_title
-        
-        # Update scalar range based on this combination's data
-        data_min = float(np.min(combo_values))
-        data_max = float(np.max(combo_values))
-        
-        # Update spinboxes
-        self.scalar_min_spin.blockSignals(True)
-        self.scalar_max_spin.blockSignals(True)
-        self.scalar_min_spin.setRange(data_min, data_max)
-        self.scalar_max_spin.setRange(data_min, 1e30)
-        self.scalar_min_spin.setValue(data_min)
-        self.scalar_max_spin.setValue(data_max)
-        self.scalar_min_spin.blockSignals(False)
-        self.scalar_max_spin.blockSignals(False)
-        
-        # Refresh visualization
-        self.update_visualization()
-        
-        print(f"DisplayTab: Showing results for '{combo_name}' (index {combo_idx})")
+        if self.view_combination_combo is not None:
+            target_index = combo_idx + 1  # index 0 is envelope
+            if 0 <= target_index < self.view_combination_combo.count():
+                self.view_combination_combo.setCurrentIndex(target_index)
+        self.contour_sync_handler.sync_from_current_state()
     
     def populate_view_combination_options(self, combination_names: list):
         """
@@ -605,28 +416,9 @@ class DisplayTab(QWidget):
         Args:
             combo_idx: Index of the combination to set up arrays for.
         """
-        if self.nodal_forces_result is None or self.current_mesh is None:
-            return
-        
-        result = self.nodal_forces_result
-        
-        # Get force components for this combination
-        fx = result.all_combo_fx[combo_idx, :]
-        fy = result.all_combo_fy[combo_idx, :]
-        fz = result.all_combo_fz[combo_idx, :]
-        
-        # Add arrays to mesh
-        self.current_mesh['FX'] = fx
-        self.current_mesh['FY'] = fy
-        self.current_mesh['FZ'] = fz
-        self.current_mesh['Force_Magnitude'] = np.sqrt(fx**2 + fy**2 + fz**2)
-        
-        # Add shear variants for different axis pairs
-        self.current_mesh['Shear_XY'] = np.sqrt(fx**2 + fy**2)
-        self.current_mesh['Shear_XZ'] = np.sqrt(fx**2 + fz**2)
-        self.current_mesh['Shear_YZ'] = np.sqrt(fy**2 + fz**2)
-        # Backward-compatible alias for legacy shear (FY/FZ)
-        self.current_mesh['Shear_Force'] = self.current_mesh['Shear_YZ']
+        from ui.handlers.display_mesh_arrays import attach_force_component_arrays
+
+        attach_force_component_arrays(self.current_mesh, self.nodal_forces_result, combo_idx)
     
     def _setup_displacement_component_arrays(self, combo_idx: int):
         """
@@ -638,140 +430,19 @@ class DisplayTab(QWidget):
         Args:
             combo_idx: Index of the combination to set up arrays for.
         """
-        if self.deformation_result is None or self.current_mesh is None:
-            return
-        
-        result = self.deformation_result
-        
-        # Validate combination index
-        if combo_idx < 0 or combo_idx >= result.num_combinations:
-            print(f"DisplayTab: Invalid combination index {combo_idx} for displacement")
-            return
-        
-        # Get displacement components for this combination
-        ux = result.all_combo_ux[combo_idx, :]
-        uy = result.all_combo_uy[combo_idx, :]
-        uz = result.all_combo_uz[combo_idx, :]
-        
-        # Add arrays to mesh
-        self.current_mesh['UX'] = ux
-        self.current_mesh['UY'] = uy
-        self.current_mesh['UZ'] = uz
-        self.current_mesh['U_mag'] = np.sqrt(ux**2 + uy**2 + uz**2)
+        from ui.handlers.display_mesh_arrays import attach_deformation_specific_arrays
+
+        attach_deformation_specific_arrays(self.current_mesh, self.deformation_result, combo_idx)
     
     @pyqtSlot(int)
     def _on_force_component_changed(self, index: int):
         """
         Handle force component selection change.
         
-        Switches the displayed force component (FX, FY, FZ, Magnitude, or Shear).
-        
         Args:
             index: New component index from the dropdown.
         """
-        if self.current_mesh is None:
-            return
-        
-        # Map index to array name
-        component_map = {
-            0: 'Force_Magnitude',
-            1: 'FX',
-            2: 'FY',
-            3: 'FZ',
-            4: 'Shear_XY',
-            5: 'Shear_XZ',
-            6: 'Shear_YZ'
-        }
-        
-        array_name = component_map.get(index, 'Force_Magnitude')
-
-        # In envelope view, map to max/min component envelopes based on display selection
-        is_envelope_view = self.view_combination_combo is not None and self.view_combination_combo.currentIndex() == 0
-        wants_min = "Min" in self.scalar_display_combo.currentText()
-        if is_envelope_view:
-            if array_name == 'Force_Magnitude':
-                candidate = 'Min_Force_Magnitude' if wants_min else 'Max_Force_Magnitude'
-                if candidate in self.current_mesh.array_names:
-                    array_name = candidate
-            elif array_name in ('FX', 'FY', 'FZ', 'Shear_XY', 'Shear_XZ', 'Shear_YZ'):
-                prefix = 'Min_' if wants_min else 'Max_'
-                candidate = f"{prefix}{array_name}"
-                if candidate in self.current_mesh.array_names:
-                    array_name = candidate
-        
-        # For envelope view, Force_Magnitude might be stored as Max_Force_Magnitude
-        if array_name == 'Force_Magnitude' and 'Force_Magnitude' not in self.current_mesh.array_names:
-            if 'Max_Force_Magnitude' in self.current_mesh.array_names:
-                array_name = 'Max_Force_Magnitude'
-        # Backward-compatible fallback for legacy shear naming
-        if array_name == 'Shear_YZ' and array_name not in self.current_mesh.array_names:
-            if 'Shear_Force' in self.current_mesh.array_names:
-                array_name = 'Shear_Force'
-        
-        # Check if array exists in mesh
-        if array_name not in self.current_mesh.array_names:
-            print(f"DisplayTab: Array '{array_name}' not found in mesh. Available: {self.current_mesh.array_names}")
-            return
-        
-        # Set active scalars and update visualization
-        self.current_mesh.set_active_scalars(array_name)
-        
-        # Update legend title
-        force_unit = "N"
-        if self.nodal_forces_result is not None:
-            force_unit = self.nodal_forces_result.force_unit
-        
-        # Use display-friendly names for legend
-        display_name = array_name
-        if array_name in ('Max_Force_Magnitude', 'Min_Force_Magnitude'):
-            display_name = 'Force_Magnitude'
-        
-        component_labels = {
-            'Force_Magnitude': f'Force_Magnitude [{force_unit}]',
-            'Max_Force_Magnitude': f'Force_Magnitude [{force_unit}]',
-            'Min_Force_Magnitude': f'Force_Magnitude [{force_unit}]',
-            'FX': f'FX [{force_unit}]',
-            'FY': f'FY [{force_unit}]',
-            'FZ': f'FZ [{force_unit}]',
-            'Max_FX': f'Max_FX [{force_unit}]',
-            'Min_FX': f'Min_FX [{force_unit}]',
-            'Max_FY': f'Max_FY [{force_unit}]',
-            'Min_FY': f'Min_FY [{force_unit}]',
-            'Max_FZ': f'Max_FZ [{force_unit}]',
-            'Min_FZ': f'Min_FZ [{force_unit}]',
-            'Shear_XY': f'Shear_XY [{force_unit}]',
-            'Shear_XZ': f'Shear_XZ [{force_unit}]',
-            'Shear_YZ': f'Shear_YZ [{force_unit}]',
-            'Max_Shear_XY': f'Max_Shear_XY [{force_unit}]',
-            'Min_Shear_XY': f'Min_Shear_XY [{force_unit}]',
-            'Max_Shear_XZ': f'Max_Shear_XZ [{force_unit}]',
-            'Min_Shear_XZ': f'Min_Shear_XZ [{force_unit}]',
-            'Max_Shear_YZ': f'Max_Shear_YZ [{force_unit}]',
-            'Min_Shear_YZ': f'Min_Shear_YZ [{force_unit}]',
-            'Shear_Force': f'Shear_YZ [{force_unit}]'
-        }
-        
-        self.data_column = component_labels.get(array_name, f'{array_name} [{force_unit}]')
-        self.state.data_column = self.data_column
-        
-        # Update scalar range based on selected component's data
-        data = self.current_mesh[array_name]
-        data_min = float(np.min(data))
-        data_max = float(np.max(data))
-        
-        self.scalar_min_spin.blockSignals(True)
-        self.scalar_max_spin.blockSignals(True)
-        self.scalar_min_spin.setRange(data_min, data_max)
-        self.scalar_max_spin.setRange(data_min, 1e30)
-        self.scalar_min_spin.setValue(data_min)
-        self.scalar_max_spin.setValue(data_max)
-        self.scalar_min_spin.blockSignals(False)
-        self.scalar_max_spin.blockSignals(False)
-        
-        # Refresh visualization
-        self.update_visualization()
-        
-        print(f"DisplayTab: Switched to force component '{display_name}'")
+        self.contour_sync_handler.on_force_component_changed(index)
     
     def _on_export_forces_clicked(self):
         """Handle click on Export Forces CSV button."""
@@ -793,70 +464,15 @@ class DisplayTab(QWidget):
         if show:
             self._update_force_component_options(has_beam_nodes)
     
+    @pyqtSlot(int)
     def _on_displacement_component_changed(self, index: int):
         """
         Handle displacement component selection change.
         
-        Switches the displayed displacement component (UX, UY, UZ, or U_mag).
-        
         Args:
             index: New component index from the dropdown.
         """
-        if self.current_mesh is None or self.deformation_result is None:
-            return
-        
-        # Map index to array name
-        # Combo order: U_mag, UX, UY, UZ
-        component_map = {
-            0: 'U_mag',
-            1: 'UX',
-            2: 'UY',
-            3: 'UZ'
-        }
-        
-        array_name = component_map.get(index, 'U_mag')
-        
-        # Check if array exists in mesh
-        if array_name not in self.current_mesh.array_names:
-            print(f"DisplayTab: Array '{array_name}' not found in mesh. Available: {self.current_mesh.array_names}")
-            return
-        
-        # Set active scalars and update visualization
-        self.current_mesh.set_active_scalars(array_name)
-        
-        # Update legend title
-        disp_unit = "mm"
-        if self.deformation_result is not None:
-            disp_unit = self.deformation_result.displacement_unit
-        
-        component_labels = {
-            'U_mag': f'U_mag [{disp_unit}]',
-            'UX': f'UX [{disp_unit}]',
-            'UY': f'UY [{disp_unit}]',
-            'UZ': f'UZ [{disp_unit}]'
-        }
-        
-        self.data_column = component_labels.get(array_name, f'{array_name} [{disp_unit}]')
-        self.state.data_column = self.data_column
-        
-        # Update scalar range based on selected component's data
-        data = self.current_mesh[array_name]
-        data_min = float(np.min(data))
-        data_max = float(np.max(data))
-        
-        self.scalar_min_spin.blockSignals(True)
-        self.scalar_max_spin.blockSignals(True)
-        self.scalar_min_spin.setRange(data_min, data_max)
-        self.scalar_max_spin.setRange(data_min, 1e30)
-        self.scalar_min_spin.setValue(data_min)
-        self.scalar_max_spin.setValue(data_max)
-        self.scalar_min_spin.blockSignals(False)
-        self.scalar_max_spin.blockSignals(False)
-        
-        # Refresh visualization
-        self.update_visualization()
-        
-        print(f"DisplayTab: Switched to displacement component '{array_name}'")
+        self.contour_sync_handler.on_displacement_component_changed(index)
     
     def _on_export_output_clicked(self):
         """Handle click on Export Output CSV button."""
@@ -1094,6 +710,10 @@ class DisplayTab(QWidget):
             data_min: Minimum data value.
             data_max: Maximum data value.
         """
+        # TODO(emre): Manual validation after contour refactor:
+        # - Verify whether the reported deformations are true on the contour.
+        # - Verify whether legend updates properly, especially for deformation results.
+        # - Verify whether hover annotation results are correct for deformations.
         # Update current mesh and track state
         self.current_mesh = mesh
         self.state.current_mesh = mesh
@@ -1151,87 +771,18 @@ class DisplayTab(QWidget):
             self.nodal_forces_result = None
             self.deformation_result = None
         
-        # Populate scalar display options if this is batch solve result
-        has_min_data = "Min_Stress" in mesh.array_names
-        has_force_data = "Max_Force_Magnitude" in mesh.array_names
+        # Deformation scale controls depend only on deformation availability
+        has_deformation = (
+            self.deformation_result is not None
+            or "Max_U_mag" in mesh.array_names
+            or "Min_U_mag" in mesh.array_names
+            or "Def_Max_U_mag" in mesh.array_names
+            or "U_mag" in mesh.array_names
+        )
+        self._update_deformation_controls(has_deformation)
         
-        if "Max_Stress" in mesh.array_names or has_min_data:
-            # Stress results
-            self.populate_scalar_display_options(result_type or "von_mises", has_min_data)
-            
-            # Populate view combination dropdown if we have combination names and all results
-            if self.combination_names and self.all_combo_results is not None:
-                self.populate_view_combination_options(self.combination_names)
-            else:
-                # Hide view combination controls if no individual results available
-                self.view_combination_label.setVisible(False)
-                self.view_combination_combo.setVisible(False)
-        elif has_force_data:
-            # Force results - use simplified options
-            self.scalar_display_combo.blockSignals(True)
-            self.scalar_display_combo.clear()
-            self.scalar_display_combo.addItem("Max Value")
-            self.scalar_display_combo.addItem("Combo # of Max")
-            if "Min_Force_Magnitude" in mesh.array_names:
-                self.scalar_display_combo.addItem("Min Value")
-                self.scalar_display_combo.addItem("Combo # of Min")
-            self.scalar_display_combo.setCurrentIndex(0)
-            self.scalar_display_combo.blockSignals(False)
-            self.scalar_display_label.setVisible(True)
-            self.scalar_display_combo.setVisible(True)
-            
-            # Populate view combination dropdown for forces
-            if self.combination_names and self.nodal_forces_result is not None:
-                self.populate_view_combination_options(self.combination_names)
-                
-                # Show force component controls (with Shear option if beam nodes present)
-                has_beam_nodes = self.nodal_forces_result.has_beam_nodes
-                self._show_force_component_controls(True, has_beam_nodes)
-            else:
-                self.view_combination_label.setVisible(False)
-                self.view_combination_combo.setVisible(False)
-                self._show_force_component_controls(False)
-        else:
-            # Hide scalar display controls for non-batch results
-            self.scalar_display_label.setVisible(False)
-            self.scalar_display_combo.setVisible(False)
-            self.view_combination_label.setVisible(False)
-            self.view_combination_combo.setVisible(False)
-        
-        # Handle deformation controls visibility and deformation scale controls
-        has_deformation = "Max_U_mag" in mesh.array_names or "U_mag" in mesh.array_names
-        if self.deformation_result is not None or has_deformation:
-            self._show_displacement_component_controls(True)
-            # Show deformation scale controls
-            self.deformation_scale_label.setVisible(True)
-            self.deformation_scale_edit.setVisible(True)
-            
-            # If this is a deformation-only result, also populate view combination options
-            if has_deformation and "Max_Stress" not in mesh.array_names and not has_force_data:
-                # Deformation-only result - set up scalar display options for displacement
-                self.scalar_display_combo.blockSignals(True)
-                self.scalar_display_combo.clear()
-                self.scalar_display_combo.addItem("Max Value")
-                self.scalar_display_combo.addItem("Combo # of Max")
-                if "Min_U_mag" in mesh.array_names:
-                    self.scalar_display_combo.addItem("Min Value")
-                    self.scalar_display_combo.addItem("Combo # of Min")
-                self.scalar_display_combo.setCurrentIndex(0)
-                self.scalar_display_combo.blockSignals(False)
-                self.scalar_display_label.setVisible(True)
-                self.scalar_display_combo.setVisible(True)
-                
-                # Populate view combination dropdown for deformation
-                if self.combination_names and self.deformation_result is not None:
-                    self.populate_view_combination_options(self.combination_names)
-        else:
-            self._show_displacement_component_controls(False)
-            # Hide deformation scale controls if no deformation
-            self.deformation_scale_label.setVisible(False)
-            self.deformation_scale_edit.setVisible(False)
-        
-        # Update the visualization
-        self.update_visualization()
+        # Synchronize contour families/options and update visualization
+        self.contour_sync_handler.sync_from_current_state()
         
         # Clear file path since this is computed data, not loaded from file
         self.file_path.clear()
@@ -1292,6 +843,19 @@ class DisplayTab(QWidget):
         
         # Hide force component controls
         self._show_force_component_controls(False)
+        self._show_displacement_component_controls(False)
+
+        # Reset contour selector
+        self.state.current_contour_type = None
+        self.current_contour_type = None
+        if self.contour_type_combo is not None:
+            self.contour_type_combo.blockSignals(True)
+            self.contour_type_combo.clear()
+            self.contour_type_combo.addItems(["Stress", "Forces", "Deformation"])
+            self.contour_type_combo.blockSignals(False)
+            self.contour_type_combo.setVisible(False)
+        if self.contour_type_label is not None:
+            self.contour_type_label.setVisible(False)
         
         # Hide export output button
         if self.export_output_button is not None:
