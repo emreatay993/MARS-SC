@@ -40,7 +40,7 @@ from ui.styles.style_constants import (
     BUTTON_STYLE, GROUP_BOX_STYLE, TAB_STYLE, READONLY_INPUT_STYLE,
     CHECKBOX_STYLE, CONSOLE_STYLE, PROGRESS_BAR_STYLE
 )
-from ui.widgets.plotting import MatplotlibWidget, PlotlyWidget, PlotlyMaxWidget
+from ui.widgets.plotting import MatplotlibWidget, PlotlyMaxWidget
 from ui.widgets.collapsible_group import CollapsibleGroupBoxStyled
 
 
@@ -623,43 +623,6 @@ class SolverTabUIBuilder:
         
         return solve_button
     
-    def build_export_section(self):
-        """
-        Build the export controls section.
-        
-        Returns:
-            QGroupBox: Group box containing export controls.
-        """
-        export_layout = QHBoxLayout()
-        
-        # Single combination export
-        single_combo_label = QLabel("Export single combination:")
-        single_combo_dropdown = QComboBox()
-        single_combo_dropdown.setMinimumWidth(150)
-        single_combo_dropdown.setEnabled(False)
-        single_combo_dropdown.addItem("(Run analysis first)")
-        
-        export_single_btn = QPushButton("Export CSV")
-        export_single_btn.setStyleSheet(BUTTON_STYLE)
-        export_single_btn.setFont(QFont('Arial', 8))
-        export_single_btn.setEnabled(False)
-        
-        export_layout.addWidget(single_combo_label)
-        export_layout.addWidget(single_combo_dropdown)
-        export_layout.addWidget(export_single_btn)
-        export_layout.addStretch()
-        
-        export_group = QGroupBox("Export Results")
-        export_group.setStyleSheet(GROUP_BOX_STYLE)
-        export_group.setLayout(export_layout)
-        export_group.setVisible(False)  # Show after analysis
-        
-        self.components['single_combo_dropdown'] = single_combo_dropdown
-        self.components['export_single_btn'] = export_single_btn
-        self.components['export_group'] = export_group
-        
-        return export_group
-    
     def set_window_palette(self, widget):
         """
         Set the window background color palette.
@@ -682,7 +645,6 @@ class SolverTabUIBuilder:
         output_group = self.build_output_selection_section()
         single_node_group = self.build_single_node_section()
         plasticity_options_group = self.build_plasticity_options_section()
-        export_group = self.build_export_section()
         solve_button = self.build_solve_button()
         console_tabs = self.build_console_tabs_section()
         progress_bar = self.build_progress_section()
@@ -699,7 +661,6 @@ class SolverTabUIBuilder:
         main_layout.addWidget(file_group, 0)
         main_layout.addWidget(combination_table_group, 0)
         main_layout.addLayout(hbox_user_inputs, 0)
-        main_layout.addWidget(export_group, 0)
         main_layout.addWidget(solve_button, 0)
         
         # Console/tabs area gets stretch factor 1 (takes all remaining space)

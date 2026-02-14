@@ -12,7 +12,7 @@ from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QPalette, QColor, QDoubleValidator, QBrush
 from PyQt5.QtWidgets import (
     QMessageBox, QWidget, QDialog, QVBoxLayout,
-    QTableWidgetItem, QFileDialog, QStyledItemDelegate, QLineEdit
+    QTableWidgetItem, QStyledItemDelegate, QLineEdit
 )
 
 from ui.styles.style_constants import NONZERO_COEFFICIENT_BG_COLOR
@@ -59,7 +59,6 @@ class ReadOnlyDelegate(QStyledItemDelegate):
 # Import builders and managers
 from ui.builders.solver_ui import SolverTabUIBuilder
 from ui.handlers.file_handler import SolverFileHandler
-from ui.handlers.ui_state_handler import SolverUIHandler
 from ui.handlers.analysis_handler import SolverAnalysisHandler
 from ui.handlers.log_handler import SolverLogHandler
 from ui.dialogs.material_profile_dialog import MaterialProfileDialog
@@ -111,7 +110,6 @@ class SolverTab(QWidget):
         
         # Handlers
         self.file_handler = SolverFileHandler(self)
-        self.ui_handler = SolverUIHandler(self)
         self.analysis_handler = SolverAnalysisHandler(self)
         self.log_handler = SolverLogHandler(self)
         
@@ -208,11 +206,6 @@ class SolverTab(QWidget):
         self.plasticity_warning_label = self.components['plasticity_warning_label']
         self.plasticity_extrapolation_combo = self.components['plasticity_extrapolation_combo']
         
-        # Export controls
-        self.single_combo_dropdown = self.components['single_combo_dropdown']
-        self.export_single_btn = self.components['export_single_btn']
-        self.export_group = self.components['export_group']
-        
         # Console and plots
         self.console_textbox = self.components['console_textbox']
         self.show_output_tab_widget = self.components['show_output_tab_widget']
@@ -270,9 +263,6 @@ class SolverTab(QWidget):
         
         # Solve button
         self.solve_button.clicked.connect(self._on_solve_clicked)
-        
-        # Export - DEPRECATED: Export functionality moved to Display tab's Export Output CSV button
-        # self.export_single_btn.clicked.connect(self._export_single_combination)
     
     # ========== RST File Loading Callbacks ==========
     
@@ -833,140 +823,14 @@ class SolverTab(QWidget):
     
     def _on_solve_clicked(self):
         """Handle solve button click."""
-        # Validate inputs
-        if not self._validate_inputs():
-            return
-        
-        # Get combination table data
+        # Refresh combination table snapshot for downstream consumers.
         self.combination_table = self.get_combination_table_data()
-        if not self.combination_table:
-            QMessageBox.warning(self, "Invalid Table", "Please enter at least one combination.")
-            return
         
         # Build solver config
         config = self._build_solver_config()
         
         # Run analysis
         self.analysis_handler.solve(config)
-    
-    def _validate_inputs(self) -> bool:
-        """Validate inputs before solving."""
-        if not self.base_rst_loaded:
-            QMessageBox.warning(self, "Missing Input", "Please load a Base Analysis RST file.")
-            return False
-        
-        if not self.combine_rst_loaded:
-            QMessageBox.warning(self, "Missing Input", "Please load an Analysis to Combine RST file.")
-            return False
-        
-        if self.named_selection_combo.currentText().startswith("("):
-            QMessageBox.warning(self, "Missing Input", "Please select a valid Named Selection.")
-            return False
-        
-        if not any([
-            self.von_mises_checkbox.isChecked(),
-            self.max_principal_stress_checkbox.isChecked(),
-            self.min_principal_stress_checkbox.isChecked(),
-            self.nodal_forces_checkbox.isChecked(),
-            self.deformation_checkbox.isChecked()
-        ]):
-            QMessageBox.warning(
-                self,
-                "No Output Selected",
-                "Please select at least one output type (stress, deformation, or nodal forces)."
-            )
-            return False
-        
-        # Validate nodal forces availability if selected
-        if self.nodal_forces_checkbox.isChecked():
-            if not (self.analysis1_data.nodal_forces_available and 
-                    self.analysis2_data.nodal_forces_available):
-                QMessageBox.warning(
-                    self, "Nodal Forces Not Available",
-                    "Nodal forces are not available in one or both RST files.\n\n"
-                    "To enable nodal forces output, ensure 'Write element nodal forces' "
-                    "is enabled in ANSYS Output Controls before running the analysis."
-                )
-                return False
-        
-        # Validate stress outputs are not selected for beam element named selections
-        stress_outputs_selected = any([
-            self.von_mises_checkbox.isChecked(),
-            self.max_principal_stress_checkbox.isChecked(),
-            self.min_principal_stress_checkbox.isChecked()
-        ])
-        
-        if stress_outputs_selected:
-            ns_name = self.get_selected_named_selection()
-            if ns_name:
-                try:
-                    scoping_reader, source_label = self.get_scoping_reader_for_named_selection(ns_name)
-                    has_beams = scoping_reader.check_named_selection_has_beam_elements(ns_name)
-                    if has_beams:
-                        QMessageBox.warning(
-                            self, "Stress Output Not Supported",
-                            f"The selected Named Selection '{ns_name}' contains beam elements.\n\n"
-                            f"Scoping source: {source_label}\n\n"
-                            "Stress tensor output (Von Mises, Max Principal, Min Principal) is not "
-                            "supported for beam elements.\n\n"
-                            "Please either:\n"
-                            "  • Select a Named Selection that contains only solid/shell elements, or\n"
-                            "  • Use 'Nodal Forces' output instead (if available)"
-                        )
-                        return False
-                except Exception as e:
-                    # Log the error but don't block - let the engine handle it
-                    self.console_textbox.append(
-                        f"[Warning] Could not verify element types for named selection: {e}"
-                    )
-        
-        if self.combination_history_checkbox.isChecked():
-            node_text = self.node_line_edit.text().strip()
-            
-            # Check for empty input
-            if not node_text:
-                QMessageBox.warning(
-                    self, "Missing Node ID",
-                    "Please enter a Node ID for combination history mode."
-                )
-                return False
-            
-            # Check for valid positive integer
-            try:
-                node_id = int(node_text)
-                if node_id <= 0:
-                    raise ValueError("Node ID must be positive")
-            except ValueError:
-                QMessageBox.warning(
-                    self, "Invalid Node ID",
-                    f"'{node_text}' is not a valid Node ID.\n\n"
-                    "Please enter a positive integer."
-                )
-                return False
-            
-            # Check if node exists in current scoping (early validation)
-            ns_name = self.get_selected_named_selection()
-            if ns_name:
-                try:
-                    scoping_reader, source_label = self.get_scoping_reader_for_named_selection(ns_name)
-                    scoping = scoping_reader.get_nodal_scoping_from_named_selection(ns_name)
-                    scoping_ids = list(scoping.ids)
-                    if node_id not in scoping_ids:
-                        QMessageBox.warning(
-                            self, "Node Not Found",
-                            f"Node ID {node_id} was not found in Named Selection '{ns_name}'.\n\n"
-                            f"Scoping source: {source_label}\n"
-                            f"The selected Named Selection contains {len(scoping_ids):,} nodes.\n"
-                            f"Please enter a valid Node ID from this selection."
-                        )
-                        return False
-                except Exception as e:
-                    # Log but don't block - let the engine handle validation
-                    self.console_textbox.append(
-                        f"[Warning] Could not validate node ID: {e}"
-                    )
-        
-        return True
     
     def _build_solver_config(self) -> SolverConfig:
         """Build solver configuration from UI state."""
@@ -995,7 +859,12 @@ class SolverTab(QWidget):
         )
         
         if config.combination_history_mode:
-            config.selected_node_id = int(self.node_line_edit.text())
+            node_text = self.node_line_edit.text().strip()
+            try:
+                node_id = int(node_text)
+                config.selected_node_id = node_id if node_id > 0 else None
+            except ValueError:
+                config.selected_node_id = None
         
         # Plasticity config
         if self.plasticity_correction_checkbox.isChecked():
@@ -1069,15 +938,6 @@ class SolverTab(QWidget):
         """Handle stress analysis completion."""
         self.combination_result = result
         
-        # Update export controls - DEPRECATED: Export functionality moved to Display tab
-        # self.single_combo_dropdown.clear()
-        # if result.all_combo_results is not None:
-        #     for name in self.combination_table.combination_names:
-        #         self.single_combo_dropdown.addItem(name)
-        #     self.single_combo_dropdown.setEnabled(True)
-        #     self.export_single_btn.setEnabled(True)
-        #     self.export_group.setVisible(True)
-        
         # Create a PyVista mesh for display tab
         mesh = self._create_mesh_from_result(result)
         
@@ -1099,15 +959,6 @@ class SolverTab(QWidget):
     def on_forces_analysis_complete(self, result: NodalForcesResult):
         """Handle nodal forces analysis completion."""
         self.nodal_forces_result = result
-        
-        # Update export controls for forces - DEPRECATED: Export functionality moved to Display tab
-        # self.single_combo_dropdown.clear()
-        # if result.all_combo_fx is not None:
-        #     for name in self.combination_table.combination_names:
-        #         self.single_combo_dropdown.addItem(name)
-        #     self.single_combo_dropdown.setEnabled(True)
-        #     self.export_single_btn.setEnabled(True)
-        #     self.export_group.setVisible(True)
         
         # Create a PyVista mesh for display tab with force magnitude
         mesh = self._create_mesh_from_forces_result(result)
@@ -1414,66 +1265,6 @@ class SolverTab(QWidget):
         
         # Trigger the solve (this calls _on_solve_clicked internally)
         self._on_solve_clicked()
-    
-    def _export_single_combination(self):
-        """Export a single combination result to CSV (stress or forces)."""
-        # Check if we have either stress or force results
-        if self.combination_result is None and self.nodal_forces_result is None:
-            QMessageBox.warning(self, "No Results", "Run analysis first before exporting.")
-            return
-        
-        combo_idx = self.single_combo_dropdown.currentIndex()
-        combo_name = self.single_combo_dropdown.currentText()
-        
-        # Determine if we're exporting stress or force results
-        if self.combination_result is not None:
-            # Stress results
-            default_filename = f"{combo_name.replace(' ', '_')}_stress.csv"
-            filename, _ = QFileDialog.getSaveFileName(
-                self, f"Export Stress: {combo_name}",
-                default_filename,
-                "CSV Files (*.csv)"
-            )
-            
-            if filename:
-                self.file_handler.export_single_combination_result(
-                    self.combination_result, combo_idx, filename
-                )
-                self.console_textbox.append(f"Exported stress for {combo_name} to {filename}")
-        
-        elif self.nodal_forces_result is not None:
-            # Force results
-            from file_io.exporters import export_nodal_forces_single_combination
-            
-            result = self.nodal_forces_result
-            default_filename = f"{combo_name.replace(' ', '_')}_forces.csv"
-            filename, _ = QFileDialog.getSaveFileName(
-                self, f"Export Forces: {combo_name}",
-                default_filename,
-                "CSV Files (*.csv)"
-            )
-            
-            if filename:
-                # Get force components for this combination
-                fx = result.all_combo_fx[combo_idx, :]
-                fy = result.all_combo_fy[combo_idx, :]
-                fz = result.all_combo_fz[combo_idx, :]
-                
-                export_nodal_forces_single_combination(
-                    filename=filename,
-                    node_ids=result.node_ids,
-                    node_coords=result.node_coords,
-                    fx=fx,
-                    fy=fy,
-                    fz=fz,
-                    combination_index=combo_idx,
-                    combination_name=combo_name,
-                    force_unit=result.force_unit,
-                    coordinate_system=result.coordinate_system,
-                    node_element_types=result.node_element_types,
-                    include_shear=result.has_beam_nodes
-                )
-                self.console_textbox.append(f"Exported forces for {combo_name} to {filename}")
     
     # ========== Plasticity Dialog ==========
     

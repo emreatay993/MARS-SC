@@ -5,7 +5,6 @@ Contains matplotlib- and plotly-based widgets for displaying analysis results.
 
 Key widgets:
 - MatplotlibWidget: Time history / combination history plots with data table
-- PlotlyWidget: Modal coordinate plots (legacy, kept for compatibility)
 - PlotlyMaxWidget: Envelope plots with data table (max/min over combinations)
 """
 
@@ -743,60 +742,6 @@ class MatplotlibWidget(QWidget):
             lines.append('\\t'.join(row_data))
         
         QApplication.clipboard().setText('\\n'.join(lines))
-
-
-class PlotlyWidget(QWidget):
-    """
-    Simple widget for displaying Plotly plots in a web view.
-    
-    Used for displaying modal coordinates over time.
-    """
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.web_view = QWebEngineView(self)
-        layout = QVBoxLayout()
-        layout.addWidget(self.web_view)
-        self.setLayout(layout)
-        
-        # Store last used data for refresh
-        self.last_time_values = None
-        self.last_modal_coord = None
-    
-    def update_plot(self, time_values, modal_coord):
-        """Update the plot with modal coordinate data."""
-        self.last_time_values = time_values
-        self.last_modal_coord = modal_coord
-        
-        fig = go.Figure()
-        num_modes = modal_coord.shape[0]
-        for i in range(num_modes):
-            fig.add_trace(go.Scattergl(
-                x=time_values,
-                y=modal_coord[i, :],
-                mode='lines',
-                name=f'Mode {i + 1}',
-                opacity=0.7
-            ))
-        
-        fig.update_layout(
-            xaxis_title="Time [s]",
-            yaxis_title="Modal Coordinate Value",
-            template="plotly_white",
-            font=dict(size=7),
-            margin=dict(l=40, r=40, t=10, b=0),
-            legend=dict(font=dict(size=7))
-        )
-        
-        # Display
-        main_win = self.window()
-        main_win.plotting_handler.load_fig_to_webview(fig, self.web_view)
-    
-    def clear_plot(self):
-        """Clear the plot."""
-        self.web_view.setHtml("")
-        self.last_time_values = None
-        self.last_modal_coord = None
 
 
 class PlotlyMaxWidget(QWidget):
