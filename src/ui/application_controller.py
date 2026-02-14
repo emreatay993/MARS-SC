@@ -231,10 +231,23 @@ class ApplicationController(QMainWindow):
             self.display_tab.node_picked_signal.connect(
                 self._on_node_picked
             )
+        if hasattr(self.display_tab, 'node_picked_for_history_popup'):
+            self.display_tab.node_picked_for_history_popup.connect(
+                self._on_node_picked_for_history_popup
+            )
     
     @pyqtSlot(int)
     def _on_node_picked(self, node_id: int):
-        """Handle node picking from display tab - triggers combination history analysis."""
+        """Handle generic node picking from display tab (in-tab history output)."""
+        self._trigger_node_history(node_id, popup=False)
+
+    @pyqtSlot(int)
+    def _on_node_picked_for_history_popup(self, node_id: int):
+        """Handle context-menu node picking from display tab (popup history output)."""
+        self._trigger_node_history(node_id, popup=True)
+
+    def _trigger_node_history(self, node_id: int, popup: bool) -> None:
+        """Trigger combination-history solve for a selected node."""
         # Update the node ID in solver tab for combination history mode
         if hasattr(self.solver_tab, 'node_line_edit'):
             self.solver_tab.node_line_edit.setText(str(node_id))
@@ -248,7 +261,10 @@ class ApplicationController(QMainWindow):
             # Trigger the combination history solve automatically
             # This mimics the behavior of original MARS plot_history_for_node
             if hasattr(self.solver_tab, 'plot_combination_history_for_node'):
-                self.solver_tab.plot_combination_history_for_node(node_id)
+                self.solver_tab.plot_combination_history_for_node(
+                    node_id,
+                    open_popup=popup,
+                )
 
     @pyqtSlot(bool)
     def _on_tooltips_toggled(self, checked: bool):

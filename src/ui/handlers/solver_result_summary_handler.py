@@ -28,6 +28,43 @@ class SolverResultSummaryHandler:
     def __init__(self, tab):
         self.tab = tab
 
+    def _show_result_tab(self, tab_page, tab_title: str, make_current: bool = False) -> int:
+        """
+        Ensure a result tab page exists and is visible.
+
+        Tabs are added lazily. If a page already exists but is hidden by visibility APIs,
+        this method re-adds it as a fallback.
+        """
+        tab_widget = self.tab.show_output_tab_widget
+        tab_index = tab_widget.indexOf(tab_page)
+
+        if tab_index < 0:
+            tab_index = tab_widget.addTab(tab_page, tab_title)
+        else:
+            tab_widget.setTabText(tab_index, tab_title)
+
+        # Compatibility fallback for runtimes that keep a hidden page selected.
+        is_tab_visible = getattr(tab_widget, "isTabVisible", None)
+        if callable(is_tab_visible):
+            try:
+                if not is_tab_visible(tab_index):
+                    tab_widget.removeTab(tab_index)
+                    tab_index = tab_widget.addTab(tab_page, tab_title)
+            except Exception:
+                pass
+
+        if make_current:
+            tab_widget.setCurrentIndex(tab_index)
+
+        return tab_index
+
+    def _hide_result_tab(self, tab_page) -> None:
+        """Remove a result tab page when it should not be shown."""
+        tab_widget = self.tab.show_output_tab_widget
+        tab_index = tab_widget.indexOf(tab_page)
+        if tab_index >= 0:
+            tab_widget.removeTab(tab_index)
+
     def handle_stress_history_result(self, result: CombinationResult, config: SolverConfig) -> None:
         """Handle stress history mode result (single node)."""
         metadata = result.metadata or {}
@@ -44,10 +81,20 @@ class SolverResultSummaryHandler:
             combination_names=combo_names,
         )
 
-        plot_idx = self.tab.show_output_tab_widget.indexOf(self.tab.plot_combo_history_tab)
-        if plot_idx >= 0:
-            self.tab.show_output_tab_widget.setTabVisible(plot_idx, True)
-            self.tab.show_output_tab_widget.setCurrentIndex(plot_idx)
+        self._show_result_tab(
+            self.tab.plot_combo_history_tab,
+            "Plot (Combo History)",
+            make_current=True,
+        )
+
+        if getattr(self.tab, "_history_popup_requested", False) and hasattr(self.tab, "_show_history_popup"):
+            self.tab._show_history_popup(
+                combination_indices=combo_indices,
+                stress_values=stress_values,
+                node_id=node_id,
+                combination_names=combo_names,
+                stress_type=result.result_type,
+            )
 
         self.tab.console_textbox.append(
             f"\nCombination history computed for Node {node_id}\n"
@@ -117,59 +164,53 @@ class SolverResultSummaryHandler:
         else:
             combination_indices = np.arange(1)
 
-        max_idx = self.tab.show_output_tab_widget.indexOf(self.tab.plot_max_combo_tab)
-        if max_idx >= 0:
-            if show_max:
-                if max_per_combo is not None:
-                    self.tab.plot_max_combo_tab.update_max_over_combinations_plot(
-                        combination_indices=combination_indices,
-                        max_values_per_combo=max_per_combo,
-                        min_values_per_combo=None,
-                        combination_names=combo_names,
-                        stress_type=result.result_type,
-                    )
-                else:
-                    self.tab.plot_max_combo_tab.update_envelope_plot(
-                        node_ids=result.node_ids,
-                        max_values=result.max_over_combo,
-                        min_values=None,
-                        combo_of_max=result.combo_of_max,
-                        combo_of_min=None,
-                        stress_type=result.result_type,
-                        combination_names=combo_names,
-                        show_top_n=50,
-                    )
-                self.tab.show_output_tab_widget.setTabVisible(max_idx, True)
-                self.tab.show_output_tab_widget.setTabText(max_idx, "Maximum Over Combination")
+        if show_max:
+            if max_per_combo is not None:
+                self.tab.plot_max_combo_tab.update_max_over_combinations_plot(
+                    combination_indices=combination_indices,
+                    max_values_per_combo=max_per_combo,
+                    min_values_per_combo=None,
+                    combination_names=combo_names,
+                    stress_type=result.result_type,
+                )
             else:
-                self.tab.show_output_tab_widget.setTabVisible(max_idx, False)
+                self.tab.plot_max_combo_tab.update_envelope_plot(
+                    node_ids=result.node_ids,
+                    max_values=result.max_over_combo,
+                    min_values=None,
+                    combo_of_max=result.combo_of_max,
+                    combo_of_min=None,
+                    stress_type=result.result_type,
+                    combination_names=combo_names,
+                    show_top_n=50,
+                )
+            self._show_result_tab(self.tab.plot_max_combo_tab, "Maximum Over Combination")
+        else:
+            self._hide_result_tab(self.tab.plot_max_combo_tab)
 
-        min_idx = self.tab.show_output_tab_widget.indexOf(self.tab.plot_min_combo_tab)
-        if min_idx >= 0:
-            if show_min:
-                if min_per_combo is not None:
-                    self.tab.plot_min_combo_tab.update_max_over_combinations_plot(
-                        combination_indices=combination_indices,
-                        max_values_per_combo=None,
-                        min_values_per_combo=min_per_combo,
-                        combination_names=combo_names,
-                        stress_type=result.result_type,
-                    )
-                else:
-                    self.tab.plot_min_combo_tab.update_envelope_plot(
-                        node_ids=result.node_ids,
-                        max_values=None,
-                        min_values=result.min_over_combo,
-                        combo_of_max=None,
-                        combo_of_min=result.combo_of_min,
-                        stress_type=result.result_type,
-                        combination_names=combo_names,
-                        show_top_n=50,
-                    )
-                self.tab.show_output_tab_widget.setTabVisible(min_idx, True)
-                self.tab.show_output_tab_widget.setTabText(min_idx, "Minimum Over Combination")
+        if show_min:
+            if min_per_combo is not None:
+                self.tab.plot_min_combo_tab.update_max_over_combinations_plot(
+                    combination_indices=combination_indices,
+                    max_values_per_combo=None,
+                    min_values_per_combo=min_per_combo,
+                    combination_names=combo_names,
+                    stress_type=result.result_type,
+                )
             else:
-                self.tab.show_output_tab_widget.setTabVisible(min_idx, False)
+                self.tab.plot_min_combo_tab.update_envelope_plot(
+                    node_ids=result.node_ids,
+                    max_values=None,
+                    min_values=result.min_over_combo,
+                    combo_of_max=None,
+                    combo_of_min=result.combo_of_min,
+                    stress_type=result.result_type,
+                    combination_names=combo_names,
+                    show_top_n=50,
+                )
+            self._show_result_tab(self.tab.plot_min_combo_tab, "Minimum Over Combination")
+        else:
+            self._hide_result_tab(self.tab.plot_min_combo_tab)
 
         if used_chunked:
             self.tab.console_textbox.append(
@@ -239,8 +280,7 @@ class SolverResultSummaryHandler:
 
         combo_names = self.tab.combination_table.combination_names if self.tab.combination_table else None
 
-        max_idx = self.tab.show_output_tab_widget.indexOf(self.tab.plot_max_combo_tab)
-        if max_idx >= 0 and result.max_magnitude_over_combo is not None:
+        if result.max_magnitude_over_combo is not None:
             self.tab.plot_max_combo_tab.update_forces_envelope_plot(
                 node_ids=result.node_ids,
                 max_magnitude=result.max_magnitude_over_combo,
@@ -251,11 +291,11 @@ class SolverResultSummaryHandler:
                 force_unit=result.force_unit,
                 show_top_n=50,
             )
-            self.tab.show_output_tab_widget.setTabVisible(max_idx, True)
-            self.tab.show_output_tab_widget.setTabText(max_idx, "Max Forces Over Combination")
+            self._show_result_tab(self.tab.plot_max_combo_tab, "Max Forces Over Combination")
+        else:
+            self._hide_result_tab(self.tab.plot_max_combo_tab)
 
-        min_idx = self.tab.show_output_tab_widget.indexOf(self.tab.plot_min_combo_tab)
-        if min_idx >= 0 and result.min_magnitude_over_combo is not None:
+        if result.min_magnitude_over_combo is not None:
             self.tab.plot_min_combo_tab.update_forces_envelope_plot(
                 node_ids=result.node_ids,
                 max_magnitude=None,
@@ -266,8 +306,9 @@ class SolverResultSummaryHandler:
                 force_unit=result.force_unit,
                 show_top_n=50,
             )
-            self.tab.show_output_tab_widget.setTabVisible(min_idx, True)
-            self.tab.show_output_tab_widget.setTabText(min_idx, "Min Forces Over Combination")
+            self._show_result_tab(self.tab.plot_min_combo_tab, "Min Forces Over Combination")
+        else:
+            self._hide_result_tab(self.tab.plot_min_combo_tab)
 
         output_dir = self.get_output_directory()
         if output_dir:
@@ -299,10 +340,21 @@ class SolverResultSummaryHandler:
             displacement_unit=result.displacement_unit,
         )
 
-        plot_idx = self.tab.show_output_tab_widget.indexOf(self.tab.plot_combo_history_tab)
-        if plot_idx >= 0:
-            self.tab.show_output_tab_widget.setTabVisible(plot_idx, True)
-            self.tab.show_output_tab_widget.setCurrentIndex(plot_idx)
+        self._show_result_tab(
+            self.tab.plot_combo_history_tab,
+            "Plot (Combo History)",
+            make_current=True,
+        )
+
+        if getattr(self.tab, "_history_popup_requested", False) and hasattr(self.tab, "_show_history_popup"):
+            self.tab._show_history_popup(
+                combination_indices=combo_indices,
+                stress_values=None,
+                node_id=node_id,
+                combination_names=combo_names,
+                deformation_data=deformation_data,
+                displacement_unit=result.displacement_unit,
+            )
 
         self.tab.console_textbox.append(
             f"\nDeformation history computed for Node {node_id}\n"

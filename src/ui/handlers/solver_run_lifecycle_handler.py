@@ -102,17 +102,24 @@ class SolverRunLifecycleHandler:
                     is_standalone=is_standalone,
                 )
 
+        if hasattr(self.tab, "_history_popup_requested"):
+            self.tab._history_popup_requested = False
+
         self._log_solve_complete()
 
     def finish_without_results(self) -> None:
         """Reset run-state UI when solve exits without producing any results."""
         self.tab.setEnabled(True)
         self.tab.progress_bar.setVisible(False)
+        if hasattr(self.tab, "_history_popup_requested"):
+            self.tab._history_popup_requested = False
 
     def fail_solve(self, error_msg: str) -> None:
         """Handle unexpected solve failure."""
         self.tab.setEnabled(True)
         self.tab.progress_bar.setVisible(False)
+        if hasattr(self.tab, "_history_popup_requested"):
+            self.tab._history_popup_requested = False
         self.tab.console_textbox.append(f"\nSolver Error:\n{error_msg}\n")
         QMessageBox.critical(
             self.tab,

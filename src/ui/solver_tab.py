@@ -25,6 +25,7 @@ from ui.handlers.solver_output_state_handler import SolverOutputStateHandler
 from ui.handlers.log_handler import SolverLogHandler
 from ui.dialogs.material_profile_dialog import MaterialProfileDialog
 from ui.widgets.console import Logger
+from ui.widgets.plotting import MatplotlibWidget
 from core.data_models import (
     AnalysisData, CombinationTableData, CombinationResult, NodalForcesResult,
     DeformationResult, TemperatureFieldData, MaterialProfileData, SolverConfig
@@ -83,6 +84,8 @@ class SolverTab(QWidget):
 
         # For plotting
         self.plot_dialog = None
+        self.plot_dialog_widget = None
+        self._history_popup_requested = False
         
         # Build UI
         self._build_ui()
@@ -570,7 +573,49 @@ class SolverTab(QWidget):
         if node_text.isdigit():
             self.console_textbox.append(f"Node ID entered: {node_text}")
     
-    def plot_combination_history_for_node(self, node_id: int):
+    def _show_history_popup(
+        self,
+        combination_indices,
+        stress_values=None,
+        node_id=None,
+        combination_names=None,
+        stress_type="von_mises",
+        plasticity_overlay=None,
+        deformation_data=None,
+        displacement_unit="mm",
+    ) -> None:
+        """Show combination-history results in a dedicated popup window."""
+        if self.plot_dialog is None or self.plot_dialog_widget is None:
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Combination History")
+            dialog.setMinimumSize(900, 600)
+            layout = QVBoxLayout(dialog)
+            plot_widget = MatplotlibWidget(dialog)
+            layout.addWidget(plot_widget)
+            dialog.setLayout(layout)
+            self.plot_dialog = dialog
+            self.plot_dialog_widget = plot_widget
+
+        if node_id is not None:
+            self.plot_dialog.setWindowTitle(f"Combination History - Node {node_id}")
+        else:
+            self.plot_dialog.setWindowTitle("Combination History")
+
+        self.plot_dialog_widget.update_combination_history_plot(
+            combination_indices=combination_indices,
+            stress_values=stress_values,
+            node_id=node_id,
+            combination_names=combination_names,
+            stress_type=stress_type,
+            plasticity_overlay=plasticity_overlay,
+            deformation_data=deformation_data,
+            displacement_unit=displacement_unit,
+        )
+        self.plot_dialog.show()
+        self.plot_dialog.raise_()
+        self.plot_dialog.activateWindow()
+
+    def plot_combination_history_for_node(self, node_id: int, open_popup: bool = False):
         """
         Trigger combination history analysis for a specific node.
         
@@ -580,9 +625,11 @@ class SolverTab(QWidget):
         
         Args:
             node_id: The node ID to compute combination history for.
+            open_popup: If True, also show history results in a separate popup window.
         """
         # Update node ID in the UI
         self.node_line_edit.setText(str(node_id))
+        self._history_popup_requested = bool(open_popup)
         
         # Enable combination history mode
         if not self.combination_history_checkbox.isChecked():

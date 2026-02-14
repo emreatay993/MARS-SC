@@ -26,12 +26,14 @@ class DisplayTab(QWidget):
     """
     3D FEA results view. Builders wire up the UI; VisualizationManager and HotspotDetector do the heavy lifting.
 
-    Signals: node_picked_signal(int), time_point_update_requested(float, dict),
+    Signals: node_picked_signal(int), node_picked_for_history_popup(int),
+    time_point_update_requested(float, dict),
     combination_update_requested(int, dict).
     """
     
     # Signals
     node_picked_signal = pyqtSignal(int)
+    node_picked_for_history_popup = pyqtSignal(int)
     time_point_update_requested = pyqtSignal(float, dict)
     combination_update_requested = pyqtSignal(int, dict)  # (combo_index, options)
     

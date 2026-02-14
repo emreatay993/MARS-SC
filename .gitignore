@@ -1,3 +1,24 @@
 /venv/
 /modal_analysis/.venv/
 /MARS_original_base/
+
+# Project virtual environments
+/.venv/
+/env/
+
+# Python caches and tooling state
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE/editor folders
+/.idea/
+/.cursor/
+
+# Generated MARS-SC outputs that should not be committed in source tree
+/src/anan.csv
+/src/ui/handlers/*.csv
+/src/ui/handlers/*.dat

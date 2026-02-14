@@ -558,27 +558,16 @@ class SolverTabUIBuilder:
         show_output_tab_widget.setStyleSheet(TAB_STYLE)
         show_output_tab_widget.addTab(console_textbox, "Console")
         
-        # Matplotlib plot for combination history
+        # Plot tabs are created up-front but added lazily when data is available.
+        # This avoids reliance on setTabVisible behavior across Qt builds.
         plot_combo_history_tab = MatplotlibWidget()
         plot_combo_history_tab.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        show_output_tab_widget.addTab(plot_combo_history_tab, "Plot (Combo History)")
-        show_output_tab_widget.setTabVisible(
-            show_output_tab_widget.indexOf(plot_combo_history_tab), False
-        )
         
         # Plotly plot for max over combinations (uses PlotlyMaxWidget with update_envelope_plot)
         plot_max_combo_tab = PlotlyMaxWidget()
-        show_output_tab_widget.addTab(plot_max_combo_tab, "Maximum Over Combination")
-        show_output_tab_widget.setTabVisible(
-            show_output_tab_widget.indexOf(plot_max_combo_tab), False
-        )
         
         # Plotly plot for min over combinations (uses PlotlyMaxWidget with update_envelope_plot)
         plot_min_combo_tab = PlotlyMaxWidget()
-        show_output_tab_widget.addTab(plot_min_combo_tab, "Minimum Over Combination")
-        show_output_tab_widget.setTabVisible(
-            show_output_tab_widget.indexOf(plot_min_combo_tab), False
-        )
         
         # Store components
         self.components['console_textbox'] = console_textbox
