@@ -1,12 +1,12 @@
 # FILE_INDEX
 
-Generated: `2026-02-14 23:56:49`
+Generated: `2026-02-19 23:31:18`
 
 ## Scope
 
 - Source root: `src/`
 - Python modules indexed: `64`
-- Total Python lines (physical): `20423`
+- Total Python lines (physical): `20474`
 - Line counts include blank lines and comments.
 - Descriptions come from each module's top docstring (first sentence when possible).
 
@@ -18,7 +18,7 @@ Generated: `2026-02-14 23:56:49`
 | `core` | 4 | 1001 |
 | `file_io` | 5 | 3512 |
 | `solver` | 5 | 3001 |
-| `ui` | 45 | 12309 |
+| `ui` | 45 | 12360 |
 | `utils` | 3 | 553 |
 
 ## Module Index
@@ -57,7 +57,7 @@ Generated: `2026-02-14 23:56:49`
 | `src/ui/handlers/display_contour_types.py` | `src.ui.handlers.display_contour_types` | 9 | 0 | 0 | No module docstring. |
 | `src/ui/handlers/display_export_handler.py` | `src.ui.handlers.display_export_handler` | 789 | 1 | 0 | Export-related functionality for the Display tab. |
 | `src/ui/handlers/display_file_handler.py` | `src.ui.handlers.display_file_handler` | 272 | 1 | 0 | File loading logic for the Display tab. |
-| `src/ui/handlers/display_interaction_handler.py` | `src.ui.handlers.display_interaction_handler` | 712 | 1 | 0 | Node interaction, picking, and hotspot analysis for the Display tab. |
+| `src/ui/handlers/display_interaction_handler.py` | `src.ui.handlers.display_interaction_handler` | 736 | 1 | 0 | Node interaction, picking, and hotspot analysis for the Display tab. |
 | `src/ui/handlers/display_mesh_arrays.py` | `src.ui.handlers.display_mesh_arrays` | 167 | 0 | 0 | No module docstring. |
 | `src/ui/handlers/display_results_handler.py` | `src.ui.handlers.display_results_handler` | 115 | 1 | 0 | Helpers for applying solver output datasets to the Display tab. |
 | `src/ui/handlers/display_state.py` | `src.ui.handlers.display_state` | 44 | 1 | 0 | Shared state container for the Display tab. |
@@ -65,7 +65,7 @@ Generated: `2026-02-14 23:56:49`
 | `src/ui/handlers/file_handler.py` | `src.ui.handlers.file_handler` | 368 | 2 | 0 | Solver tab file I/O: file dialogs, loading RST via DPF, import/export of combination tables, and updating the tab state/UI. |
 | `src/ui/handlers/log_handler.py` | `src.ui.handlers.log_handler` | 113 | 1 | 0 | Formats and writes log lines to the Solver tab console. |
 | `src/ui/handlers/navigator_handler.py` | `src.ui.handlers.navigator_handler` | 55 | 1 | 0 | Handles user interactions with the File Navigator dock, such as selecting project directories and opening files. |
-| `src/ui/handlers/plotting_handler.py` | `src.ui.handlers.plotting_handler` | 63 | 1 | 0 | Handles plotting operations, such as loading Plotly figures into WebViews and managing temporary files. |
+| `src/ui/handlers/plotting_handler.py` | `src.ui.handlers.plotting_handler` | 65 | 1 | 0 | Handles plotting operations, such as loading Plotly figures into WebViews and managing temporary files. |
 | `src/ui/handlers/solve_run_controller.py` | `src.ui.handlers.solve_run_controller` | 124 | 1 | 0 | Orchestration for solver-tab analysis runs. |
 | `src/ui/handlers/solver_combination_table_handler.py` | `src.ui.handlers.solver_combination_table_handler` | 224 | 3 | 0 | Combination-table handling for the solver tab. |
 | `src/ui/handlers/solver_engine_factory.py` | `src.ui.handlers.solver_engine_factory` | 76 | 1 | 0 | Engine creation helpers for solver analysis. |
@@ -85,7 +85,7 @@ Generated: `2026-02-14 23:56:49`
 | `src/ui/widgets/console.py` | `src.ui.widgets.console` | 64 | 1 | 0 | Console logger widget for MARS-SC (Solution Combination). |
 | `src/ui/widgets/dialogs.py` | `src.ui.widgets.dialogs` | 97 | 1 | 0 | Dialog widgets for MARS-SC (Solution Combination). |
 | `src/ui/widgets/editable_table.py` | `src.ui.widgets.editable_table` | 269 | 1 | 0 | Generic editable table widget with copy/paste helpers and trailing blank row. |
-| `src/ui/widgets/plotting.py` | `src.ui.widgets.plotting` | 1570 | 2 | 0 | Plotting widgets for MARS-SC (Solution Combination). |
+| `src/ui/widgets/plotting.py` | `src.ui.widgets.plotting` | 1595 | 2 | 0 | Plotting widgets for MARS-SC (Solution Combination). |
 | `src/utils/__init__.py` | `src.utils.__init__` | 2 | 0 | 0 | Utility functions and helpers. |
 | `src/utils/constants.py` | `src.utils.constants` | 43 | 0 | 0 | Global constants, configuration settings, and UI styles for MARS-SC (Solution Combination). |
 | `src/utils/tooltips.py` | `src.utils.tooltips` | 508 | 0 | 0 | Tooltip text constants for MARS-SC (Solution Combination). |

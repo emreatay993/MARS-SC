@@ -513,7 +513,7 @@ class DisplayInteractionHandler(DisplayBaseHandler):
     # Node navigation & tracking
     # ------------------------------------------------------------------
     def go_to_node(self, checked: bool = False) -> None:
-        """Prompt for a Node ID and move the camera to that node."""
+        """Prompt for a Node ID and mark/track that node without changing view."""
         if not self.tab.current_mesh or 'NodeID' not in self.tab.current_mesh.array_names:
             QMessageBox.warning(
                 self.tab, "Action Unavailable",
@@ -529,6 +529,8 @@ class DisplayInteractionHandler(DisplayBaseHandler):
             return
 
         try:
+            # Capture camera before adding actors so the existing view is preserved.
+            camera_before_focus = self._capture_camera_position()
             self.clear_goto_node_markers()
 
             node_indices = np.where(self.tab.current_mesh['NodeID'] == node_id)[0]
@@ -546,6 +548,7 @@ class DisplayInteractionHandler(DisplayBaseHandler):
                 point_size=self.tab.point_size.value() * 2,
                 render_points_as_spheres=True,
                 opacity=0.3,
+                reset_camera=False,
             )
 
             label_point_data = pv.PolyData([point_coords])
@@ -553,7 +556,8 @@ class DisplayInteractionHandler(DisplayBaseHandler):
                 label_point_data, [f"Node {node_id}"],
                 name="target_node_label",
                 font_size=16, text_color='red',
-                always_visible=True, show_points=False
+                always_visible=True, show_points=False,
+                reset_camera=False,
             )
 
             self.set_state_attr("marker_poly", marker_poly)
@@ -564,7 +568,7 @@ class DisplayInteractionHandler(DisplayBaseHandler):
             self.set_state_attr("target_node_id", int(node_id))
             self.set_state_attr("last_goto_node_id", int(node_id))
 
-            self.tab.plotter.fly_to(point_coords)
+            self._restore_camera_position(camera_before_focus)
 
         except Exception as exc:
             QMessageBox.critical(self.tab, "Error", f"Could not go to node {node_id}: {exc}")
@@ -702,6 +706,26 @@ class DisplayInteractionHandler(DisplayBaseHandler):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+    def _capture_camera_position(self) -> Optional[tuple]:
+        """Return a detached camera-position tuple suitable for later restoration."""
+        camera_position = getattr(self.tab.plotter, "camera_position", None)
+        if not isinstance(camera_position, (tuple, list)) or len(camera_position) != 3:
+            return None
+
+        cam_pos, cam_focal, cam_view_up = camera_position
+        return (
+            tuple(np.asarray(cam_pos, dtype=float)),
+            tuple(np.asarray(cam_focal, dtype=float)),
+            tuple(np.asarray(cam_view_up, dtype=float)),
+        )
+
+    def _restore_camera_position(self, camera_position: Optional[tuple]) -> None:
+        """Restore previously captured camera tuple when available."""
+        if not isinstance(camera_position, (tuple, list)) or len(camera_position) != 3:
+            return
+        self.tab.plotter.camera_position = camera_position
+        self.tab.plotter.render()
+
     @staticmethod
     def _add_section_title(menu: QMenu, title: str) -> None:
         """Insert a styled section title into the context menu."""
