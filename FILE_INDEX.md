@@ -1,12 +1,12 @@
 # FILE_INDEX
 
-Generated: `2026-02-19 23:31:18`
+Generated: `2026-02-21 23:16:44`
 
 ## Scope
 
 - Source root: `src/`
-- Python modules indexed: `64`
-- Total Python lines (physical): `20474`
+- Python modules indexed: `65`
+- Total Python lines (physical): `20861`
 - Line counts include blank lines and comments.
 - Descriptions come from each module's top docstring (first sentence when possible).
 
@@ -18,8 +18,8 @@ Generated: `2026-02-19 23:31:18`
 | `core` | 4 | 1001 |
 | `file_io` | 5 | 3512 |
 | `solver` | 5 | 3001 |
-| `ui` | 45 | 12360 |
-| `utils` | 3 | 553 |
+| `ui` | 46 | 12729 |
+| `utils` | 3 | 571 |
 
 ## Module Index
 
@@ -45,20 +45,21 @@ Generated: `2026-02-19 23:31:18`
 | `src/ui/application_controller.py` | `src.ui.application_controller` | 278 | 2 | 0 | Main window for the MARS-SC: Solution Combination application. |
 | `src/ui/builders/__init__.py` | `src.ui.builders.__init__` | 2 | 0 | 0 | UI builders for constructing complex widget layouts. |
 | `src/ui/builders/display_ui.py` | `src.ui.builders.display_ui` | 343 | 1 | 0 | Builds the Display tab UI: 3D view controls, result dropdowns, export buttons, etc. |
-| `src/ui/builders/solver_ui.py` | `src.ui.builders.solver_ui` | 662 | 2 | 0 | Builds the Solver tab UI: RST inputs, combination table, output options, plasticity, console. |
-| `src/ui/dialogs/__init__.py` | `src.ui.dialogs.__init__` | 5 | 0 | 0 | Dialog components for the UI package. |
+| `src/ui/builders/solver_ui.py` | `src.ui.builders.solver_ui` | 669 | 2 | 0 | Builds the Solver tab UI: RST inputs, combination table, output options, plasticity, console. |
+| `src/ui/dialogs/__init__.py` | `src.ui.dialogs.__init__` | 6 | 0 | 0 | Dialog components for the UI package. |
+| `src/ui/dialogs/auto_populate_screening_dialog.py` | `src.ui.dialogs.auto_populate_screening_dialog` | 204 | 1 | 0 | Dialog for auto-generating screening combinations in the solver table. |
 | `src/ui/dialogs/material_profile_dialog.py` | `src.ui.dialogs.material_profile_dialog` | 518 | 1 | 0 | Material profile dialog providing editors for temperature-dependent properties. |
 | `src/ui/display_payload.py` | `src.ui.display_payload` | 34 | 2 | 0 | Typed payloads for solver-to-display communication. |
-| `src/ui/display_tab.py` | `src.ui.display_tab` | 900 | 1 | 0 | Display tab: 3D visualization of FEA results (PyVista). |
+| `src/ui/display_tab.py` | `src.ui.display_tab` | 936 | 1 | 0 | Display tab: 3D visualization of FEA results (PyVista). |
 | `src/ui/handlers/display_base_handler.py` | `src.ui.handlers.display_base_handler` | 26 | 1 | 0 | Base utilities for Display tab handler classes. |
-| `src/ui/handlers/display_contour_context.py` | `src.ui.handlers.display_contour_context` | 144 | 0 | 0 | No module docstring. |
-| `src/ui/handlers/display_contour_policy.py` | `src.ui.handlers.display_contour_policy` | 77 | 0 | 0 | No module docstring. |
-| `src/ui/handlers/display_contour_sync_handler.py` | `src.ui.handlers.display_contour_sync_handler` | 474 | 0 | 0 | No module docstring. |
-| `src/ui/handlers/display_contour_types.py` | `src.ui.handlers.display_contour_types` | 9 | 0 | 0 | No module docstring. |
+| `src/ui/handlers/display_contour_context.py` | `src.ui.handlers.display_contour_context` | 144 | 1 | 3 | No module docstring. |
+| `src/ui/handlers/display_contour_policy.py` | `src.ui.handlers.display_contour_policy` | 77 | 0 | 5 | No module docstring. |
+| `src/ui/handlers/display_contour_sync_handler.py` | `src.ui.handlers.display_contour_sync_handler` | 475 | 1 | 0 | No module docstring. |
+| `src/ui/handlers/display_contour_types.py` | `src.ui.handlers.display_contour_types` | 9 | 1 | 0 | No module docstring. |
 | `src/ui/handlers/display_export_handler.py` | `src.ui.handlers.display_export_handler` | 789 | 1 | 0 | Export-related functionality for the Display tab. |
 | `src/ui/handlers/display_file_handler.py` | `src.ui.handlers.display_file_handler` | 272 | 1 | 0 | File loading logic for the Display tab. |
 | `src/ui/handlers/display_interaction_handler.py` | `src.ui.handlers.display_interaction_handler` | 736 | 1 | 0 | Node interaction, picking, and hotspot analysis for the Display tab. |
-| `src/ui/handlers/display_mesh_arrays.py` | `src.ui.handlers.display_mesh_arrays` | 167 | 0 | 0 | No module docstring. |
+| `src/ui/handlers/display_mesh_arrays.py` | `src.ui.handlers.display_mesh_arrays` | 167 | 0 | 6 | No module docstring. |
 | `src/ui/handlers/display_results_handler.py` | `src.ui.handlers.display_results_handler` | 115 | 1 | 0 | Helpers for applying solver output datasets to the Display tab. |
 | `src/ui/handlers/display_state.py` | `src.ui.handlers.display_state` | 44 | 1 | 0 | Shared state container for the Display tab. |
 | `src/ui/handlers/display_visualization_handler.py` | `src.ui.handlers.display_visualization_handler` | 628 | 1 | 0 | Visualization updates and rendering helpers for the Display tab. |
@@ -67,7 +68,7 @@ Generated: `2026-02-19 23:31:18`
 | `src/ui/handlers/navigator_handler.py` | `src.ui.handlers.navigator_handler` | 55 | 1 | 0 | Handles user interactions with the File Navigator dock, such as selecting project directories and opening files. |
 | `src/ui/handlers/plotting_handler.py` | `src.ui.handlers.plotting_handler` | 65 | 1 | 0 | Handles plotting operations, such as loading Plotly figures into WebViews and managing temporary files. |
 | `src/ui/handlers/solve_run_controller.py` | `src.ui.handlers.solve_run_controller` | 124 | 1 | 0 | Orchestration for solver-tab analysis runs. |
-| `src/ui/handlers/solver_combination_table_handler.py` | `src.ui.handlers.solver_combination_table_handler` | 224 | 3 | 0 | Combination-table handling for the solver tab. |
+| `src/ui/handlers/solver_combination_table_handler.py` | `src.ui.handlers.solver_combination_table_handler` | 300 | 3 | 0 | Combination-table handling for the solver tab. |
 | `src/ui/handlers/solver_engine_factory.py` | `src.ui.handlers.solver_engine_factory` | 76 | 1 | 0 | Engine creation helpers for solver analysis. |
 | `src/ui/handlers/solver_input_validator.py` | `src.ui.handlers.solver_input_validator` | 190 | 1 | 0 | Input validation helpers for Solver analysis runs. |
 | `src/ui/handlers/solver_named_selection_handler.py` | `src.ui.handlers.solver_named_selection_handler` | 129 | 1 | 0 | Named-selection and scoping handling for the solver tab. |
@@ -77,7 +78,7 @@ Generated: `2026-02-19 23:31:18`
 | `src/ui/handlers/solver_result_summary_handler.py` | `src.ui.handlers.solver_result_summary_handler` | 494 | 1 | 0 | UI result handling for analysis runs. |
 | `src/ui/handlers/solver_run_execution_handler.py` | `src.ui.handlers.solver_run_execution_handler` | 294 | 2 | 0 | Execution concern for solver analysis runs. |
 | `src/ui/handlers/solver_run_lifecycle_handler.py` | `src.ui.handlers.solver_run_lifecycle_handler` | 215 | 1 | 0 | Lifecycle/UI concern for solver analysis runs. |
-| `src/ui/solver_tab.py` | `src.ui.solver_tab` | 700 | 1 | 0 | Solver tab: combine stress (and optionally forces/deformation) from two static RST files via linear combination coefficients. |
+| `src/ui/solver_tab.py` | `src.ui.solver_tab` | 744 | 1 | 0 | Solver tab: combine stress (and optionally forces/deformation) from two static RST files via linear combination coefficients. |
 | `src/ui/styles/__init__.py` | `src.ui.styles.__init__` | 1 | 0 | 0 | Styling constants for the app; applied via setStyleSheet(). |
 | `src/ui/styles/style_constants.py` | `src.ui.styles.style_constants` | 380 | 0 | 0 | Qt stylesheet strings for MARS-SC; applied via setStyleSheet(). |
 | `src/ui/widgets/__init__.py` | `src.ui.widgets.__init__` | 6 | 0 | 0 | Reusable UI widgets. |
@@ -88,4 +89,4 @@ Generated: `2026-02-19 23:31:18`
 | `src/ui/widgets/plotting.py` | `src.ui.widgets.plotting` | 1595 | 2 | 0 | Plotting widgets for MARS-SC (Solution Combination). |
 | `src/utils/__init__.py` | `src.utils.__init__` | 2 | 0 | 0 | Utility functions and helpers. |
 | `src/utils/constants.py` | `src.utils.constants` | 43 | 0 | 0 | Global constants, configuration settings, and UI styles for MARS-SC (Solution Combination). |
-| `src/utils/tooltips.py` | `src.utils.tooltips` | 508 | 0 | 0 | Tooltip text constants for MARS-SC (Solution Combination). |
+| `src/utils/tooltips.py` | `src.utils.tooltips` | 526 | 0 | 0 | Tooltip text constants for MARS-SC (Solution Combination). |

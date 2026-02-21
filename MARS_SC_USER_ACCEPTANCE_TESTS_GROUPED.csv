@@ -18,6 +18,7 @@ TEST CASE 4: SOLVER TOOLTIP COVERAGE,,,,,
 ,UAT-TT-005,Import CSV tooltip documents expected headers and prefixes,Application launched,Hover Import CSV button in combination table,HTML tooltip shows Combination Name and Type and accepted coefficient prefixes
 ,UAT-TT-006,Output Options group tooltip explains exclusivity rules,Application launched,Hover Output Options group,Tooltip explains mutual exclusivity and combination-history behavior
 ,UAT-TT-008,Add Row and Delete Row buttons show action tooltips,Application launched,Hover Add Row > Hover Delete Row,Tooltips describe row addition and selected-row deletion
+,UAT-TT-012,Auto Populate Screening button tooltip explains generation behavior,Application launched,Hover Auto Populate Screening button in combination table controls,Tooltip explains fixed A1 coefficient one-row-per-A2-step generation replacement behavior and Skip Substeps note
 TEST CASE 5: DISPLAY TOOLTIP COVERAGE,,,,,
 ,UAT-TT-007,Display Load Visualization tooltip documents required CSV format,Display tab opened,Hover Load Visualization File button,Tooltip explains required X Y Z columns optional NodeID and example header
 TEST CASE 6: GLOBAL TOOLTIP SETTING,,,,,
@@ -25,3 +26,6 @@ TEST CASE 6: GLOBAL TOOLTIP SETTING,,,,,
 ,UAT-TT-010,Tooltip enable state persists across restart,Tooltip toggle changed from default,Close app > Reopen app > Check View menu and hover behavior,Enable Tooltips state and behavior are restored from previous session
 TEST CASE 7: TOOLTIP STYLE CONSISTENCY,,,,,
 ,UAT-TT-011,Tooltip visual style matches sibling MARS_ palette,Application launched,Hover any tooltip and inspect style,Tooltip style matches expected background text border and font settings from MARS_
+TEST CASE 8: AUTO POPULATE SCREENING WORKFLOW,,,,,
+,UAT-CB-001,Auto Populate Screening dialog generates fixed A1 plus swept A2 rows,Both RST files loaded with available A1 and A2 steps,Click Auto Populate Screening > Select A1 reference time/set > Enter A1 and A2 coefficients > Click Generate,Table is replaced with one row per A2 step each row has selected A1 coefficient and exactly one active A2 coefficient while all other A2 coefficients are zero
+,UAT-CB-002,Auto Populate Screening respects Skip Substeps loaded step set,Skip Substeps checked before loading RST files; both RST files loaded,Open Auto Populate Screening dialog > Observe row count preview > Click Generate,Generated row count equals currently loaded A2 step count from Skip Substeps mode and no intermediate substep-only rows are created
