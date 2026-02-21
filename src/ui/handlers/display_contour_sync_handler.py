@@ -270,6 +270,7 @@ class DisplayContourSyncHandler(DisplayBaseHandler):
         finally:
             combo.blockSignals(False)
 
+        self.tab._fit_combo_popup_to_contents(combo)
         label.setVisible(True)
         combo.setVisible(True)
 

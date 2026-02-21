@@ -149,6 +149,7 @@ class DisplayTab(QWidget):
         # View specific combination controls
         self.view_combination_label = self.components['view_combination_label']
         self.view_combination_combo = self.components['view_combination_combo']
+        self._fit_combo_popup_to_contents(self.view_combination_combo)
         
         # Force component controls (for nodal forces visualization)
         self.force_component_label = self.components['force_component_label']
@@ -162,11 +163,42 @@ class DisplayTab(QWidget):
         
         # Combination/Time point controls (MARS-SC: uses combination_combo)
         self.combination_combo = self.components.get('combination_combo')
+        self._fit_combo_popup_to_contents(self.combination_combo)
         self.time_point_spinbox = self.components['time_point_spinbox']
         self.update_time_button = self.components['update_time_button']
         self.save_time_button = self.components['save_time_button']
         self.extract_ic_button = self.components['extract_ic_button']
         self.time_point_group = self.components['time_point_group']
+
+    def _fit_combo_popup_to_contents(self, combo):
+        """
+        Ensure combo popup rows show full item text (no forced ellipsis).
+
+        The combo widget itself can stay compact; the popup width is expanded
+        to fit the longest entry and a horizontal scrollbar is enabled as a fallback.
+        """
+        if combo is None:
+            return
+
+        view = combo.view()
+        if view is None:
+            return
+
+        view.setTextElideMode(Qt.ElideNone)
+        view.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+        if combo.count() == 0:
+            return
+
+        font_metrics = combo.fontMetrics()
+        longest_item_width = max(
+            font_metrics.horizontalAdvance(combo.itemText(i))
+            for i in range(combo.count())
+        )
+
+        # Include popup paddings/checkmark area so full text is visible.
+        popup_width = max(combo.width(), longest_item_width + 48)
+        view.setMinimumWidth(popup_width)
     
     def set_plotting_handler(self, plotting_handler):
         """Set the plotting handler for this display tab."""
@@ -342,6 +374,8 @@ class DisplayTab(QWidget):
         # Add each combination as an option
         for i, name in enumerate(combination_names):
             self.view_combination_combo.addItem(f"{i + 1}: {name}")
+
+        self._fit_combo_popup_to_contents(self.view_combination_combo)
         
         self.view_combination_combo.setCurrentIndex(0)  # Default to envelope view
         self.view_combination_combo.blockSignals(False)
@@ -578,6 +612,7 @@ class DisplayTab(QWidget):
             self.combination_combo.clear()
             if combination_names:
                 self.combination_combo.addItems(combination_names)
+            self._fit_combo_popup_to_contents(self.combination_combo)
             self.time_point_group.setVisible(True)
     
     def get_selected_combination_index(self):
@@ -844,6 +879,7 @@ class DisplayTab(QWidget):
         self.view_combination_combo.blockSignals(True)
         self.view_combination_combo.clear()
         self.view_combination_combo.addItem("(Envelope View)")
+        self._fit_combo_popup_to_contents(self.view_combination_combo)
         self.view_combination_combo.blockSignals(False)
         self.view_combination_label.setVisible(False)
         self.view_combination_combo.setVisible(False)
