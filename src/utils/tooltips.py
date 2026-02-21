@@ -463,6 +463,24 @@ TOOLTIP_DELETE_ROW = (
     "Delete the currently selected combination row."
 )
 
+TOOLTIP_AUTO_POPULATE_SCREENING = (
+    "<html>"
+    "<b>Auto Populate Screening</b><br><br>"
+    "Automatically generates a screening table for fixed-base vs. A2-step checks.<br><br>"
+    "<b>What it creates</b><br>"
+    "- One row per currently loaded <b>Analysis 2</b> load step/time set.<br>"
+    "- A selected <b>Analysis 1</b> time/set is kept active in every row with a constant coefficient.<br>"
+    "- For each generated row, exactly one Analysis 2 step is active with a constant coefficient; "
+    "all other Analysis 2 coefficients are set to <code>0.0</code>.<br><br>"
+    "<b>Formula per generated row</b><br>"
+    "<code>sigma = (A1_selected * a1_const) + (A2_step_j * a2_const)</code><br><br>"
+    "<b>Important</b><br>"
+    "- Existing rows are replaced by the generated rows.<br>"
+    "- Uses the currently loaded step list. If <b>Skip Substeps</b> was enabled before loading RST files, "
+    "only those filtered steps are generated."
+    "</html>"
+)
+
 # =============================================================================
 # Plasticity Options Tooltips
 # =============================================================================

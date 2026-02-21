@@ -143,6 +143,78 @@ class SolverCombinationTableHandler:
         elif self.tab.combo_table.rowCount() > 1:
             self.tab.combo_table.removeRow(self.tab.combo_table.rowCount() - 1)
 
+    def populate_screening_table(
+        self,
+        selected_a1_step_id: int,
+        a1_coeff: float,
+        a2_coeff: float,
+    ) -> int:
+        """
+        Replace table content with fixed-A1 and swept-A2 screening rows.
+
+        Generates one row per Analysis 2 step. In each row:
+        - The selected Analysis 1 step gets ``a1_coeff`` (all other A1 steps are 0).
+        - Exactly one Analysis 2 step gets ``a2_coeff`` (all other A2 steps are 0).
+
+        Returns:
+            Number of generated rows.
+        """
+        if not self.tab.analysis1_data or not self.tab.analysis2_data:
+            raise ValueError("Load both Analysis 1 and Analysis 2 before auto population.")
+
+        a1_steps = list(self.tab.analysis1_data.load_step_ids)
+        a2_steps = list(self.tab.analysis2_data.load_step_ids)
+
+        if not a1_steps:
+            raise ValueError("Analysis 1 has no available steps.")
+        if not a2_steps:
+            raise ValueError("Analysis 2 has no available steps.")
+
+        try:
+            selected_a1_idx = a1_steps.index(selected_a1_step_id)
+        except ValueError as exc:
+            raise ValueError(
+                f"Selected Analysis 1 step ID {selected_a1_step_id} is not available."
+            ) from exc
+
+        # Ensure columns match current analyses before filling rows.
+        self.update_combination_table_columns()
+
+        table = self.tab.combo_table
+        previous_block_state = table.blockSignals(True)
+        try:
+            table.clearSelection()
+            table.setRowCount(len(a2_steps))
+
+            n_a1 = len(a1_steps)
+            a1_label = self.tab.analysis1_data.format_time_label(
+                selected_a1_step_id, prefix="A1"
+            )
+
+            for row, a2_step_id in enumerate(a2_steps):
+                a2_label = self.tab.analysis2_data.format_time_label(a2_step_id, prefix="A2")
+                table.setItem(row, 0, QTableWidgetItem(self._build_screening_name(a1_label, a2_label)))
+                table.setItem(row, 1, self._create_type_item("Linear"))
+
+                # Analysis 1 coefficient columns.
+                for a1_idx in range(n_a1):
+                    coeff = a1_coeff if a1_idx == selected_a1_idx else 0.0
+                    item = QTableWidgetItem(str(coeff))
+                    self.update_coefficient_cell_highlight(item)
+                    table.setItem(row, 2 + a1_idx, item)
+
+                # Analysis 2 coefficient columns (single active step per row).
+                for a2_idx in range(len(a2_steps)):
+                    coeff = a2_coeff if a2_idx == row else 0.0
+                    item = QTableWidgetItem(str(coeff))
+                    self.update_coefficient_cell_highlight(item)
+                    table.setItem(row, 2 + n_a1 + a2_idx, item)
+        finally:
+            table.blockSignals(previous_block_state)
+
+        self.apply_numeric_delegate_to_columns()
+        return len(a2_steps)
+
     def get_combination_table_data(self) -> Optional[CombinationTableData]:
         """Extract ``CombinationTableData`` from the table widget."""
         if not self.tab.analysis1_data or not self.tab.analysis2_data:
@@ -222,3 +294,7 @@ class SolverCombinationTableHandler:
         item.setFlags(item.flags() & ~Qt.ItemIsEditable)
         item.setToolTip("Only 'Linear' combination type is currently supported")
         return item
+
+    @staticmethod
+    def _build_screening_name(a1_label: str, a2_label: str) -> str:
+        return f"Screen: {a1_label} + {a2_label}"

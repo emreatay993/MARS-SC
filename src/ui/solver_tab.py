@@ -24,6 +24,7 @@ from ui.handlers.solver_named_selection_handler import SolverNamedSelectionHandl
 from ui.handlers.solver_output_state_handler import SolverOutputStateHandler
 from ui.handlers.log_handler import SolverLogHandler
 from ui.dialogs.material_profile_dialog import MaterialProfileDialog
+from ui.dialogs.auto_populate_screening_dialog import AutoPopulateScreeningDialog
 from ui.widgets.console import Logger
 from ui.widgets.plotting import MatplotlibWidget
 from core.data_models import (
@@ -137,6 +138,7 @@ class SolverTab(QWidget):
         self.export_csv_btn = self.components['export_csv_btn']
         self.add_row_btn = self.components['add_row_btn']
         self.delete_row_btn = self.components['delete_row_btn']
+        self.auto_populate_screening_btn = self.components['auto_populate_screening_btn']
         
         # Collapsible group boxes (for programmatic collapse/expand)
         self.file_input_group = self.components.get('file_input_group')
@@ -197,6 +199,7 @@ class SolverTab(QWidget):
         self.export_csv_btn.clicked.connect(self.file_handler.export_combination_table)
         self.add_row_btn.clicked.connect(self._add_table_row)
         self.delete_row_btn.clicked.connect(self._delete_table_row)
+        self.auto_populate_screening_btn.clicked.connect(self._open_auto_populate_screening_dialog)
         
         # Connect cell change signal for coefficient highlighting
         self.combo_table.cellChanged.connect(self._on_coefficient_cell_changed)
@@ -403,6 +406,47 @@ class SolverTab(QWidget):
     def _delete_table_row(self):
         """Delete the selected row from the combination table."""
         self.combination_table_handler.delete_table_row()
+
+    def _open_auto_populate_screening_dialog(self):
+        """Open dialog and auto-generate A1-fixed/A2-sweep screening rows."""
+        if not self.analysis1_data or not self.analysis2_data:
+            QMessageBox.warning(
+                self,
+                "Missing Input",
+                "Load both Analysis 1 and Analysis 2 RST files before auto population.",
+            )
+            return
+
+        dialog = AutoPopulateScreeningDialog(
+            analysis1_data=self.analysis1_data,
+            analysis2_data=self.analysis2_data,
+            parent=self,
+        )
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        try:
+            selected_a1_step_id, a1_coeff, a2_coeff = dialog.get_inputs()
+            generated_rows = self.combination_table_handler.populate_screening_table(
+                selected_a1_step_id=selected_a1_step_id,
+                a1_coeff=a1_coeff,
+                a2_coeff=a2_coeff,
+            )
+        except ValueError as error:
+            QMessageBox.warning(self, "Auto Populate Failed", str(error))
+            return
+
+        selected_a1_label = self.analysis1_data.format_time_label(
+            selected_a1_step_id, prefix="A1"
+        )
+        self.console_textbox.append(
+            f"Auto-populated screening table:\n"
+            f"  Rows generated: {generated_rows}\n"
+            f"  Fixed Analysis 1 step: {selected_a1_label} (set {selected_a1_step_id})\n"
+            f"  A1 coefficient: {a1_coeff}\n"
+            f"  A2 coefficient: {a2_coeff}\n"
+            f"  Existing rows were replaced.\n"
+        )
     
     def get_combination_table_data(self) -> Optional[CombinationTableData]:
         """

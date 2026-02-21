@@ -34,7 +34,7 @@ from utils.tooltips import (
     TOOLTIP_DEFORMATION, TOOLTIP_DEFORMATION_CYLINDRICAL_CS,
     TOOLTIP_NAMED_SELECTION, TOOLTIP_NAMED_SELECTION_SOURCE, TOOLTIP_NAMED_SELECTION_REFRESH,
     TOOLTIP_BASE_RST, TOOLTIP_COMBINE_RST, TOOLTIP_COMBINATION_TABLE,
-    TOOLTIP_ADD_ROW, TOOLTIP_DELETE_ROW
+    TOOLTIP_ADD_ROW, TOOLTIP_DELETE_ROW, TOOLTIP_AUTO_POPULATE_SCREENING
 )
 from ui.styles.style_constants import (
     BUTTON_STYLE, GROUP_BOX_STYLE, TAB_STYLE, READONLY_INPUT_STYLE,
@@ -231,6 +231,11 @@ class SolverTabUIBuilder:
         delete_row_btn.setStyleSheet(BUTTON_STYLE)
         delete_row_btn.setFont(QFont('Arial', 8))
         delete_row_btn.setToolTip(TOOLTIP_DELETE_ROW)
+
+        auto_populate_screening_btn = QPushButton("Auto Populate Screening")
+        auto_populate_screening_btn.setStyleSheet(BUTTON_STYLE)
+        auto_populate_screening_btn.setFont(QFont('Arial', 8))
+        auto_populate_screening_btn.setToolTip(TOOLTIP_AUTO_POPULATE_SCREENING)
         
         # Button layout
         btn_layout = QHBoxLayout()
@@ -239,6 +244,7 @@ class SolverTabUIBuilder:
         btn_layout.addStretch()
         btn_layout.addWidget(add_row_btn)
         btn_layout.addWidget(delete_row_btn)
+        btn_layout.addWidget(auto_populate_screening_btn)
         
         # Main layout
         table_layout = QVBoxLayout()
@@ -257,6 +263,7 @@ class SolverTabUIBuilder:
         self.components['export_csv_btn'] = export_csv_btn
         self.components['add_row_btn'] = add_row_btn
         self.components['delete_row_btn'] = delete_row_btn
+        self.components['auto_populate_screening_btn'] = auto_populate_screening_btn
         self.components['combo_table_group'] = table_group
         
         return table_group
