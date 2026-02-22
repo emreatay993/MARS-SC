@@ -1,5 +1,0 @@
-ansys-dpf-core
-PyQt5
-numpy
-psutil
-pytest
