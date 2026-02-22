@@ -244,7 +244,7 @@ class TestExportSingleCombination:
         
         assert len(df) == 4
         assert "Von Mises [MPa]" in df.columns
-        assert df["Combination Index"].iloc[0] == 6
+        assert df["Combination Number"].iloc[0] == 6
         assert df["Combination Name"].iloc[0] == "Test Combination"
     
     def test_export_with_tensor(self, tmp_path):
@@ -280,7 +280,7 @@ class TestExportSingleCombination:
         
         # Verify tensor values
         np.testing.assert_almost_equal(df["Sxx [MPa]"].values, [100, 150])
-        assert df["Combination Index"].iloc[0] == 1
+        assert df["Combination Number"].iloc[0] == 1
 
 
 class TestExportCombinationHistory:

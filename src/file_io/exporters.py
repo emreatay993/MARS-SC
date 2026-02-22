@@ -257,7 +257,7 @@ def export_single_combination(
     
     # Add metadata as columns.
     # combination_index is 0-based internally; export 1-based for user display.
-    df['Combination Index'] = combination_index + 1
+    df['Combination Number'] = combination_index + 1
     df['Combination Name'] = combination_name
     
     df.to_csv(filename, index=False)
@@ -618,7 +618,7 @@ def export_nodal_forces_single_combination(
     df['Coordinate System'] = coordinate_system
     
     # Add combination info
-    df['Combination Index'] = combination_index + 1  # 1-based for user display
+    df['Combination Number'] = combination_index + 1  # 1-based for user display
     df['Combination Name'] = combination_name
     
     df.to_csv(filename, index=False)
@@ -821,7 +821,7 @@ def export_deformation_single_combination(
     df[f'U_mag [{displacement_unit}]'] = magnitude
     
     # Add combination info
-    df['Combination Index'] = combination_index + 1  # 1-based for user display
+    df['Combination Number'] = combination_index + 1  # 1-based for user display
     df['Combination Name'] = combination_name
     
     df.to_csv(filename, index=False)
