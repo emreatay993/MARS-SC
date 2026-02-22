@@ -4,7 +4,6 @@ DisplayTabUIBuilder; visualization/hotspots live in handler classes.
 """
 
 import numpy as np
-import pyvista as pv
 
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
 from PyQt5.QtWidgets import QMessageBox, QWidget
@@ -17,7 +16,6 @@ from ui.handlers.display_file_handler import DisplayFileHandler
 from ui.handlers.display_visualization_handler import DisplayVisualizationHandler
 from ui.handlers.display_interaction_handler import DisplayInteractionHandler
 from ui.handlers.display_export_handler import DisplayExportHandler
-from ui.handlers.display_results_handler import DisplayResultsHandler
 from ui.handlers.display_contour_sync_handler import DisplayContourSyncHandler
 from ui.display_payload import DisplayResultPayload, SolverOutputFlags
 
@@ -27,15 +25,12 @@ class DisplayTab(QWidget):
     3D FEA results view. Builders wire up the UI; VisualizationManager and HotspotDetector do the heavy lifting.
 
     Signals: node_picked_signal(int), node_picked_for_history_popup(int),
-    time_point_update_requested(float, dict),
-    combination_update_requested(int, dict).
+    recompute_corrected_combination_requested(int).
     """
     
     # Signals
     node_picked_signal = pyqtSignal(int)
     node_picked_for_history_popup = pyqtSignal(int)
-    time_point_update_requested = pyqtSignal(float, dict)
-    combination_update_requested = pyqtSignal(int, dict)  # (combo_index, options)
     recompute_corrected_combination_requested = pyqtSignal(int)
     
     def __init__(self, parent=None):
@@ -52,7 +47,6 @@ class DisplayTab(QWidget):
         self.visual_handler = DisplayVisualizationHandler(self, self.state, self.viz_manager)
         self.interaction_handler = DisplayInteractionHandler(self, self.state, self.hotspot_detector)
         self.export_handler = DisplayExportHandler(self, self.state)
-        self.results_handler = DisplayResultsHandler(self, self.state, self.visual_handler)
         self.contour_sync_handler = DisplayContourSyncHandler(self, self.state)
         self.plotting_handler = None
         
@@ -166,11 +160,8 @@ class DisplayTab(QWidget):
         self.displacement_component_combo = self.components.get('displacement_component_combo')
         self.export_output_button = self.components.get('export_output_button')
         
-        # Combination/Time point controls (MARS-SC: uses combination_combo)
-        self.combination_combo = self.components.get('combination_combo')
-        self._fit_combo_popup_to_contents(self.combination_combo)
+        # Time point controls
         self.time_point_spinbox = self.components['time_point_spinbox']
-        self.update_time_button = self.components['update_time_button']
         self.save_time_button = self.components['save_time_button']
         self.time_point_group = self.components['time_point_group']
 
@@ -261,14 +252,7 @@ class DisplayTab(QWidget):
         )
         
         # Combination/Time point controls
-        self.update_time_button.clicked.connect(self.update_time_point_results)
         self.save_time_button.clicked.connect(self.save_time_point_results)
-        
-        # MARS-SC: Connect combination combo if available
-        if self.combination_combo is not None:
-            self.combination_combo.currentIndexChanged.connect(
-                self._on_combination_changed
-            )
         
         # Context menu
         self.plotter.customContextMenuRequested.connect(self.show_context_menu)
@@ -293,38 +277,6 @@ class DisplayTab(QWidget):
         
         return stress_type_labels.get(rt, "Stress")
     
-    def _get_descriptive_legend_title(self, base_name: str, result_type: str = None) -> str:
-        """
-        Generate a descriptive legend title that includes the stress type.
-        
-        Args:
-            base_name: Base name like "Max", "Min", "Combo_0", etc.
-            result_type: Optional result type override. If None, uses self.current_result_type.
-        
-        Returns:
-            Descriptive title like "Max_S_vm [MPa]", "Combo_1_S1 [MPa]".
-        """
-        rt = result_type or self.current_result_type
-        stress_label = self._get_stress_type_label(rt)
-        
-        # Check if we're dealing with force results
-        if self.nodal_forces_result is not None and self.all_combo_results is None:
-            return f"{base_name}_Force [N]"
-        
-        return f"{base_name}_{stress_label} [MPa]"
-    
-    @pyqtSlot(int)
-    def _on_combination_changed(self, index):
-        """
-        Handle combination selection change.
-        
-        Args:
-            index: New combination index.
-        """
-        if index >= 0:
-            combo_name = self.combination_combo.currentText()
-            print(f"DisplayTab: Combination changed to #{index}: {combo_name}")
-
     @pyqtSlot(int)
     def _on_contour_type_changed(self, index):
         """Handle contour family selection changes."""
@@ -443,53 +395,6 @@ class DisplayTab(QWidget):
             button.setEnabled(True)
             button.setText("Recompute This Combination (Corrected)")
     
-    def _show_envelope_view(self):
-        """
-        Switch visualization back to envelope view (Max/Min across combinations).
-        """
-        if self.view_combination_combo is not None:
-            self.view_combination_combo.setCurrentIndex(0)
-        self.contour_sync_handler.sync_from_current_state()
-    
-    def _show_specific_combination(self, combo_idx: int):
-        """
-        Update visualization to show results for a specific combination.
-        
-        Args:
-            combo_idx: Index of the combination to display (0-based).
-        """
-        if self.view_combination_combo is not None:
-            target_index = combo_idx + 1  # index 0 is envelope
-            if 0 <= target_index < self.view_combination_combo.count():
-                self.view_combination_combo.setCurrentIndex(target_index)
-        self.contour_sync_handler.sync_from_current_state()
-    
-    def populate_view_combination_options(self, combination_names: list):
-        """
-        Populate the view combination dropdown with available combinations.
-        
-        Args:
-            combination_names: List of combination names from the combination table.
-        """
-        self.view_combination_combo.blockSignals(True)
-        self.view_combination_combo.clear()
-        
-        # First item is always the envelope view option
-        self.view_combination_combo.addItem("(Envelope View)")
-        
-        # Add each combination as an option
-        for i, name in enumerate(combination_names):
-            self.view_combination_combo.addItem(f"{i + 1}: {name}")
-
-        self._fit_combo_popup_to_contents(self.view_combination_combo)
-        
-        self.view_combination_combo.setCurrentIndex(0)  # Default to envelope view
-        self.view_combination_combo.blockSignals(False)
-        
-        # Show the view combination controls
-        self.view_combination_label.setVisible(True)
-        self.view_combination_combo.setVisible(True)
-    
     def populate_scalar_display_options(self, result_type: str, has_min_data: bool = False):
         """
         Populate the scalar display dropdown based on result type.
@@ -550,34 +455,6 @@ class DisplayTab(QWidget):
         self.force_component_combo.addItems(items)
         self.force_component_combo.setCurrentIndex(0)  # Default to Magnitude
         self.force_component_combo.blockSignals(False)
-    
-    def _setup_force_component_arrays(self, combo_idx: int):
-        """
-        Add force component arrays to mesh for the selected combination.
-        
-        This sets up FX, FY, FZ, Magnitude, and shear arrays
-        on the current mesh for the specified combination.
-        
-        Args:
-            combo_idx: Index of the combination to set up arrays for.
-        """
-        from ui.handlers.display_mesh_arrays import attach_force_component_arrays
-
-        attach_force_component_arrays(self.current_mesh, self.nodal_forces_result, combo_idx)
-    
-    def _setup_displacement_component_arrays(self, combo_idx: int):
-        """
-        Add displacement component arrays to mesh for the selected combination.
-        
-        This sets up UX, UY, UZ, and U_mag arrays on the current mesh for 
-        the specified combination.
-        
-        Args:
-            combo_idx: Index of the combination to set up arrays for.
-        """
-        from ui.handlers.display_mesh_arrays import attach_deformation_specific_arrays
-
-        attach_deformation_specific_arrays(self.current_mesh, self.deformation_result, combo_idx)
     
     @pyqtSlot(int)
     def _on_force_component_changed(self, index: int):
@@ -707,42 +584,6 @@ class DisplayTab(QWidget):
         self.time_point_group.setVisible(True)
         # Note: Deformation controls visibility is managed by _update_deformation_controls()
     
-    def update_combination_controls(self, combination_names):
-        """
-        Update the combination dropdown with available combinations.
-        
-        Args:
-            combination_names: List of combination names from the combination table.
-        """
-        if self.combination_combo is not None:
-            self.combination_combo.clear()
-            if combination_names:
-                self.combination_combo.addItems(combination_names)
-            self._fit_combo_popup_to_contents(self.combination_combo)
-            self.time_point_group.setVisible(True)
-    
-    def get_selected_combination_index(self):
-        """
-        Get the currently selected combination index.
-        
-        Returns:
-            int: Index of the selected combination, or -1 if none selected.
-        """
-        if self.combination_combo is not None:
-            return self.combination_combo.currentIndex()
-        return -1
-    
-    def get_selected_combination_name(self):
-        """
-        Get the currently selected combination name.
-        
-        Returns:
-            str: Name of the selected combination, or empty string if none.
-        """
-        if self.combination_combo is not None:
-            return self.combination_combo.currentText()
-        return ""
-    
     def _update_deformation_controls(self, deformation_loaded):
         """Update deformation scale controls based on availability."""
         if deformation_loaded:
@@ -784,51 +625,6 @@ class DisplayTab(QWidget):
     def _validate_deformation_scale(self):
         """Validate deformation scale factor input."""
         self.visual_handler.validate_deformation_scale()
-    @pyqtSlot(bool)
-    def update_time_point_results(self, checked=False):
-        """
-        Request combination point calculation and update visualization.
-        
-        For MARS-SC, this requests recalculation for the selected combination.
-        """
-        has_output_context = any([
-            self.output_flags.compute_von_mises,
-            self.output_flags.compute_max_principal,
-            self.output_flags.compute_min_principal,
-            self.output_flags.compute_nodal_forces,
-            self.output_flags.compute_deformation,
-        ])
-        if not has_output_context:
-            QMessageBox.warning(
-                self, "Not Ready",
-                "No solver output context is available."
-            )
-            return
-        
-        # Gather options - updated for MARS-SC
-        options = {
-            'compute_von_mises': self.output_flags.compute_von_mises,
-            'compute_max_principal': self.output_flags.compute_max_principal,
-            'compute_min_principal': self.output_flags.compute_min_principal,
-            'compute_nodal_forces': self.output_flags.compute_nodal_forces,
-            'compute_deformation': self.output_flags.compute_deformation,
-            # MARS-SC specific options
-            'combination_index': self.get_selected_combination_index(),
-            'combination_name': self.get_selected_combination_name(),
-        }
-        
-        # For backwards compatibility, also pass as time if spinbox is visible/used
-        if self.time_point_spinbox.isVisible():
-            selected_time = self.time_point_spinbox.value()
-        else:
-            # Use combination index as a pseudo-time value
-            selected_time = float(self.get_selected_combination_index())
-        
-        # Emit signal to request computation
-        combo_idx = self.get_selected_combination_index()
-        combo_name = self.get_selected_combination_name()
-        print(f"DisplayTab: Requesting update for combination #{combo_idx}: {combo_name}")
-        self.time_point_update_requested.emit(selected_time, options)
 
     @pyqtSlot(object)
     def update_view_with_payload(self, payload):
@@ -934,87 +730,7 @@ class DisplayTab(QWidget):
 
         # Update Export Output CSV button visibility
         self._update_export_output_button_visibility()
-    def _clear_visualization(self):
-        """Properly clear existing visualization."""
-        self.interaction_handler.clear_goto_node_markers()
-        
-        # Clear hover elements
-        self.visual_handler.clear_hover_elements()
-        
-        # Clear box widget
-        if self.box_widget:
-            self.box_widget.Off()
-            self.box_widget = None
-            self.state.box_widget = None
-        
-        # Clear camera widget
-        if self.camera_widget:
-            self.camera_widget.EnabledOff()
-            self.camera_widget = None
-            self.state.camera_widget = None
-        
-        self.plotter.clear()
-        
-        if self.current_mesh:
-            self.current_mesh.clear_data()
-            self.current_mesh = None
-            self.state.current_mesh = None
-        
-        self.current_actor = None
-        self.state.current_actor = None
-        self.scalar_min_spin.clear()
-        self.scalar_max_spin.clear()
-        self.file_path.clear()
-        
-        # Clear combination data
-        self.stress_result = None
-        self.all_combo_results = None
-        self.nodal_forces_result = None
-        self.deformation_result = None
-        self.recomputed_stress_combo_cache = {}
-        self._recompute_pending_combo = None
-        self.combination_names = []
-        self.output_flags = SolverOutputFlags()
-        
-        # Reset and hide view combination controls
-        self.view_combination_combo.blockSignals(True)
-        self.view_combination_combo.clear()
-        self.view_combination_combo.addItem("(Envelope View)")
-        self._fit_combo_popup_to_contents(self.view_combination_combo)
-        self.view_combination_combo.blockSignals(False)
-        self.view_combination_label.setVisible(False)
-        self.view_combination_combo.setVisible(False)
-        if self.recompute_combo_note is not None:
-            self.recompute_combo_note.setVisible(False)
-        if self.recompute_combo_button is not None:
-            self.recompute_combo_button.setVisible(False)
-            self.recompute_combo_button.setEnabled(True)
-            self.recompute_combo_button.setText("Recompute This Combination (Corrected)")
-        
-        # Hide force component controls
-        self._show_force_component_controls(False)
-        self._show_displacement_component_controls(False)
 
-        # Reset contour selector
-        self.state.current_contour_type = None
-        self.current_contour_type = None
-        if self.contour_type_combo is not None:
-            self.contour_type_combo.blockSignals(True)
-            self.contour_type_combo.clear()
-            self.contour_type_combo.addItems(["Stress", "Forces", "Deformation"])
-            self.contour_type_combo.blockSignals(False)
-            self.contour_type_combo.setVisible(False)
-        if self.contour_type_label is not None:
-            self.contour_type_label.setVisible(False)
-        
-        # Hide export output button
-        if self.export_output_button is not None:
-            self.export_output_button.setVisible(False)
-        
-        # Re-enable scalar display controls
-        self.scalar_display_combo.setEnabled(True)
-        self.scalar_display_label.setEnabled(True)
-    
     def showEvent(self, event):
         """Handle tab becoming visible - fix camera widget sizing."""
         super().showEvent(event)

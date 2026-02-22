@@ -26,7 +26,6 @@ from utils.tooltips import (
     TOOLTIP_DISPLAY_EXPORT_FORCES, TOOLTIP_DISPLAY_DISPLACEMENT_COMPONENT,
     TOOLTIP_DISPLAY_EXPORT_OUTPUT, TOOLTIP_DISPLAY_DEFORMATION_SCALE,
     TOOLTIP_DISPLAY_COMBINATION_POINT_CONTROLS,
-    TOOLTIP_DISPLAY_COMBINATION_SELECTOR, TOOLTIP_DISPLAY_UPDATE_BUTTON,
     TOOLTIP_DISPLAY_SAVE_BUTTON
 )
 
@@ -245,39 +244,28 @@ class DisplayTabUIBuilder:
     
     def build_time_point_controls(self):
         """
-        Build the combination point selection controls.
-        
-        For MARS-SC, this allows selecting which combination to display results for.
+        Build display export controls.
         
         Returns:
-            QGroupBox: Group box containing combination point controls.
+            QGroupBox: Group box containing result export controls.
         """
-        selected_time_label = QLabel("Display results for Combination:")
-        selected_time_label.setToolTip(TOOLTIP_DISPLAY_COMBINATION_SELECTOR)
-        
-        # Combination dropdown instead of time spinbox for MARS-SC
-        combination_combo = QComboBox()
-        combination_combo.setMinimumWidth(200)
-        combination_combo.setToolTip(TOOLTIP_DISPLAY_COMBINATION_SELECTOR)
-        
-        # Keep the spinbox for backwards compatibility but hidden by default
+        selected_time_label = QLabel("Current Result:")
+        selected_time_label.setToolTip(TOOLTIP_DISPLAY_COMBINATION_POINT_CONTROLS)
+
+        # Keep the spinbox hidden; value is still used in export filenames.
         time_point_spinbox = QDoubleSpinBox()
         time_point_spinbox.setDecimals(5)
         time_point_spinbox.setPrefix("Time (seconds): ")
         time_point_spinbox.setRange(0, 0)
-        time_point_spinbox.setVisible(False)  # Hidden for MARS-SC
-        
-        update_time_button = QPushButton("Update")
-        update_time_button.setToolTip(TOOLTIP_DISPLAY_UPDATE_BUTTON)
+        time_point_spinbox.setVisible(False)
+
         save_time_button = QPushButton("Save Combination as CSV")
         save_time_button.setToolTip(TOOLTIP_DISPLAY_SAVE_BUTTON)
 
         # Layout
         time_point_layout = QHBoxLayout()
         time_point_layout.addWidget(selected_time_label)
-        time_point_layout.addWidget(combination_combo)
         time_point_layout.addWidget(time_point_spinbox)
-        time_point_layout.addWidget(update_time_button)
         time_point_layout.addWidget(save_time_button)
         time_point_layout.addStretch()
         
@@ -289,9 +277,7 @@ class DisplayTabUIBuilder:
         
         # Store components
         self.components['selected_time_label'] = selected_time_label
-        self.components['combination_combo'] = combination_combo
         self.components['time_point_spinbox'] = time_point_spinbox
-        self.components['update_time_button'] = update_time_button
         self.components['save_time_button'] = save_time_button
         self.components['time_point_layout'] = time_point_layout
         self.components['time_point_group'] = time_point_group

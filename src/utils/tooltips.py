@@ -406,14 +406,6 @@ TOOLTIP_DISPLAY_COMBINATION_POINT_CONTROLS = (
     "</html>"
 )
 
-TOOLTIP_DISPLAY_COMBINATION_SELECTOR = (
-    "Select which combination index/name to display in this control section."
-)
-
-TOOLTIP_DISPLAY_UPDATE_BUTTON = (
-    "Apply the selected combination/time control to update displayed results."
-)
-
 TOOLTIP_DISPLAY_SAVE_BUTTON = (
     "Save the currently selected combination results to CSV."
 )
