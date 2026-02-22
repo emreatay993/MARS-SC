@@ -374,6 +374,25 @@ def Up_of_T_sigma_njit(T: float, sig: float, TEMP: np.ndarray, SIG: np.ndarray, 
     aU = _plastic_energy_on_curve_njit(sig, SIG[j], EPSP[j], use_plateau)
     return (1.0 - w) * aL + w * aU
 
+
+@njit(cache=True)
+def _curve_tail_of_T_njit(T: float, TEMP: np.ndarray, SIG: np.ndarray, EPSP: np.ndarray) -> Tuple[float, float]:
+    """
+    Return blended terminal curve values (sigma_last, epsp_last) at temperature T.
+    """
+    i, j, w = _bound_T_indices_njit(T, TEMP)
+    sig_last_L = SIG[i, SIG.shape[1] - 1]
+    eps_last_L = EPSP[i, EPSP.shape[1] - 1]
+    if i == j:
+        return sig_last_L, eps_last_L
+
+    sig_last_U = SIG[j, SIG.shape[1] - 1]
+    eps_last_U = EPSP[j, EPSP.shape[1] - 1]
+    sig_last = (1.0 - w) * sig_last_L + w * sig_last_U
+    eps_last = (1.0 - w) * eps_last_L + w * eps_last_U
+    return sig_last, eps_last
+
+
 @njit(cache=True, parallel=True)
 def solve_neuber_vector_core(sig_e: np.ndarray, T: np.ndarray,
                              TEMP: np.ndarray, E_tab: np.ndarray,
@@ -389,11 +408,15 @@ def solve_neuber_vector_core(sig_e: np.ndarray, T: np.ndarray,
             sc[i] = 0.0
             ep[i] = 0.0
             continue
+        sigma_cap, epsp_cap = _curve_tail_of_T_njit(Ti, TEMP, SIG, EPSP)
         sigma = min(sigma_e_i, yield_of_T_njit(Ti, TEMP, SIG))
         if sigma <= 0.0:
             sigma = 1e-6
+        if use_plateau and sigma > sigma_cap:
+            sigma = sigma_cap
+
+        E = E_of_T_njit(Ti, TEMP, E_tab)
         for _ in range(itmax):
-            E = E_of_T_njit(Ti, TEMP, E_tab)
             eps = epsp_of_T_sigma_njit(Ti, sigma, TEMP, SIG, EPSP, use_plateau)
             r = sigma / E + eps - (sigma_e_i * sigma_e_i) / (sigma * E + EPS)
             dS = 1e-6 * max(abs(sigma), 1.0)
@@ -404,12 +427,25 @@ def solve_neuber_vector_core(sig_e: np.ndarray, T: np.ndarray,
             sigma_next = sigma - step
             if sigma_next <= 0.0:
                 sigma_next = 0.5 * sigma
+            if use_plateau and sigma_next > sigma_cap:
+                sigma_next = sigma_cap
             if abs(step) / (abs(sigma) + EPS) < tol:
                 sigma = sigma_next
                 break
             sigma = sigma_next
+
+        if use_plateau and sigma > sigma_cap:
+            sigma = sigma_cap
         sc[i] = sigma
-        ep[i] = epsp_of_T_sigma_njit(Ti, sigma, TEMP, SIG, EPSP, use_plateau)
+        if use_plateau and sigma >= sigma_cap - 1e-12:
+            # Perfect-plastic tail: hold stress at curve cap and recover extra
+            # equivalent plastic strain from Neuber relation.
+            eps_neuber = (sigma_e_i * sigma_e_i) / (sigma * E + EPS) - sigma / (E + EPS)
+            if eps_neuber < epsp_cap:
+                eps_neuber = epsp_cap
+            ep[i] = max(eps_neuber, 0.0)
+        else:
+            ep[i] = epsp_of_T_sigma_njit(Ti, sigma, TEMP, SIG, EPSP, use_plateau)
     return sc, ep
 
 @njit(cache=True, parallel=True)
@@ -429,9 +465,13 @@ def solve_glinka_vector_core(sig_e: np.ndarray, T: np.ndarray,
             continue
         E = E_of_T_njit(Ti, TEMP, E_tab)
         Ue0 = sigma_e_i * sigma_e_i / (2.0 * E + EPS)
+        sigma_cap, epsp_cap = _curve_tail_of_T_njit(Ti, TEMP, SIG, EPSP)
         sigma = min(sigma_e_i, yield_of_T_njit(Ti, TEMP, SIG))
         if sigma <= 0.0:
             sigma = 1e-6
+        if use_plateau and sigma > sigma_cap:
+            sigma = sigma_cap
+
         for _ in range(itmax):
             Upl = Up_of_T_sigma_njit(Ti, sigma, TEMP, SIG, EPSP, use_plateau)
             Uc = sigma * sigma / (2.0 * E + EPS) + Upl
@@ -445,12 +485,28 @@ def solve_glinka_vector_core(sig_e: np.ndarray, T: np.ndarray,
             sigma_new = sigma - r / (der + EPS)
             if sigma_new <= 0.0:
                 sigma_new = 0.5 * sigma
+            if use_plateau and sigma_new > sigma_cap:
+                sigma_new = sigma_cap
             if abs(sigma_new - sigma) / (abs(sigma) + EPS) < tol:
                 sigma = sigma_new
                 break
             sigma = sigma_new
+
+        if use_plateau and sigma > sigma_cap:
+            sigma = sigma_cap
         sc[i] = sigma
-        ep[i] = epsp_of_T_sigma_njit(Ti, sigma, TEMP, SIG, EPSP, use_plateau)
+        if use_plateau and sigma >= sigma_cap - 1e-12:
+            # Perfect-plastic tail energy continuation:
+            # Up = Up_cap + sigma_cap * (epsp - epsp_cap)
+            Up_cap = Up_of_T_sigma_njit(Ti, sigma_cap, TEMP, SIG, EPSP, 1)
+            Up_req = Ue0 - sigma_cap * sigma_cap / (2.0 * E + EPS)
+            if Up_req <= Up_cap:
+                ep_val = epsp_cap
+            else:
+                ep_val = epsp_cap + (Up_req - Up_cap) / (sigma_cap + EPS)
+            ep[i] = max(ep_val, 0.0)
+        else:
+            ep[i] = epsp_of_T_sigma_njit(Ti, sigma, TEMP, SIG, EPSP, use_plateau)
     return sc, ep
 
 

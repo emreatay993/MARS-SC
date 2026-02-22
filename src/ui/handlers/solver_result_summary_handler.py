@@ -69,6 +69,7 @@ class SolverResultSummaryHandler:
         node_id = metadata.get("node_id", config.selected_node_id)
         combo_indices = metadata.get("combination_indices", np.arange(result.num_combinations))
         stress_values = metadata.get("stress_values", result.all_combo_results[:, 0])
+        plasticity_overlay = metadata.get("plasticity_overlay")
 
         combo_names = self.tab.combination_table.combination_names if self.tab.combination_table else None
         self.tab.plot_combo_history_tab.update_combination_history_plot(
@@ -77,6 +78,7 @@ class SolverResultSummaryHandler:
             node_id=node_id,
             stress_type=result.result_type,
             combination_names=combo_names,
+            plasticity_overlay=plasticity_overlay,
         )
 
         self._show_result_tab(
@@ -92,6 +94,7 @@ class SolverResultSummaryHandler:
                 node_id=node_id,
                 combination_names=combo_names,
                 stress_type=result.result_type,
+                plasticity_overlay=plasticity_overlay,
             )
 
         self.tab.console_textbox.append(
@@ -426,6 +429,53 @@ class SolverResultSummaryHandler:
             result_type = result.result_type
             is_min_principal = result_type == "min_principal"
             filename = os.path.join(output_dir, f"envelope_{result_type}.csv")
+            metadata = getattr(result, "metadata", None) or {}
+            has_scalar_plasticity = (
+                result_type == "von_mises" and isinstance(metadata.get("plasticity"), dict)
+            )
+
+            if has_scalar_plasticity:
+                corrected_filename = os.path.join(output_dir, "envelope_von_mises_corrected.csv")
+                elastic_filename = os.path.join(output_dir, "envelope_von_mises_elastic.csv")
+                elastic_max = metadata.get("elastic_max_over_combo")
+                elastic_combo_of_max = metadata.get("elastic_combo_of_max")
+
+                export_envelope_results(
+                    filename=corrected_filename,
+                    node_ids=result.node_ids,
+                    node_coords=result.node_coords,
+                    max_values=result.max_over_combo,
+                    min_values=None,
+                    combo_of_max=result.combo_of_max,
+                    combo_of_min=None,
+                    result_type=result_type,
+                    combination_names=combo_names,
+                )
+                self.tab.console_textbox.append(
+                    f"  Exported corrected envelope results to: {corrected_filename}\n"
+                )
+
+                if elastic_max is not None:
+                    export_envelope_results(
+                        filename=elastic_filename,
+                        node_ids=result.node_ids,
+                        node_coords=result.node_coords,
+                        max_values=elastic_max,
+                        min_values=None,
+                        combo_of_max=elastic_combo_of_max,
+                        combo_of_min=None,
+                        result_type=result_type,
+                        combination_names=combo_names,
+                    )
+                    self.tab.console_textbox.append(
+                        f"  Exported elastic envelope results to: {elastic_filename}\n"
+                    )
+                else:
+                    self.tab.console_textbox.append(
+                        "  Warning: Elastic envelope values were unavailable; "
+                        "elastic-vs-corrected split export skipped.\n"
+                    )
+                return
 
             export_envelope_results(
                 filename=filename,

@@ -439,6 +439,34 @@ class TestEdgeCases:
         assert len(corrected) == n
         assert len(strain) == n
 
+    def test_neuber_plateau_caps_stress_and_grows_tail_strain(self):
+        """Plateau mode should cap stress at curve end and continue plastic strain."""
+        db = default_material_db()
+        sigma_cap = float(db.SIG[0, -1])
+        epsp_cap = float(db.EPSP[0, -1])
+
+        sigma_e = np.array([10_000.0])
+        temp = np.array([22.0])
+
+        corrected, strain = apply_neuber_correction(sigma_e, temp, db, use_plateau=True)
+
+        assert corrected[0] <= sigma_cap + 1e-6
+        assert strain[0] > epsp_cap
+
+    def test_glinka_plateau_caps_stress_and_grows_tail_strain(self):
+        """Plateau mode should cap stress at curve end and continue plastic strain."""
+        db = default_material_db()
+        sigma_cap = float(db.SIG[0, -1])
+        epsp_cap = float(db.EPSP[0, -1])
+
+        sigma_e = np.array([10_000.0])
+        temp = np.array([22.0])
+
+        corrected, strain = apply_glinka_correction(sigma_e, temp, db, use_plateau=True)
+
+        assert corrected[0] <= sigma_cap + 1e-6
+        assert strain[0] > epsp_cap
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

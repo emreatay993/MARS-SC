@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 
 from core.data_models import CombinationResult, SolverConfig
@@ -189,3 +191,74 @@ def test_handle_stress_history_result_calls_popup_when_requested():
     call = tab.popup_calls[0]
     assert call["node_id"] == 42
     assert call["stress_type"] == "von_mises"
+
+
+def test_export_stress_envelope_csv_splits_elastic_and_corrected(monkeypatch, tmp_path):
+    tab = _FakeSolverTab()
+    handler = SolverResultSummaryHandler(tab)
+
+    calls = []
+
+    def _fake_export_envelope_results(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(
+        "ui.handlers.solver_result_summary_handler.export_envelope_results",
+        _fake_export_envelope_results,
+    )
+
+    result = CombinationResult(
+        node_ids=np.array([1, 2]),
+        node_coords=np.array([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]]),
+        max_over_combo=np.array([150.0, 260.0]),
+        combo_of_max=np.array([1, 0]),
+        result_type="von_mises",
+    )
+    result.metadata = {
+        "plasticity": {"method": "neuber"},
+        "elastic_max_over_combo": np.array([200.0, 300.0]),
+        "elastic_combo_of_max": np.array([0, 1]),
+    }
+
+    handler.export_stress_envelope_csv(result, SolverConfig(), str(tmp_path))
+
+    exported_names = [os.path.basename(call["filename"]) for call in calls]
+    assert "envelope_von_mises.csv" not in exported_names
+    assert "envelope_von_mises_corrected.csv" in exported_names
+    assert "envelope_von_mises_elastic.csv" in exported_names
+
+    elastic_call = next(call for call in calls if call["filename"].endswith("envelope_von_mises_elastic.csv"))
+    corrected_call = next(
+        call for call in calls if call["filename"].endswith("envelope_von_mises_corrected.csv")
+    )
+
+    np.testing.assert_allclose(elastic_call["max_values"], np.array([200.0, 300.0]))
+    np.testing.assert_allclose(corrected_call["max_values"], np.array([150.0, 260.0]))
+
+
+def test_export_stress_envelope_csv_uses_default_filename_without_plasticity(monkeypatch, tmp_path):
+    tab = _FakeSolverTab()
+    handler = SolverResultSummaryHandler(tab)
+
+    calls = []
+
+    def _fake_export_envelope_results(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(
+        "ui.handlers.solver_result_summary_handler.export_envelope_results",
+        _fake_export_envelope_results,
+    )
+
+    result = CombinationResult(
+        node_ids=np.array([1, 2]),
+        node_coords=np.array([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]]),
+        max_over_combo=np.array([150.0, 260.0]),
+        combo_of_max=np.array([1, 0]),
+        result_type="von_mises",
+    )
+
+    handler.export_stress_envelope_csv(result, SolverConfig(), str(tmp_path))
+
+    exported_names = [os.path.basename(call["filename"]) for call in calls]
+    assert exported_names == ["envelope_von_mises.csv"]

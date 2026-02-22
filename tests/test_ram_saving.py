@@ -35,6 +35,7 @@ class TestMemoryEstimation:
         engine.table = Mock()
         engine.table.analysis1_step_ids = [1, 2, 3]
         engine.table.analysis2_step_ids = [1, 2]
+        engine.table.get_active_step_ids = Mock(return_value=([1, 2, 3], [1, 2]))
         engine.table.num_combinations = 10
         
         # Use actual method
@@ -68,6 +69,7 @@ class TestMemoryEstimation:
         engine.table = Mock()
         engine.table.analysis1_step_ids = [1, 2]
         engine.table.analysis2_step_ids = [1]
+        engine.table.get_active_step_ids = Mock(return_value=([1, 2], [1]))
         engine.table.num_combinations = 5
         
         engine.estimate_memory_requirements = StressCombinationEngine.estimate_memory_requirements.__get__(
@@ -80,6 +82,32 @@ class TestMemoryEstimation:
         # Memory should scale roughly linearly with node count
         ratio = estimates_1000['total_bytes'] / estimates_100['total_bytes']
         assert 9 < ratio < 11  # Should be approximately 10x
+
+    def test_estimate_memory_scalar_plasticity_overhead(self):
+        """Scalar plasticity mode should add explicit working-set memory."""
+        engine = Mock(spec=StressCombinationEngine)
+        engine.scoping = Mock()
+        engine.scoping.ids = list(range(100))
+
+        engine.table = Mock()
+        engine.table.analysis1_step_ids = [1, 2]
+        engine.table.analysis2_step_ids = [1]
+        engine.table.get_active_step_ids = Mock(return_value=([1, 2], [1]))
+        engine.table.num_combinations = 6
+
+        engine.estimate_memory_requirements = StressCombinationEngine.estimate_memory_requirements.__get__(
+            engine, StressCombinationEngine
+        )
+
+        base = engine.estimate_memory_requirements(num_nodes=100, calculate_scalar_plasticity=False)
+        with_plasticity = engine.estimate_memory_requirements(
+            num_nodes=100, calculate_scalar_plasticity=True
+        )
+
+        assert base['scalar_plasticity_bytes'] == 0
+        assert with_plasticity['scalar_plasticity_bytes'] > 0
+        assert with_plasticity['total_bytes'] > base['total_bytes']
+        assert with_plasticity['memory_per_node'] > base['memory_per_node']
     
     def test_calculate_chunk_size_bounds(self):
         """Test that chunk size is bounded correctly."""
@@ -410,6 +438,7 @@ class TestEdgeCases:
         engine.table = Mock()
         engine.table.analysis1_step_ids = [1]
         engine.table.analysis2_step_ids = []
+        engine.table.get_active_step_ids = Mock(return_value=([1], []))
         engine.table.num_combinations = 1
         
         engine.estimate_memory_requirements = StressCombinationEngine.estimate_memory_requirements.__get__(
@@ -430,6 +459,7 @@ class TestEdgeCases:
         engine.table = Mock()
         engine.table.analysis1_step_ids = []
         engine.table.analysis2_step_ids = []
+        engine.table.get_active_step_ids = Mock(return_value=([], []))
         engine.table.num_combinations = 0
         
         engine.estimate_memory_requirements = StressCombinationEngine.estimate_memory_requirements.__get__(

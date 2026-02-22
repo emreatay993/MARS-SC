@@ -652,7 +652,11 @@ class StressCombinationEngine:
     # RAM-Saving Methods for Large Models
     # =========================================================================
     
-    def estimate_memory_requirements(self, num_nodes: Optional[int] = None) -> Dict[str, int]:
+    def estimate_memory_requirements(
+        self,
+        num_nodes: Optional[int] = None,
+        calculate_scalar_plasticity: bool = False,
+    ) -> Dict[str, int]:
         """
         Estimate memory requirements for the full analysis.
         
@@ -693,19 +697,27 @@ class StressCombinationEngine:
         
         # Envelope arrays: max, min, combo_of_max, combo_of_min (4 arrays × num_nodes)
         envelope_bytes = 4 * num_nodes * bytes_per_float
-        
+        scalar_plasticity_bytes = 0
+        if calculate_scalar_plasticity:
+            scalar_plasticity_bytes = 4 * num_combos * num_nodes * bytes_per_float
+
         # Total for full (non-chunked) processing
-        total_bytes = stress_cache_bytes + results_array_bytes + envelope_bytes
+        total_bytes = stress_cache_bytes + results_array_bytes + envelope_bytes + scalar_plasticity_bytes
         
         # Minimum for chunked processing (envelope only, single chunk of stress data)
         # Memory per node per chunk: 6 × active_steps × 8 (stress) + num_combos × 8 (results)
         memory_per_node = 6 * total_steps * bytes_per_float + num_combos * bytes_per_float
+        if calculate_scalar_plasticity:
+            # Scalar Neuber/Glinka chunk processing uses additional flattened
+            # stress/temp and corrected/strain buffers sized by (combos × nodes).
+            memory_per_node += 4 * num_combos * bytes_per_float
         minimum_chunk_memory = MIN_CHUNK_SIZE * memory_per_node + envelope_bytes
         
         return {
             'stress_cache_bytes': stress_cache_bytes,
             'results_array_bytes': results_array_bytes,
             'envelope_bytes': envelope_bytes,
+            'scalar_plasticity_bytes': scalar_plasticity_bytes,
             'total_bytes': total_bytes,
             'minimum_required_bytes': minimum_chunk_memory,
             'memory_per_node': memory_per_node,
@@ -730,7 +742,12 @@ class StressCombinationEngine:
             # Default to 4GB if psutil not available
             return int(4 * 1024 * 1024 * 1024 * RAM_USAGE_FRACTION)
     
-    def _calculate_chunk_size(self, available_memory: int, num_nodes: int) -> int:
+    def _calculate_chunk_size(
+        self,
+        available_memory: int,
+        num_nodes: int,
+        calculate_scalar_plasticity: bool = False,
+    ) -> int:
         """
         Calculate optimal node chunk size based on available memory.
         
@@ -746,7 +763,10 @@ class StressCombinationEngine:
         Returns:
             Optimal chunk size (number of nodes per chunk).
         """
-        estimates = self.estimate_memory_requirements(num_nodes)
+        estimates = self.estimate_memory_requirements(
+            num_nodes,
+            calculate_scalar_plasticity=calculate_scalar_plasticity,
+        )
         memory_per_node = estimates['memory_per_node']
         
         # Reserve memory for envelope arrays
@@ -764,7 +784,11 @@ class StressCombinationEngine:
         
         return chunk_size
     
-    def check_memory_available(self, raise_on_insufficient: bool = True) -> Tuple[bool, Dict]:
+    def check_memory_available(
+        self,
+        raise_on_insufficient: bool = True,
+        calculate_scalar_plasticity: bool = False,
+    ) -> Tuple[bool, Dict]:
         """
         Check if sufficient memory is available for analysis.
         
@@ -778,7 +802,10 @@ class StressCombinationEngine:
             MemoryError: If memory is insufficient and raise_on_insufficient is True.
         """
         num_nodes = len(self.scoping.ids)
-        estimates = self.estimate_memory_requirements(num_nodes)
+        estimates = self.estimate_memory_requirements(
+            num_nodes,
+            calculate_scalar_plasticity=calculate_scalar_plasticity,
+        )
         available = self._get_available_memory()
         
         # Check if minimum chunked processing is possible
@@ -786,7 +813,11 @@ class StressCombinationEngine:
         
         estimates['available_bytes'] = available
         estimates['is_sufficient'] = is_sufficient
-        estimates['recommended_chunk_size'] = self._calculate_chunk_size(available, num_nodes)
+        estimates['recommended_chunk_size'] = self._calculate_chunk_size(
+            available,
+            num_nodes,
+            calculate_scalar_plasticity=calculate_scalar_plasticity,
+        )
         
         if not is_sufficient and raise_on_insufficient:
             raise MemoryError(
@@ -950,7 +981,11 @@ class StressCombinationEngine:
         self,
         stress_type: str = "von_mises",
         progress_callback: Optional[Callable[[int, int, str], None]] = None,
-        chunk_size: Optional[int] = None
+        chunk_size: Optional[int] = None,
+        calculate_scalar_plasticity: bool = False,
+        chunk_results_transform: Optional[
+            Callable[[np.ndarray, np.ndarray, int, int], np.ndarray]
+        ] = None,
     ) -> CombinationResult:
         """
         Compute envelope analysis with chunked processing for memory efficiency.
@@ -972,6 +1007,10 @@ class StressCombinationEngine:
             stress_type: One of "von_mises", "max_principal", "min_principal".
             progress_callback: Optional callback(current, total, message) for progress.
             chunk_size: Optional explicit chunk size. If None, calculated automatically.
+            chunk_results_transform: Optional callback invoked per chunk before envelope
+                reduction. Signature:
+                ``(chunk_results, chunk_node_ids, chunk_start, chunk_end)`` and must
+                return an array with the same shape as ``chunk_results``.
             
         Returns:
             CombinationResult with envelope data (without all_combo_results to save memory).
@@ -984,7 +1023,10 @@ class StressCombinationEngine:
         num_nodes = len(full_node_ids)
         
         # Check memory and calculate chunk size
-        _, estimates = self.check_memory_available(raise_on_insufficient=True)
+        _, estimates = self.check_memory_available(
+            raise_on_insufficient=True,
+            calculate_scalar_plasticity=calculate_scalar_plasticity,
+        )
         
         if chunk_size is None:
             chunk_size = estimates['recommended_chunk_size']
@@ -1024,6 +1066,21 @@ class StressCombinationEngine:
             chunk_results = self._compute_chunk_combinations(
                 chunk_cache, actual_chunk_size, stress_type
             )
+
+            if chunk_results_transform is not None:
+                chunk_node_ids = full_node_ids[chunk_start:chunk_end]
+                transformed_results = chunk_results_transform(
+                    chunk_results,
+                    chunk_node_ids,
+                    chunk_start,
+                    chunk_end,
+                )
+                if transformed_results.shape != chunk_results.shape:
+                    raise ValueError(
+                        "chunk_results_transform must return an array with shape "
+                        f"{chunk_results.shape}, got {transformed_results.shape}."
+                    )
+                chunk_results = transformed_results
             
             # Update envelope arrays
             self._update_envelope_for_chunk(
@@ -1056,7 +1113,11 @@ class StressCombinationEngine:
         stress_type: str = "von_mises",
         progress_callback: Optional[Callable[[int, int, str], None]] = None,
         memory_threshold_gb: float = 2.0,
-        auto_cleanup: bool = True
+        auto_cleanup: bool = True,
+        calculate_scalar_plasticity: bool = False,
+        chunk_results_transform: Optional[
+            Callable[[np.ndarray, np.ndarray, int, int], np.ndarray]
+        ] = None,
     ) -> CombinationResult:
         """
         Automatically choose between standard and chunked processing.
@@ -1073,7 +1134,10 @@ class StressCombinationEngine:
             CombinationResult with envelope data.
         """
         num_nodes = len(self.scoping.ids)
-        estimates = self.estimate_memory_requirements(num_nodes)
+        estimates = self.estimate_memory_requirements(
+            num_nodes,
+            calculate_scalar_plasticity=calculate_scalar_plasticity,
+        )
         
         threshold_bytes = memory_threshold_gb * 1024 * 1024 * 1024
         
@@ -1086,7 +1150,9 @@ class StressCombinationEngine:
                 )
             return self.compute_full_analysis_chunked(
                 stress_type=stress_type,
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
+                calculate_scalar_plasticity=calculate_scalar_plasticity,
+                chunk_results_transform=chunk_results_transform,
             )
         else:
             # Use standard processing for smaller models

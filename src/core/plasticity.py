@@ -74,8 +74,7 @@ def build_material_db_from_profile(profile: MaterialProfileData) -> MaterialDB:
 
     # Build SIG/EPSP arrays
     curve_records = []
-    max_points = -1
-    target_strain = None
+    strain_grids = []
 
     for temp in temperatures:
         curve_df = profile.plastic_curves[temp]
@@ -102,14 +101,15 @@ def build_material_db_from_profile(profile: MaterialProfileData) -> MaterialDB:
         if not np.all(np.diff(strain) > 0):
             raise PlasticityDataError(f"Plastic strain values must be strictly increasing for temperature {temp} °C.")
 
-        if stress.size > max_points:
-            max_points = stress.size
-            target_strain = strain
-
         curve_records.append((temp, strain, stress))
+        strain_grids.append(strain)
 
-    if target_strain is None:
+    if not strain_grids:
         raise PlasticityDataError("No valid plastic curves found in material profile.")
+
+    # Use a shared grid built from all curve knots so no temperature curve tail
+    # gets silently chopped just because it had fewer tabulated points.
+    target_strain = np.unique(np.concatenate(strain_grids))
 
     sig_rows = []
     for temp, strain, stress in curve_records:

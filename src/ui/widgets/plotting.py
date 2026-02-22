@@ -269,9 +269,10 @@ class MatplotlibWidget(QWidget):
                 headers = ["Time [s]", f"{table_label} [MPa]"]
                 if plasticity_overlay and 'corrected_vm' in plasticity_overlay:
                     corrected = np.asarray(plasticity_overlay['corrected_vm'], dtype=float)
+                    elastic = np.asarray(plasticity_overlay.get('elastic_vm', y), dtype=float)
                     strain = np.asarray(plasticity_overlay.get('plastic_strain', []), dtype=float)
 
-                    elastic_line, = self.ax.plot(x, y, label=f"{plot_label} (Elastic)", color=color)
+                    elastic_line, = self.ax.plot(x, elastic, label=f"{plot_label} (Elastic)", color=color)
                     corrected_line, = self.ax.plot(x, corrected, label=f"{plot_label} (Corrected)", color='orange')
                     self.plotted_lines.extend([elastic_line, corrected_line])
 
@@ -283,7 +284,7 @@ class MatplotlibWidget(QWidget):
                     for idx, xi in enumerate(x):
                         row_items = [
                             QStandardItem(f"{xi:.5f}"),
-                            QStandardItem(f"{y[idx]:.5f}"),
+                            QStandardItem(f"{elastic[idx]:.5f}" if idx < elastic.size else ""),
                             QStandardItem(f"{corrected[idx]:.5f}")
                         ]
                         if strain.size == corrected.size:
@@ -514,9 +515,10 @@ class MatplotlibWidget(QWidget):
         # Plot main line
         if plasticity_overlay and 'corrected_vm' in plasticity_overlay:
             corrected = np.asarray(plasticity_overlay['corrected_vm'], dtype=float)
+            elastic = np.asarray(plasticity_overlay.get('elastic_vm', y), dtype=float)
             strain = np.asarray(plasticity_overlay.get('plastic_strain', []), dtype=float)
             
-            elastic_line, = self.ax.plot(x, y, label=f"{config['label']} (Elastic)", 
+            elastic_line, = self.ax.plot(x, elastic, label=f"{config['label']} (Elastic)", 
                                          color=config['color'], marker='o', markersize=4)
             corrected_line, = self.ax.plot(x, corrected, label=f"{config['label']} (Corrected)", 
                                            color='orange', marker='s', markersize=4)
@@ -532,7 +534,7 @@ class MatplotlibWidget(QWidget):
                 row_items = [
                     QStandardItem(f"{int(x[idx]) + 1}"),
                     QStandardItem(name),
-                    QStandardItem(f"{y[idx]:.5f}"),
+                    QStandardItem(f"{elastic[idx]:.5f}" if idx < elastic.size else ""),
                     QStandardItem(f"{corrected[idx]:.5f}")
                 ]
                 if strain.size == corrected.size:
