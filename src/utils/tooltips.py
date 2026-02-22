@@ -418,11 +418,6 @@ TOOLTIP_DISPLAY_SAVE_BUTTON = (
     "Save the currently selected combination results to CSV."
 )
 
-TOOLTIP_DISPLAY_EXTRACT_IC = (
-    "Export velocity as APDL initial condition commands.\n"
-    "Used for workflows that transfer results to transient setups."
-)
-
 # =============================================================================
 # Combination Table Tooltips
 # =============================================================================

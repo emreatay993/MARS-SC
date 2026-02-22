@@ -172,7 +172,6 @@ class DisplayTab(QWidget):
         self.time_point_spinbox = self.components['time_point_spinbox']
         self.update_time_button = self.components['update_time_button']
         self.save_time_button = self.components['save_time_button']
-        self.extract_ic_button = self.components['extract_ic_button']
         self.time_point_group = self.components['time_point_group']
 
     def _fit_combo_popup_to_contents(self, combo):
@@ -264,7 +263,6 @@ class DisplayTab(QWidget):
         # Combination/Time point controls
         self.update_time_button.clicked.connect(self.update_time_point_results)
         self.save_time_button.clicked.connect(self.save_time_point_results)
-        self.extract_ic_button.clicked.connect(self.extract_initial_conditions)
         
         # MARS-SC: Connect combination combo if available
         if self.combination_combo is not None:
@@ -863,11 +861,7 @@ class DisplayTab(QWidget):
     def save_time_point_results(self, checked=False):
         """Save currently displayed results to CSV."""
         self.export_handler.save_time_point_results()
-    
-    @pyqtSlot(bool)
-    def extract_initial_conditions(self, checked=False):
-        """Extract velocity initial conditions and export to APDL format."""
-        self.export_handler.extract_initial_conditions()
+
     @pyqtSlot('QPoint')
     def show_context_menu(self, position):
         """Create and display the right-click context menu."""
@@ -937,13 +931,7 @@ class DisplayTab(QWidget):
         
         # Clear file path since this is computed data, not loaded from file
         self.file_path.clear()
-        
-        # Show IC export button if velocity components are present
-        if all(key in mesh.array_names for key in ['vel_x', 'vel_y', 'vel_z']):
-            self.extract_ic_button.setVisible(True)
-        else:
-            self.extract_ic_button.setVisible(False)
-        
+
         # Update Export Output CSV button visibility
         self._update_export_output_button_visibility()
     def _clear_visualization(self):

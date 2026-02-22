@@ -9,7 +9,7 @@ import numpy as np
 from PyQt5.QtWidgets import QFileDialog, QMessageBox
 
 from file_io.exporters import (
-    export_mesh_to_csv, export_apdl_ic, 
+    export_mesh_to_csv,
     export_nodal_forces_single_combination, export_deformation_single_combination,
     export_envelope_results, export_single_combination,
     export_nodal_forces_envelope, export_deformation_envelope
@@ -57,59 +57,6 @@ class DisplayExportHandler(DisplayBaseHandler):
             QMessageBox.critical(
                 self.tab, "Save Error",
                 f"An error occurred while saving the file: {exc}"
-            )
-
-    def extract_initial_conditions(self) -> None:
-        """Export velocity initial conditions in APDL format."""
-        mesh = self.state.current_mesh or self.tab.current_mesh
-        if mesh is None:
-            QMessageBox.warning(
-                self.tab, "No Data",
-                "No visualization data available. Please compute velocity at a time point first."
-            )
-            return
-
-        required_arrays = {'vel_x', 'vel_y', 'vel_z'}
-        if not required_arrays.issubset(set(mesh.array_names)):
-            QMessageBox.warning(
-                self.tab, "Missing Velocity Data",
-                "Velocity components not found in current mesh.\n\n"
-                "Please compute velocity for a time point first using the Update button."
-            )
-            return
-
-        if 'NodeID' not in mesh.array_names:
-            QMessageBox.warning(
-                self.tab, "Missing Node IDs",
-                "Node IDs not found in mesh. Cannot export initial conditions."
-            )
-            return
-
-        node_ids = mesh['NodeID']
-        vel_x = mesh['vel_x'].flatten()
-        vel_y = mesh['vel_y'].flatten()
-        vel_z = mesh['vel_z'].flatten()
-
-        file_name, _ = QFileDialog.getSaveFileName(
-            self.tab,
-            "Save Initial Conditions",
-            "initial_conditions.inp",
-            "APDL Files (*.inp);;All Files (*)"
-        )
-
-        if not file_name:
-            return
-
-        try:
-            export_apdl_ic(node_ids, vel_x, vel_y, vel_z, file_name)
-            QMessageBox.information(
-                self.tab, "Export Successful",
-                f"Initial conditions exported successfully to:\n{file_name}"
-            )
-        except Exception as exc:
-            QMessageBox.critical(
-                self.tab, "Export Error",
-                f"Failed to export initial conditions:\n{exc}"
             )
 
     def export_forces_csv(self) -> None:

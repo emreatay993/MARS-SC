@@ -27,7 +27,7 @@ from utils.tooltips import (
     TOOLTIP_DISPLAY_EXPORT_OUTPUT, TOOLTIP_DISPLAY_DEFORMATION_SCALE,
     TOOLTIP_DISPLAY_COMBINATION_POINT_CONTROLS,
     TOOLTIP_DISPLAY_COMBINATION_SELECTOR, TOOLTIP_DISPLAY_UPDATE_BUTTON,
-    TOOLTIP_DISPLAY_SAVE_BUTTON, TOOLTIP_DISPLAY_EXTRACT_IC
+    TOOLTIP_DISPLAY_SAVE_BUTTON
 )
 
 
@@ -271,12 +271,7 @@ class DisplayTabUIBuilder:
         update_time_button.setToolTip(TOOLTIP_DISPLAY_UPDATE_BUTTON)
         save_time_button = QPushButton("Save Combination as CSV")
         save_time_button.setToolTip(TOOLTIP_DISPLAY_SAVE_BUTTON)
-        
-        extract_ic_button = QPushButton("Export Velocity as Initial Condition in APDL")
-        extract_ic_button.setStyleSheet(BUTTON_STYLE)
-        extract_ic_button.setToolTip(TOOLTIP_DISPLAY_EXTRACT_IC)
-        extract_ic_button.setVisible(False)  # Not used in MARS-SC
-        
+
         # Layout
         time_point_layout = QHBoxLayout()
         time_point_layout.addWidget(selected_time_label)
@@ -284,7 +279,6 @@ class DisplayTabUIBuilder:
         time_point_layout.addWidget(time_point_spinbox)
         time_point_layout.addWidget(update_time_button)
         time_point_layout.addWidget(save_time_button)
-        time_point_layout.addWidget(extract_ic_button)
         time_point_layout.addStretch()
         
         time_point_group = QGroupBox("Combination Point Controls")
@@ -299,7 +293,6 @@ class DisplayTabUIBuilder:
         self.components['time_point_spinbox'] = time_point_spinbox
         self.components['update_time_button'] = update_time_button
         self.components['save_time_button'] = save_time_button
-        self.components['extract_ic_button'] = extract_ic_button
         self.components['time_point_layout'] = time_point_layout
         self.components['time_point_group'] = time_point_group
         
