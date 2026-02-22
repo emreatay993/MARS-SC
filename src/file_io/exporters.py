@@ -255,9 +255,9 @@ def export_single_combination(
         for i, label in enumerate(voigt_labels):
             df[f'{label} [MPa]'] = stress_tensor[:, i]
     
-    # Add metadata as comment in first row (write separately)
-    # Instead, we'll add combination info as columns
-    df['Combination Index'] = combination_index
+    # Add metadata as columns.
+    # combination_index is 0-based internally; export 1-based for user display.
+    df['Combination Index'] = combination_index + 1
     df['Combination Name'] = combination_name
     
     df.to_csv(filename, index=False)
