@@ -36,6 +36,7 @@ class DisplayTab(QWidget):
     node_picked_for_history_popup = pyqtSignal(int)
     time_point_update_requested = pyqtSignal(float, dict)
     combination_update_requested = pyqtSignal(int, dict)  # (combo_index, options)
+    recompute_corrected_combination_requested = pyqtSignal(int)
     
     def __init__(self, parent=None):
         """Initialize the Display Tab."""
@@ -82,6 +83,8 @@ class DisplayTab(QWidget):
         self.deformation_result = None  # DeformationResult for displacement visualization
         self.output_flags = SolverOutputFlags()
         self.current_contour_type = None  # "Stress", "Forces", or "Deformation"
+        self.recomputed_stress_combo_cache = {}  # combo_idx -> corrected stress array
+        self._recompute_pending_combo = None
         self.temp_solver = None
         self.time_values = None
         self.original_node_coords = None
@@ -149,6 +152,8 @@ class DisplayTab(QWidget):
         # View specific combination controls
         self.view_combination_label = self.components['view_combination_label']
         self.view_combination_combo = self.components['view_combination_combo']
+        self.recompute_combo_note = self.components.get('recompute_combo_note')
+        self.recompute_combo_button = self.components.get('recompute_combo_button')
         self._fit_combo_popup_to_contents(self.view_combination_combo)
         
         # Force component controls (for nodal forces visualization)
@@ -231,6 +236,10 @@ class DisplayTab(QWidget):
         self.view_combination_combo.currentIndexChanged.connect(
             self._on_view_combination_changed
         )
+        if self.recompute_combo_button is not None:
+            self.recompute_combo_button.clicked.connect(
+                self._on_recompute_combo_clicked
+            )
         self.force_component_combo.currentIndexChanged.connect(
             self._on_force_component_changed
         )
@@ -322,6 +331,7 @@ class DisplayTab(QWidget):
     def _on_contour_type_changed(self, index):
         """Handle contour family selection changes."""
         self.contour_sync_handler.on_contour_type_changed(index)
+        self._update_recompute_combo_controls()
     
     @pyqtSlot(int)
     def _on_scalar_display_changed(self, index):
@@ -329,6 +339,7 @@ class DisplayTab(QWidget):
         Handle scalar display selection change.
         """
         self.contour_sync_handler.on_scalar_display_changed(index)
+        self._update_recompute_combo_controls()
     
     @pyqtSlot(int)
     def _on_view_combination_changed(self, index):
@@ -336,6 +347,103 @@ class DisplayTab(QWidget):
         Handle view combination selection change.
         """
         self.contour_sync_handler.on_view_combination_changed(index)
+        self._update_recompute_combo_controls()
+
+    @pyqtSlot(bool)
+    def _on_recompute_combo_clicked(self, checked=False):
+        """Request an on-demand corrected recompute for the selected combination."""
+        _ = checked
+        if self.view_combination_combo is None:
+            return
+
+        view_idx = self.view_combination_combo.currentIndex()
+        combo_idx = view_idx - 1
+        if combo_idx < 0:
+            return
+
+        self._recompute_pending_combo = combo_idx
+        if self.recompute_combo_button is not None:
+            self.recompute_combo_button.setEnabled(False)
+            self.recompute_combo_button.setText("Recomputing...")
+        self.recompute_corrected_combination_requested.emit(combo_idx)
+
+    def is_stress_on_demand_recompute_available(self) -> bool:
+        """Whether the current stress payload supports on-demand corrected combo recompute."""
+        result = self.stress_result
+        if result is None:
+            return False
+        if result.result_type != "von_mises":
+            return False
+        if result.all_combo_results is not None:
+            return False
+        metadata = getattr(result, "metadata", None) or {}
+        return isinstance(metadata.get("plasticity"), dict)
+
+    def get_recomputed_stress_values(self, combo_idx: int):
+        """Return cached on-demand corrected stress values for a combination if present."""
+        return self.recomputed_stress_combo_cache.get(int(combo_idx))
+
+    @pyqtSlot(object)
+    def on_recomputed_combination_ready(self, payload):
+        """Receive on-demand corrected combination payload from Solver tab."""
+        combo_idx = int(payload.get("combination_index", -1))
+        success = bool(payload.get("success", False))
+
+        if self.recompute_combo_button is not None:
+            self.recompute_combo_button.setEnabled(True)
+            self.recompute_combo_button.setText("Recompute This Combination (Corrected)")
+
+        if success:
+            values = np.asarray(payload.get("stress_values", []), dtype=float).reshape(-1)
+            if self.current_mesh is not None and values.size == self.current_mesh.n_points:
+                self.recomputed_stress_combo_cache[combo_idx] = values
+                self.current_mesh[f"Combo_{combo_idx}_Stress"] = values
+                self.contour_sync_handler.sync_from_current_state()
+            elif self.recompute_combo_note is not None:
+                self.recompute_combo_note.setVisible(True)
+                self.recompute_combo_note.setText(
+                    "Recompute completed but node count did not match current display mesh."
+                )
+        elif self.recompute_combo_note is not None:
+            error_msg = payload.get("error", "On-demand recompute failed.")
+            self.recompute_combo_note.setVisible(True)
+            self.recompute_combo_note.setText(str(error_msg))
+
+        self._recompute_pending_combo = None
+        self._update_recompute_combo_controls()
+
+    def _update_recompute_combo_controls(self):
+        """Update visibility/state for on-demand corrected-combination controls."""
+        note = self.recompute_combo_note
+        button = self.recompute_combo_button
+        if note is None or button is None:
+            return
+
+        available = self.is_stress_on_demand_recompute_available()
+        if not available:
+            note.setVisible(False)
+            button.setVisible(False)
+            return
+
+        note.setVisible(True)
+        note.setText("Chunked plasticity run: recompute selected combo on demand.")
+
+        view_idx = self.view_combination_combo.currentIndex() if self.view_combination_combo is not None else 0
+        combo_idx = view_idx - 1
+        if combo_idx < 0:
+            button.setVisible(False)
+            return
+
+        button.setVisible(True)
+        cached = combo_idx in self.recomputed_stress_combo_cache
+        if cached:
+            note.setText("Selected combination has cached corrected values.")
+        if self._recompute_pending_combo == combo_idx:
+            button.setEnabled(False)
+            button.setText("Recomputing...")
+        else:
+            button.setEnabled(True)
+            button.setText("Recompute This Combination (Corrected)")
     
     def _show_envelope_view(self):
         """
@@ -741,6 +849,8 @@ class DisplayTab(QWidget):
         self.deformation_result = payload.deformation_result
         self.combination_names = list(payload.combination_names or [])
         self.output_flags = payload.output_flags or SolverOutputFlags()
+        self.recomputed_stress_combo_cache = {}
+        self._recompute_pending_combo = None
 
         self.update_view_with_results(
             payload.mesh,
@@ -823,6 +933,7 @@ class DisplayTab(QWidget):
         
         # Synchronize contour families/options and update visualization
         self.contour_sync_handler.sync_from_current_state()
+        self._update_recompute_combo_controls()
         
         # Clear file path since this is computed data, not loaded from file
         self.file_path.clear()
@@ -872,6 +983,8 @@ class DisplayTab(QWidget):
         self.all_combo_results = None
         self.nodal_forces_result = None
         self.deformation_result = None
+        self.recomputed_stress_combo_cache = {}
+        self._recompute_pending_combo = None
         self.combination_names = []
         self.output_flags = SolverOutputFlags()
         
@@ -883,6 +996,12 @@ class DisplayTab(QWidget):
         self.view_combination_combo.blockSignals(False)
         self.view_combination_label.setVisible(False)
         self.view_combination_combo.setVisible(False)
+        if self.recompute_combo_note is not None:
+            self.recompute_combo_note.setVisible(False)
+        if self.recompute_combo_button is not None:
+            self.recompute_combo_button.setVisible(False)
+            self.recompute_combo_button.setEnabled(True)
+            self.recompute_combo_button.setText("Recompute This Combination (Corrected)")
         
         # Hide force component controls
         self._show_force_component_controls(False)

@@ -247,7 +247,12 @@ class TestChunkedProcessing:
         
         engine.compute_von_mises = StressCombinationEngine.compute_von_mises
         engine.compute_principal_stresses_numpy = StressCombinationEngine.compute_principal_stresses_numpy
-        
+        engine._compute_chunk_combination_from_coeffs = (
+            StressCombinationEngine._compute_chunk_combination_from_coeffs.__get__(
+                engine, StressCombinationEngine
+            )
+        )
+
         engine._compute_chunk_combinations = StressCombinationEngine._compute_chunk_combinations.__get__(
             engine, StressCombinationEngine
         )
@@ -258,6 +263,70 @@ class TestChunkedProcessing:
         
         assert results.shape == (2, 2)  # 2 combinations, 2 nodes
         assert np.all(results >= 0)  # Von Mises always positive
+
+    def test_compute_single_combination_chunked_collects_chunk_values(self):
+        """Single-combination chunked path should stitch chunk vectors in node order."""
+        engine = Mock(spec=StressCombinationEngine)
+        engine.table = Mock()
+        engine.table.num_combinations = 3
+        engine.table.get_coeffs_for_combination = Mock(return_value=(np.array([1.0]), np.array([])))
+        engine.scoping = Mock()
+        engine.scoping.ids = [10, 20, 30]
+        engine.reader1 = Mock()
+        engine.reader1.get_node_coordinates = Mock(
+            return_value=(np.array([10, 20, 30]), np.zeros((3, 3), dtype=float))
+        )
+        engine.check_memory_available = Mock(return_value=(True, {"recommended_chunk_size": 2}))
+        engine.load_stress_for_node_range = Mock(return_value={})
+        engine._compute_chunk_combination_from_coeffs = Mock(
+            side_effect=[np.array([1.0, 2.0]), np.array([3.0])]
+        )
+
+        engine.compute_single_combination_chunked = (
+            StressCombinationEngine.compute_single_combination_chunked.__get__(
+                engine, StressCombinationEngine
+            )
+        )
+
+        result = engine.compute_single_combination_chunked(
+            combination_index=1,
+            stress_type="von_mises",
+            progress_callback=None,
+        )
+
+        np.testing.assert_allclose(result.all_combo_results[0], np.array([1.0, 2.0, 3.0]))
+        np.testing.assert_array_equal(result.combo_of_max, np.array([1, 1, 1], dtype=np.int32))
+
+    def test_compute_single_combination_chunked_applies_transform(self):
+        """Optional chunk transform should be applied before writing final values."""
+        engine = Mock(spec=StressCombinationEngine)
+        engine.table = Mock()
+        engine.table.num_combinations = 2
+        engine.table.get_coeffs_for_combination = Mock(return_value=(np.array([1.0]), np.array([])))
+        engine.scoping = Mock()
+        engine.scoping.ids = [1, 2]
+        engine.reader1 = Mock()
+        engine.reader1.get_node_coordinates = Mock(
+            return_value=(np.array([1, 2]), np.zeros((2, 3), dtype=float))
+        )
+        engine.check_memory_available = Mock(return_value=(True, {"recommended_chunk_size": 2}))
+        engine.load_stress_for_node_range = Mock(return_value={})
+        engine._compute_chunk_combination_from_coeffs = Mock(return_value=np.array([10.0, 20.0]))
+
+        engine.compute_single_combination_chunked = (
+            StressCombinationEngine.compute_single_combination_chunked.__get__(
+                engine, StressCombinationEngine
+            )
+        )
+
+        result = engine.compute_single_combination_chunked(
+            combination_index=0,
+            stress_type="von_mises",
+            progress_callback=None,
+            chunk_values_transform=lambda values, *_args: values + 5.0,
+        )
+
+        np.testing.assert_allclose(result.all_combo_results[0], np.array([15.0, 25.0]))
 
 
 class TestMemoryCheckAndChunkedAnalysis:

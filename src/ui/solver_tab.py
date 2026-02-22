@@ -5,6 +5,7 @@ via linear combination coefficients.
 
 import os
 import sys
+from copy import deepcopy
 from typing import Optional
 
 from PyQt5.QtCore import pyqtSignal, pyqtSlot
@@ -48,6 +49,7 @@ class SolverTab(QWidget):
     # Signals
     initial_data_loaded = pyqtSignal(object)
     display_payload_ready = pyqtSignal(object)
+    corrected_combination_ready = pyqtSignal(object)
     
     def __init__(self, parent=None):
         """Initialize the Solver Tab."""
@@ -65,6 +67,7 @@ class SolverTab(QWidget):
         self.combination_result: Optional[CombinationResult] = None
         self.nodal_forces_result: Optional[NodalForcesResult] = None
         self.deformation_result: Optional[DeformationResult] = None
+        self._last_solve_config: Optional[SolverConfig] = None
         
         # Temperature and material data (for plasticity)
         self.temperature_field_data: Optional[TemperatureFieldData] = None
@@ -518,9 +521,99 @@ class SolverTab(QWidget):
         
         # Build solver config
         config = self._build_solver_config()
+        self._last_solve_config = deepcopy(config)
         
         # Run analysis
         self.solve_run_controller.solve(config)
+
+    @pyqtSlot(int)
+    def recompute_corrected_combination_for_display(self, combination_index: int) -> None:
+        """On-demand recompute for a selected combination in Display tab."""
+        if self.combination_result is None:
+            self.corrected_combination_ready.emit(
+                {
+                    "success": False,
+                    "combination_index": int(combination_index),
+                    "error": "No stress result is available for recompute.",
+                }
+            )
+            return
+
+        if self._last_solve_config is None:
+            self.corrected_combination_ready.emit(
+                {
+                    "success": False,
+                    "combination_index": int(combination_index),
+                    "error": "No previous solve configuration snapshot was found.",
+                }
+            )
+            return
+
+        if self.combination_table is None:
+            self.corrected_combination_ready.emit(
+                {
+                    "success": False,
+                    "combination_index": int(combination_index),
+                    "error": "Combination table snapshot is unavailable.",
+                }
+            )
+            return
+
+        if combination_index < 0 or combination_index >= self.combination_table.num_combinations:
+            self.corrected_combination_ready.emit(
+                {
+                    "success": False,
+                    "combination_index": int(combination_index),
+                    "error": (
+                        f"Invalid combination index {combination_index}. "
+                        f"Expected 0..{self.combination_table.num_combinations - 1}."
+                    ),
+                }
+            )
+            return
+
+        stress_type = self.combination_result.result_type or "von_mises"
+        config = deepcopy(self._last_solve_config)
+        config.combination_history_mode = False
+        config.selected_node_id = None
+        config.calculate_von_mises = stress_type == "von_mises"
+        config.calculate_max_principal_stress = stress_type == "max_principal"
+        config.calculate_min_principal_stress = stress_type == "min_principal"
+        config.calculate_nodal_forces = False
+        config.calculate_deformation = False
+
+        self.console_textbox.append(
+            f"\nOn-demand recompute: Combination {combination_index + 1} "
+            f"({stress_type}) for Display tab.\n"
+        )
+
+        result = self.solve_run_controller.recompute_stress_combination_for_display(
+            config=config,
+            stress_type=stress_type,
+            combination_index=combination_index,
+            combo_table_override=self.combination_table,
+        )
+
+        if result is None or result.all_combo_results is None:
+            self.corrected_combination_ready.emit(
+                {
+                    "success": False,
+                    "combination_index": int(combination_index),
+                    "error": "On-demand recompute did not return combination values.",
+                }
+            )
+            return
+
+        stress_values = result.all_combo_results[0, :]
+        self.corrected_combination_ready.emit(
+            {
+                "success": True,
+                "combination_index": int(combination_index),
+                "node_ids": result.node_ids,
+                "stress_values": stress_values,
+                "result_type": result.result_type,
+            }
+        )
     
     def _build_solver_config(self) -> SolverConfig:
         """Build solver configuration from UI state."""

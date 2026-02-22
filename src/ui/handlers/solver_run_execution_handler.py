@@ -15,6 +15,7 @@ from core.plasticity import (
     map_temperature_field_to_nodes,
 )
 from core.data_models import (
+    CombinationTableData,
     CombinationResult,
     DeformationResult,
     NodalForcesResult,
@@ -168,6 +169,72 @@ class SolverRunExecutionHandler:
         progress_callback(100, 100, "Complete")
         return result
 
+    def run_stress_single_combination(
+        self,
+        config: SolverConfig,
+        stress_type: str,
+        combination_index: int,
+        progress_callback: Callable[[int, int, str], None],
+        combo_table_override: Optional[CombinationTableData] = None,
+    ) -> CombinationResult:
+        """Recompute one stress combination over all scoped nodes."""
+        engine = self._create_stress_engine(combo_table_override=combo_table_override)
+        self._stress_engine = engine
+
+        scalar_plasticity_requested = self._is_scalar_plasticity_requested(config, stress_type)
+        plasticity_ctx = None
+        if self._should_apply_scalar_plasticity(config, stress_type):
+            progress_callback(2, 100, "Preparing plasticity inputs...")
+            try:
+                plasticity_ctx = self._prepare_scalar_plasticity_context(config)
+            except PlasticityDataError as error:
+                raise ValueError(f"Plasticity input error: {error}") from error
+
+        chunk_transform = None
+        if plasticity_ctx is not None:
+            full_node_ids = np.asarray(engine.scoping.ids, dtype=int)
+            temperatures = np.asarray(
+                self._resolve_temperatures(full_node_ids, plasticity_ctx),
+                dtype=np.float64,
+            )
+
+            def _transform_chunk_values(
+                chunk_values: np.ndarray,
+                _chunk_node_ids: np.ndarray,
+                chunk_start: int,
+                chunk_end: int,
+            ) -> np.ndarray:
+                temp_chunk = temperatures[chunk_start:chunk_end]
+                corrected, _strain = self._apply_scalar_plasticity(
+                    np.asarray(chunk_values, dtype=np.float64),
+                    temp_chunk,
+                    plasticity_ctx,
+                )
+                return corrected
+
+            chunk_transform = _transform_chunk_values
+
+        result = engine.compute_single_combination_chunked(
+            combination_index=combination_index,
+            stress_type=stress_type,
+            progress_callback=progress_callback,
+            calculate_scalar_plasticity=scalar_plasticity_requested,
+            chunk_values_transform=chunk_transform,
+        )
+
+        metadata = getattr(result, "metadata", None)
+        if metadata is None:
+            metadata = {}
+        metadata["mode"] = "single_combination_recompute"
+        metadata["combination_index"] = int(combination_index)
+        if plasticity_ctx is not None:
+            metadata["plasticity"] = {
+                "method": plasticity_ctx["method"],
+                "note": "On-demand corrected single combination.",
+            }
+        setattr(result, "metadata", metadata)
+        return result
+
     def run_nodal_forces_analysis(
         self,
         config: SolverConfig,
@@ -278,9 +345,14 @@ class SolverRunExecutionHandler:
         """Return the most recent stress engine instance if one was created."""
         return self._stress_engine
 
-    def _create_stress_engine(self) -> StressCombinationEngine:
+    def _create_stress_engine(
+        self,
+        combo_table_override: Optional[CombinationTableData] = None,
+    ) -> StressCombinationEngine:
         try:
-            reader1, reader2, nodal_scoping, combo_table = self._get_common_inputs()
+            reader1, reader2, nodal_scoping, combo_table = self._get_common_inputs(
+                combo_table_override=combo_table_override
+            )
             return self.engine_factory.create_stress_engine(
                 reader1=reader1,
                 reader2=reader2,
@@ -316,11 +388,18 @@ class SolverRunExecutionHandler:
         except Exception as error:
             raise SolverRunEngineCreationError("deformation combination", error) from error
 
-    def _get_common_inputs(self):
+    def _get_common_inputs(
+        self,
+        combo_table_override: Optional[CombinationTableData] = None,
+    ):
         reader1 = self.tab.file_handler.base_reader
         reader2 = self.tab.file_handler.combine_reader
         nodal_scoping = self.tab.get_nodal_scoping_for_selected_named_selection()
-        combo_table = self.tab.get_combination_table_data()
+        combo_table = (
+            combo_table_override
+            if combo_table_override is not None
+            else self.tab.get_combination_table_data()
+        )
         return reader1, reader2, nodal_scoping, combo_table
 
     def _should_use_chunked_processing(

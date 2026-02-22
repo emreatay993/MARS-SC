@@ -166,6 +166,41 @@ class _FakeStressEngineChunkedEnvelope:
         )
 
 
+class _FakeStressEngineSingleCombination:
+    def __init__(self, node_ids):
+        self.scoping = type("Scoping", (), {"ids": list(np.asarray(node_ids, dtype=int))})()
+        self._node_ids = np.asarray(node_ids, dtype=int)
+        self._node_coords = np.column_stack(
+            (
+                np.arange(self._node_ids.size, dtype=np.float64),
+                np.zeros(self._node_ids.size, dtype=np.float64),
+                np.zeros(self._node_ids.size, dtype=np.float64),
+            )
+        )
+
+    def compute_single_combination_chunked(
+        self,
+        combination_index,
+        stress_type,
+        progress_callback=None,
+        calculate_scalar_plasticity=False,
+        chunk_values_transform=None,
+    ):
+        base = np.array([10.0, 20.0, 30.0], dtype=np.float64)
+        corrected = base
+        if chunk_values_transform is not None:
+            corrected = chunk_values_transform(base.copy(), self._node_ids, 0, self._node_ids.size)
+
+        return CombinationResult(
+            node_ids=self._node_ids.copy(),
+            node_coords=self._node_coords.copy(),
+            max_over_combo=corrected.copy(),
+            combo_of_max=np.full(self._node_ids.size, combination_index, dtype=np.int32),
+            result_type=stress_type,
+            all_combo_results=corrected.reshape(1, -1),
+        )
+
+
 def _sample_material_profile():
     return MaterialProfileData(
         youngs_modulus=pd.DataFrame(
@@ -355,3 +390,37 @@ def test_run_stress_chunked_envelope_corrects_full_chunk_before_reduction(monkey
     np.testing.assert_allclose(result.metadata["elastic_max_over_combo"], np.max(elastic_all, axis=0))
     np.testing.assert_allclose(result.metadata["elastic_min_over_combo"], np.min(elastic_all, axis=0))
     assert result.metadata["plasticity"]["note"] == "Corrected from full combination matrix in chunked mode."
+
+
+def test_run_single_combination_applies_scalar_plasticity_transform(monkeypatch):
+    tab = _FakeTab()
+    handler = SolverRunExecutionHandler(tab, SolverEngineFactory())
+
+    fake_engine = _FakeStressEngineSingleCombination(node_ids=np.array([10, 20, 30], dtype=int))
+    monkeypatch.setattr(handler, "_create_stress_engine", lambda *_args, **_kwargs: fake_engine)
+    monkeypatch.setattr(
+        handler,
+        "_apply_scalar_plasticity",
+        lambda stress_values, _temp_values, _ctx: (
+            np.asarray(stress_values, dtype=np.float64) + 5.0,
+            np.zeros_like(np.asarray(stress_values, dtype=np.float64)),
+        ),
+    )
+
+    config = SolverConfig(calculate_von_mises=True, combination_history_mode=False)
+    config.plasticity = PlasticityConfig(
+        enabled=True,
+        method="neuber",
+        material_profile=_sample_material_profile(),
+    )
+
+    result = handler.run_stress_single_combination(
+        config=config,
+        stress_type="von_mises",
+        combination_index=1,
+        progress_callback=lambda *_: None,
+        combo_table_override=None,
+    )
+
+    np.testing.assert_allclose(result.all_combo_results[0], np.array([15.0, 25.0, 35.0]))
+    assert result.metadata["mode"] == "single_combination_recompute"

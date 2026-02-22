@@ -8,7 +8,7 @@ validation -> execution -> lifecycle completion/error handling.
 import traceback
 from typing import Optional
 
-from core.data_models import SolverConfig
+from core.data_models import CombinationResult, SolverConfig
 from file_io.dpf_reader import (
     DisplacementNotAvailableError,
     NodalForcesNotAvailableError,
@@ -118,6 +118,52 @@ class SolveRunController:
         except Exception as error:
             error_msg = f"{str(error)}\n\n{traceback.format_exc()}"
             self.lifecycle_handler.fail_solve(error_msg)
+
+    def recompute_stress_combination_for_display(
+        self,
+        config: SolverConfig,
+        stress_type: str,
+        combination_index: int,
+        combo_table_override=None,
+    ) -> Optional[CombinationResult]:
+        """Run a lightweight single-combination stress recompute for Display on-demand usage."""
+        self.tab.progress_bar.setVisible(True)
+        self.tab.progress_bar.setValue(0)
+        self.tab.progress_bar.setFormat("Recomputing selected combination...")
+
+        try:
+            return self.execution_handler.run_stress_single_combination(
+                config=config,
+                stress_type=stress_type,
+                combination_index=combination_index,
+                progress_callback=self.lifecycle_handler.update_progress,
+                combo_table_override=combo_table_override,
+            )
+        except NodalForcesNotAvailableError as error:
+            self.lifecycle_handler.handle_nodal_forces_unavailable(error)
+            return None
+        except DisplacementNotAvailableError as error:
+            self.lifecycle_handler.handle_displacement_unavailable(error)
+            return None
+        except CylindricalCSNotFoundError as error:
+            self.lifecycle_handler.handle_cylindrical_cs_error(error)
+            return None
+        except MemoryError as error:
+            self.lifecycle_handler.handle_memory_error(error)
+            return None
+        except SolverRunEngineCreationError as error:
+            self.lifecycle_handler.handle_engine_creation_error(
+                engine_label=error.engine_label,
+                error=error.cause,
+            )
+            return None
+        except Exception as error:
+            error_msg = f"{str(error)}\n\n{traceback.format_exc()}"
+            self.lifecycle_handler.fail_solve(error_msg)
+            return None
+        finally:
+            self.tab.setEnabled(True)
+            self.tab.progress_bar.setVisible(False)
 
     def get_combination_engine(self) -> Optional[StressCombinationEngine]:
         """Return the current stress engine instance if one exists."""

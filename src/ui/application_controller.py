@@ -232,6 +232,12 @@ class ApplicationController(QMainWindow):
         self.display_tab.node_picked_for_history_popup.connect(
             self._on_node_picked_for_history_popup
         )
+        self.display_tab.recompute_corrected_combination_requested.connect(
+            self.solver_tab.recompute_corrected_combination_for_display
+        )
+        self.solver_tab.corrected_combination_ready.connect(
+            self.display_tab.on_recomputed_combination_ready
+        )
     
     @pyqtSlot(int)
     def _on_node_picked(self, node_id: int):

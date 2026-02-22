@@ -93,7 +93,10 @@ class DisplayContourSyncHandler(DisplayBaseHandler):
         if contour_type is None:
             return
 
-        use_specific = (not context.is_envelope_view) and self._family_supports_specific(contour_type)
+        use_specific = (not context.is_envelope_view) and self._family_supports_specific_for_selection(
+            contour_type,
+            context.selected_combination_index,
+        )
 
         if contour_type == ContourType.DEFORMATION and self.tab.deformation_result is not None:
             attach_deformation_envelope_arrays(mesh, self.tab.deformation_result)
@@ -241,11 +244,16 @@ class DisplayContourSyncHandler(DisplayBaseHandler):
         names = list(self.tab.combination_names or [])
         forces_result = self.tab.nodal_forces_result
         deformation_result = self.tab.deformation_result
+        stress_on_demand_available = False
+        if hasattr(self.tab, "is_stress_on_demand_recompute_available"):
+            stress_on_demand_available = bool(self.tab.is_stress_on_demand_recompute_available())
+
         supports_specific = any(
             [
                 self.tab.all_combo_results is not None,
                 forces_result is not None and forces_result.all_combo_fx is not None,
                 deformation_result is not None and deformation_result.all_combo_ux is not None,
+                stress_on_demand_available,
             ]
         )
 
@@ -285,6 +293,24 @@ class DisplayContourSyncHandler(DisplayBaseHandler):
             result = self.tab.deformation_result
             return result is not None and result.all_combo_ux is not None
         return False
+
+    def _family_supports_specific_for_selection(
+        self,
+        contour_type: ContourType,
+        combo_idx: int,
+    ) -> bool:
+        if combo_idx < 0:
+            return False
+
+        if contour_type == ContourType.STRESS:
+            all_combo = self.tab.all_combo_results
+            if all_combo is not None and combo_idx < all_combo.shape[0]:
+                return True
+            if hasattr(self.tab, "get_recomputed_stress_values"):
+                return self.tab.get_recomputed_stress_values(combo_idx) is not None
+            return False
+
+        return self._family_supports_specific(contour_type)
 
     def _has_min_for_family(self, contour_type: ContourType, context) -> bool:
         if contour_type == ContourType.STRESS:
@@ -336,13 +362,17 @@ class DisplayContourSyncHandler(DisplayBaseHandler):
         return None
 
     def _attach_stress_specific_array(self, mesh, combo_idx: int) -> None:
+        values = None
         all_combo = self.tab.all_combo_results
-        if all_combo is None:
-            return
-        if combo_idx < 0 or combo_idx >= all_combo.shape[0]:
-            return
+        if all_combo is not None and 0 <= combo_idx < all_combo.shape[0]:
+            values = np.asarray(all_combo[combo_idx, :]).reshape(-1)
+        elif hasattr(self.tab, "get_recomputed_stress_values"):
+            cached = self.tab.get_recomputed_stress_values(combo_idx)
+            if cached is not None:
+                values = np.asarray(cached).reshape(-1)
 
-        values = np.asarray(all_combo[combo_idx, :]).reshape(-1)
+        if values is None:
+            return
         if values.shape[0] != mesh.n_points:
             return
 

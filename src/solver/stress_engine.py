@@ -890,55 +890,174 @@ class StressCombinationEngine:
         """
         num_combos = self.table.num_combinations
         results = np.zeros((num_combos, chunk_size))
-        
+
         for combo_idx in range(num_combos):
             a1_coeffs, a2_coeffs = self.table.get_coeffs_for_combination(combo_idx)
-            
-            # Initialize combined stress components for this chunk
-            sx = np.zeros(chunk_size)
-            sy = np.zeros(chunk_size)
-            sz = np.zeros(chunk_size)
-            sxy = np.zeros(chunk_size)
-            syz = np.zeros(chunk_size)
-            sxz = np.zeros(chunk_size)
-            
-            # Add contributions from Analysis 1 (check cache membership for active-only loading)
-            for i, step_id in enumerate(self.table.analysis1_step_ids):
-                coeff = a1_coeffs[i]
-                if coeff != 0.0 and (1, step_id) in chunk_cache:
-                    _, s_sx, s_sy, s_sz, s_sxy, s_syz, s_sxz = chunk_cache[(1, step_id)]
-                    sx += coeff * s_sx
-                    sy += coeff * s_sy
-                    sz += coeff * s_sz
-                    sxy += coeff * s_sxy
-                    syz += coeff * s_syz
-                    sxz += coeff * s_sxz
-            
-            # Add contributions from Analysis 2 (check cache membership for active-only loading)
-            for i, step_id in enumerate(self.table.analysis2_step_ids):
-                coeff = a2_coeffs[i]
-                if coeff != 0.0 and (2, step_id) in chunk_cache:
-                    _, s_sx, s_sy, s_sz, s_sxy, s_syz, s_sxz = chunk_cache[(2, step_id)]
-                    sx += coeff * s_sx
-                    sy += coeff * s_sy
-                    sz += coeff * s_sz
-                    sxy += coeff * s_sxy
-                    syz += coeff * s_syz
-                    sxz += coeff * s_sxz
-            
-            # Compute stress invariant
-            if stress_type == "von_mises":
-                results[combo_idx, :] = self.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
-            elif stress_type == "max_principal":
-                s1, _, _ = self.compute_principal_stresses_numpy(sx, sy, sz, sxy, syz, sxz)
-                results[combo_idx, :] = s1
-            elif stress_type == "min_principal":
-                _, _, s3 = self.compute_principal_stresses_numpy(sx, sy, sz, sxy, syz, sxz)
-                results[combo_idx, :] = s3
-            else:
-                raise ValueError(f"Unknown stress type: {stress_type}")
-        
+            results[combo_idx, :] = self._compute_chunk_combination_from_coeffs(
+                chunk_cache=chunk_cache,
+                chunk_size=chunk_size,
+                a1_coeffs=a1_coeffs,
+                a2_coeffs=a2_coeffs,
+                stress_type=stress_type,
+            )
+
         return results
+
+    def _compute_chunk_combination_from_coeffs(
+        self,
+        chunk_cache: Dict[Tuple[int, int], Tuple],
+        chunk_size: int,
+        a1_coeffs: np.ndarray,
+        a2_coeffs: np.ndarray,
+        stress_type: str = "von_mises",
+    ) -> np.ndarray:
+        """Compute one stress-result vector for a chunk from coefficient arrays."""
+        # Initialize combined stress components for this chunk
+        sx = np.zeros(chunk_size)
+        sy = np.zeros(chunk_size)
+        sz = np.zeros(chunk_size)
+        sxy = np.zeros(chunk_size)
+        syz = np.zeros(chunk_size)
+        sxz = np.zeros(chunk_size)
+
+        # Add contributions from Analysis 1 (check cache membership for active-only loading)
+        for i, step_id in enumerate(self.table.analysis1_step_ids):
+            coeff = a1_coeffs[i]
+            if coeff != 0.0 and (1, step_id) in chunk_cache:
+                _, s_sx, s_sy, s_sz, s_sxy, s_syz, s_sxz = chunk_cache[(1, step_id)]
+                sx += coeff * s_sx
+                sy += coeff * s_sy
+                sz += coeff * s_sz
+                sxy += coeff * s_sxy
+                syz += coeff * s_syz
+                sxz += coeff * s_sxz
+
+        # Add contributions from Analysis 2 (check cache membership for active-only loading)
+        for i, step_id in enumerate(self.table.analysis2_step_ids):
+            coeff = a2_coeffs[i]
+            if coeff != 0.0 and (2, step_id) in chunk_cache:
+                _, s_sx, s_sy, s_sz, s_sxy, s_syz, s_sxz = chunk_cache[(2, step_id)]
+                sx += coeff * s_sx
+                sy += coeff * s_sy
+                sz += coeff * s_sz
+                sxy += coeff * s_sxy
+                syz += coeff * s_syz
+                sxz += coeff * s_sxz
+
+        # Compute stress invariant
+        if stress_type == "von_mises":
+            return self.compute_von_mises(sx, sy, sz, sxy, syz, sxz)
+        if stress_type == "max_principal":
+            s1, _, _ = self.compute_principal_stresses_numpy(sx, sy, sz, sxy, syz, sxz)
+            return s1
+        if stress_type == "min_principal":
+            _, _, s3 = self.compute_principal_stresses_numpy(sx, sy, sz, sxy, syz, sxz)
+            return s3
+        raise ValueError(f"Unknown stress type: {stress_type}")
+
+    def compute_single_combination_chunked(
+        self,
+        combination_index: int,
+        stress_type: str = "von_mises",
+        progress_callback: Optional[Callable[[int, int, str], None]] = None,
+        chunk_size: Optional[int] = None,
+        calculate_scalar_plasticity: bool = False,
+        chunk_values_transform: Optional[
+            Callable[[np.ndarray, np.ndarray, int, int], np.ndarray]
+        ] = None,
+    ) -> CombinationResult:
+        """
+        Compute one combination over all scoped nodes with chunked processing.
+
+        This is used for on-demand specific-combination visualization without
+        storing the full combinations matrix in memory.
+        """
+        if combination_index < 0 or combination_index >= self.table.num_combinations:
+            raise ValueError(
+                f"Invalid combination_index={combination_index}. "
+                f"Expected 0 <= index < {self.table.num_combinations}."
+            )
+
+        full_node_ids = np.array(self.scoping.ids)
+        num_nodes = len(full_node_ids)
+
+        _, estimates = self.check_memory_available(
+            raise_on_insufficient=True,
+            calculate_scalar_plasticity=calculate_scalar_plasticity,
+        )
+        if chunk_size is None:
+            chunk_size = estimates["recommended_chunk_size"]
+
+        if progress_callback:
+            progress_callback(
+                0,
+                num_nodes,
+                f"Starting single-combination chunked analysis (chunk size: {chunk_size:,})...",
+            )
+
+        self._node_ids, self._node_coords = self.reader1.get_node_coordinates(self.scoping)
+        combination_values = np.zeros(num_nodes, dtype=np.float64)
+
+        num_chunks = (num_nodes + chunk_size - 1) // chunk_size
+        a1_coeffs, a2_coeffs = self.table.get_coeffs_for_combination(combination_index)
+
+        for chunk_idx, chunk_start in enumerate(range(0, num_nodes, chunk_size)):
+            chunk_end = min(chunk_start + chunk_size, num_nodes)
+            actual_chunk_size = chunk_end - chunk_start
+
+            if progress_callback:
+                progress_callback(
+                    chunk_start,
+                    num_nodes,
+                    (
+                        f"Processing combination {combination_index + 1}, nodes "
+                        f"{chunk_start + 1:,}-{chunk_end:,} (chunk {chunk_idx + 1}/{num_chunks})..."
+                    ),
+                )
+
+            chunk_cache = self.load_stress_for_node_range(chunk_start, chunk_end, full_node_ids)
+            chunk_values = self._compute_chunk_combination_from_coeffs(
+                chunk_cache=chunk_cache,
+                chunk_size=actual_chunk_size,
+                a1_coeffs=a1_coeffs,
+                a2_coeffs=a2_coeffs,
+                stress_type=stress_type,
+            )
+
+            if chunk_values_transform is not None:
+                chunk_node_ids = full_node_ids[chunk_start:chunk_end]
+                transformed_values = chunk_values_transform(
+                    chunk_values,
+                    chunk_node_ids,
+                    chunk_start,
+                    chunk_end,
+                )
+                if transformed_values.shape != chunk_values.shape:
+                    raise ValueError(
+                        "chunk_values_transform must return an array with shape "
+                        f"{chunk_values.shape}, got {transformed_values.shape}."
+                    )
+                chunk_values = transformed_values
+
+            combination_values[chunk_start:chunk_end] = chunk_values
+
+            del chunk_cache
+            del chunk_values
+            gc.collect()
+
+        if progress_callback:
+            progress_callback(num_nodes, num_nodes, "Single-combination chunked analysis complete.")
+
+        return CombinationResult(
+            node_ids=self._node_ids.copy(),
+            node_coords=self._node_coords.copy(),
+            max_over_combo=combination_values.copy(),
+            min_over_combo=None,
+            combo_of_max=np.full(num_nodes, combination_index, dtype=np.int32),
+            combo_of_min=None,
+            result_type=stress_type,
+            all_combo_results=combination_values.reshape(1, -1),
+        )
     
     def _update_envelope_for_chunk(
         self,

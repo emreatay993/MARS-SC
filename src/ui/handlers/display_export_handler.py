@@ -587,8 +587,14 @@ class DisplayExportHandler(DisplayBaseHandler):
         
         # Build list of available result types
         available_types = []
-        if stress_result is not None and stress_result.all_combo_results is not None:
-            if combo_idx < stress_result.num_combinations:
+        if stress_result is not None:
+            has_stress_combo = (
+                stress_result.all_combo_results is not None
+                and combo_idx < stress_result.num_combinations
+            )
+            if (not has_stress_combo) and hasattr(self.tab, "get_recomputed_stress_values"):
+                has_stress_combo = self.tab.get_recomputed_stress_values(combo_idx) is not None
+            if has_stress_combo:
                 available_types.append("stress")
         if forces_result is not None and forces_result.all_combo_fx is not None:
             if combo_idx < forces_result.all_combo_fx.shape[0]:
@@ -645,8 +651,14 @@ class DisplayExportHandler(DisplayBaseHandler):
                     if not filename:
                         return
                 
-                # Get stress values for this combination
-                stress_values = stress_result.all_combo_results[combo_idx, :]
+                # Get stress values for this combination.
+                if stress_result.all_combo_results is not None and combo_idx < stress_result.num_combinations:
+                    stress_values = stress_result.all_combo_results[combo_idx, :]
+                else:
+                    stress_values = np.asarray(
+                        self.tab.get_recomputed_stress_values(combo_idx),
+                        dtype=float,
+                    )
                 
                 export_single_combination(
                     filename=filename,

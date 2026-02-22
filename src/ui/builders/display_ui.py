@@ -129,6 +129,13 @@ class DisplayTabUIBuilder:
         view_combination_combo.addItem("(Envelope View)")  # Default option
         view_combination_label.setVisible(False)  # Hidden until batch results are loaded
         view_combination_combo.setVisible(False)
+
+        # On-demand recompute controls (chunked plasticity specific-combo workflow)
+        recompute_combo_note = QLabel("Chunked plasticity run: recompute selected combo on demand.")
+        recompute_combo_note.setVisible(False)
+        recompute_combo_button = QPushButton("Recompute This Combination (Corrected)")
+        recompute_combo_button.setStyleSheet(BUTTON_STYLE)
+        recompute_combo_button.setVisible(False)
         
         # Force component selection controls (for nodal forces results)
         force_component_label = QLabel("Force Component:")
@@ -192,6 +199,8 @@ class DisplayTabUIBuilder:
         graphics_control_row2.addWidget(scalar_display_combo)
         graphics_control_row2.addWidget(view_combination_label)
         graphics_control_row2.addWidget(view_combination_combo)
+        graphics_control_row2.addWidget(recompute_combo_note)
+        graphics_control_row2.addWidget(recompute_combo_button)
         graphics_control_row2.addWidget(force_component_label)
         graphics_control_row2.addWidget(force_component_combo)
         graphics_control_row2.addWidget(displacement_component_label)
@@ -219,6 +228,8 @@ class DisplayTabUIBuilder:
         self.components['contour_type_combo'] = contour_type_combo
         self.components['view_combination_label'] = view_combination_label
         self.components['view_combination_combo'] = view_combination_combo
+        self.components['recompute_combo_note'] = recompute_combo_note
+        self.components['recompute_combo_button'] = recompute_combo_button
         self.components['force_component_label'] = force_component_label
         self.components['force_component_combo'] = force_component_combo
         self.components['export_forces_button'] = export_forces_button
