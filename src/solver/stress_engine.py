@@ -834,7 +834,8 @@ class StressCombinationEngine:
         self,
         start_idx: int,
         end_idx: int,
-        full_node_ids: np.ndarray
+        full_node_ids: np.ndarray,
+        step_progress_callback: Optional[Callable[[int, int, int, int], None]] = None,
     ) -> Dict[Tuple[int, int], Tuple]:
         """
         Load stress data for a specific node range only.
@@ -847,6 +848,9 @@ class StressCombinationEngine:
             start_idx: Start index (0-based, inclusive).
             end_idx: End index (0-based, exclusive).
             full_node_ids: Full array of node IDs for reference.
+            step_progress_callback: Optional callback invoked after each loaded
+                step with signature:
+                (completed_steps, total_steps, analysis_index, step_id).
             
         Returns:
             Dictionary mapping (analysis_idx, step_id) to stress tuple.
@@ -858,16 +862,24 @@ class StressCombinationEngine:
         
         # Get only active steps (those with non-zero coefficients)
         active_a1_steps, active_a2_steps = self.table.get_active_step_ids()
+        total_steps = len(active_a1_steps) + len(active_a2_steps)
+        completed_steps = 0
         
         # Load Analysis 1 stress data for chunk (only active steps)
         for step_id in active_a1_steps:
             result = self.reader1.read_stress_tensor_for_loadstep(step_id, chunk_scoping)
             chunk_cache[(1, step_id)] = result
+            completed_steps += 1
+            if step_progress_callback is not None:
+                step_progress_callback(completed_steps, total_steps, 1, step_id)
         
         # Load Analysis 2 stress data for chunk (only active steps)
         for step_id in active_a2_steps:
             result = self.reader2.read_stress_tensor_for_loadstep(step_id, chunk_scoping)
             chunk_cache[(2, step_id)] = result
+            completed_steps += 1
+            if step_progress_callback is not None:
+                step_progress_callback(completed_steps, total_steps, 2, step_id)
         
         return chunk_cache
     
@@ -875,7 +887,8 @@ class StressCombinationEngine:
         self,
         chunk_cache: Dict[Tuple[int, int], Tuple],
         chunk_size: int,
-        stress_type: str = "von_mises"
+        stress_type: str = "von_mises",
+        combo_progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> np.ndarray:
         """
         Compute all combinations for a chunk of nodes.
@@ -884,12 +897,15 @@ class StressCombinationEngine:
             chunk_cache: Stress cache for this chunk only (contains only active steps).
             chunk_size: Number of nodes in this chunk.
             stress_type: One of "von_mises", "max_principal", "min_principal".
+            combo_progress_callback: Optional callback with signature
+                (completed_combos, total_combos).
             
         Returns:
             Array of shape (num_combinations, chunk_size).
         """
         num_combos = self.table.num_combinations
         results = np.zeros((num_combos, chunk_size))
+        report_stride = max(1, num_combos // 20) if num_combos > 0 else 1
 
         for combo_idx in range(num_combos):
             a1_coeffs, a2_coeffs = self.table.get_coeffs_for_combination(combo_idx)
@@ -900,6 +916,10 @@ class StressCombinationEngine:
                 a2_coeffs=a2_coeffs,
                 stress_type=stress_type,
             )
+            if combo_progress_callback is not None:
+                completed = combo_idx + 1
+                if completed == 1 or completed == num_combos or completed % report_stride == 0:
+                    combo_progress_callback(completed, num_combos)
 
         return results
 
@@ -1004,18 +1024,62 @@ class StressCombinationEngine:
         for chunk_idx, chunk_start in enumerate(range(0, num_nodes, chunk_size)):
             chunk_end = min(chunk_start + chunk_size, num_nodes)
             actual_chunk_size = chunk_end - chunk_start
+            chunk_label = (
+                f"nodes {chunk_start + 1:,}-{chunk_end:,} "
+                f"(chunk {chunk_idx + 1}/{num_chunks})"
+            )
+
+            def _chunk_current(phase_fraction: float) -> int:
+                phase_fraction = min(max(phase_fraction, 0.0), 1.0)
+                return min(num_nodes, chunk_start + int(round(actual_chunk_size * phase_fraction)))
 
             if progress_callback:
                 progress_callback(
-                    chunk_start,
+                    _chunk_current(0.0),
                     num_nodes,
                     (
-                        f"Processing combination {combination_index + 1}, nodes "
-                        f"{chunk_start + 1:,}-{chunk_end:,} (chunk {chunk_idx + 1}/{num_chunks})..."
+                        f"Processing combination {combination_index + 1}/"
+                        f"{self.table.num_combinations}: {chunk_label}: preparing scoped read..."
                     ),
                 )
 
-            chunk_cache = self.load_stress_for_node_range(chunk_start, chunk_end, full_node_ids)
+            def _on_step_loaded(
+                completed_steps: int,
+                total_steps: int,
+                analysis_index: int,
+                step_id: int,
+            ) -> None:
+                if progress_callback is None or total_steps <= 0:
+                    return
+                phase = 0.05 + (0.70 * (completed_steps / total_steps))
+                analysis_label = "A1" if analysis_index == 1 else "A2"
+                progress_callback(
+                    _chunk_current(phase),
+                    num_nodes,
+                    (
+                        f"Processing combination {combination_index + 1}/"
+                        f"{self.table.num_combinations}: {chunk_label}: "
+                        f"loading {analysis_label} step {step_id} "
+                        f"({completed_steps}/{total_steps})..."
+                    ),
+                )
+
+            chunk_cache = self.load_stress_for_node_range(
+                chunk_start,
+                chunk_end,
+                full_node_ids,
+                step_progress_callback=_on_step_loaded if progress_callback else None,
+            )
+
+            if progress_callback:
+                progress_callback(
+                    _chunk_current(0.78),
+                    num_nodes,
+                    (
+                        f"Processing combination {combination_index + 1}/"
+                        f"{self.table.num_combinations}: {chunk_label}: combining stresses..."
+                    ),
+                )
             chunk_values = self._compute_chunk_combination_from_coeffs(
                 chunk_cache=chunk_cache,
                 chunk_size=actual_chunk_size,
@@ -1026,6 +1090,15 @@ class StressCombinationEngine:
 
             if chunk_values_transform is not None:
                 chunk_node_ids = full_node_ids[chunk_start:chunk_end]
+                if progress_callback:
+                    progress_callback(
+                        _chunk_current(0.90),
+                        num_nodes,
+                        (
+                            f"Processing combination {combination_index + 1}/"
+                            f"{self.table.num_combinations}: {chunk_label}: applying chunk transform..."
+                        ),
+                    )
                 transformed_values = chunk_values_transform(
                     chunk_values,
                     chunk_node_ids,
@@ -1039,11 +1112,30 @@ class StressCombinationEngine:
                     )
                 chunk_values = transformed_values
 
+            if progress_callback:
+                progress_callback(
+                    _chunk_current(0.96),
+                    num_nodes,
+                    (
+                        f"Processing combination {combination_index + 1}/"
+                        f"{self.table.num_combinations}: {chunk_label}: storing chunk results..."
+                    ),
+                )
             combination_values[chunk_start:chunk_end] = chunk_values
 
             del chunk_cache
             del chunk_values
             gc.collect()
+
+            if progress_callback:
+                progress_callback(
+                    chunk_end,
+                    num_nodes,
+                    (
+                        f"Processing combination {combination_index + 1}/"
+                        f"{self.table.num_combinations}: {chunk_label}: complete."
+                    ),
+                )
 
         if progress_callback:
             progress_callback(num_nodes, num_nodes, "Single-combination chunked analysis complete.")
@@ -1168,26 +1260,78 @@ class StressCombinationEngine:
         for chunk_idx, chunk_start in enumerate(range(0, num_nodes, chunk_size)):
             chunk_end = min(chunk_start + chunk_size, num_nodes)
             actual_chunk_size = chunk_end - chunk_start
+            chunk_label = (
+                f"nodes {chunk_start + 1:,}-{chunk_end:,} "
+                f"(chunk {chunk_idx + 1}/{num_chunks})"
+            )
+
+            def _chunk_current(phase_fraction: float) -> int:
+                phase_fraction = min(max(phase_fraction, 0.0), 1.0)
+                return min(num_nodes, chunk_start + int(round(actual_chunk_size * phase_fraction)))
             
             if progress_callback:
                 progress_callback(
-                    chunk_start, 
-                    num_nodes, 
-                    f"Processing nodes {chunk_start+1:,}-{chunk_end:,} (chunk {chunk_idx+1}/{num_chunks})..."
+                    _chunk_current(0.0),
+                    num_nodes,
+                    f"Processing {chunk_label}: preparing scoped read..."
+                )
+
+            def _on_step_loaded(
+                completed_steps: int,
+                total_steps: int,
+                analysis_index: int,
+                step_id: int,
+            ) -> None:
+                if progress_callback is None or total_steps <= 0:
+                    return
+                phase = 0.02 + (0.60 * (completed_steps / total_steps))
+                analysis_label = "A1" if analysis_index == 1 else "A2"
+                progress_callback(
+                    _chunk_current(phase),
+                    num_nodes,
+                    (
+                        f"Processing {chunk_label}: loading {analysis_label} step {step_id} "
+                        f"({completed_steps}/{total_steps})..."
+                    ),
                 )
             
             # Load stress data for this chunk
             chunk_cache = self.load_stress_for_node_range(
-                chunk_start, chunk_end, full_node_ids
+                chunk_start,
+                chunk_end,
+                full_node_ids,
+                step_progress_callback=_on_step_loaded if progress_callback else None,
             )
+
+            def _on_combo_progress(completed_combos: int, total_combos: int) -> None:
+                if progress_callback is None or total_combos <= 0:
+                    return
+                phase = 0.62 + (0.28 * (completed_combos / total_combos))
+                progress_callback(
+                    _chunk_current(phase),
+                    num_nodes,
+                    (
+                        f"Processing {chunk_label}: computing combination "
+                        f"{completed_combos:,}/{total_combos:,}..."
+                    ),
+                )
             
             # Compute all combinations for this chunk
             chunk_results = self._compute_chunk_combinations(
-                chunk_cache, actual_chunk_size, stress_type
+                chunk_cache,
+                actual_chunk_size,
+                stress_type,
+                combo_progress_callback=_on_combo_progress if progress_callback else None,
             )
 
             if chunk_results_transform is not None:
                 chunk_node_ids = full_node_ids[chunk_start:chunk_end]
+                if progress_callback:
+                    progress_callback(
+                        _chunk_current(0.91),
+                        num_nodes,
+                        f"Processing {chunk_label}: applying chunk transform...",
+                    )
                 transformed_results = chunk_results_transform(
                     chunk_results,
                     chunk_node_ids,
@@ -1202,6 +1346,12 @@ class StressCombinationEngine:
                 chunk_results = transformed_results
             
             # Update envelope arrays
+            if progress_callback:
+                progress_callback(
+                    _chunk_current(0.96),
+                    num_nodes,
+                    f"Processing {chunk_label}: updating envelope arrays...",
+                )
             self._update_envelope_for_chunk(
                 chunk_results, chunk_start,
                 max_envelope, min_envelope,
@@ -1212,6 +1362,13 @@ class StressCombinationEngine:
             del chunk_cache
             del chunk_results
             gc.collect()
+
+            if progress_callback:
+                progress_callback(
+                    chunk_end,
+                    num_nodes,
+                    f"Processing {chunk_label}: complete.",
+                )
         
         if progress_callback:
             progress_callback(num_nodes, num_nodes, "Chunked analysis complete.")
