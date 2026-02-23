@@ -17,6 +17,12 @@ from ui.handlers.display_visualization_handler import DisplayVisualizationHandle
 from ui.handlers.display_interaction_handler import DisplayInteractionHandler
 from ui.handlers.display_export_handler import DisplayExportHandler
 from ui.handlers.display_contour_sync_handler import DisplayContourSyncHandler
+from ui.handlers.display_recompute_policy import (
+    get_recompute_button_text,
+    get_recompute_cached_note_text,
+    get_recompute_note_text,
+    is_stress_on_demand_recompute_available as stress_recompute_available,
+)
 from ui.display_payload import DisplayResultPayload, SolverOutputFlags
 
 
@@ -318,16 +324,8 @@ class DisplayTab(QWidget):
         self.recompute_corrected_combination_requested.emit(combo_idx)
 
     def is_stress_on_demand_recompute_available(self) -> bool:
-        """Whether the current stress payload supports on-demand corrected combo recompute."""
-        result = self.stress_result
-        if result is None:
-            return False
-        if result.result_type != "von_mises":
-            return False
-        if result.all_combo_results is not None:
-            return False
-        metadata = getattr(result, "metadata", None) or {}
-        return isinstance(metadata.get("plasticity"), dict)
+        """Whether current stress payload supports on-demand combination recompute."""
+        return stress_recompute_available(self.stress_result)
 
     def get_recomputed_stress_values(self, combo_idx: int):
         """Return cached on-demand corrected stress values for a combination if present."""
@@ -341,7 +339,7 @@ class DisplayTab(QWidget):
 
         if self.recompute_combo_button is not None:
             self.recompute_combo_button.setEnabled(True)
-            self.recompute_combo_button.setText("Recompute This Combination (Corrected)")
+            self.recompute_combo_button.setText(get_recompute_button_text(self.stress_result))
 
         if success:
             values = np.asarray(payload.get("stress_values", []), dtype=float).reshape(-1)
@@ -376,7 +374,7 @@ class DisplayTab(QWidget):
             return
 
         note.setVisible(True)
-        note.setText("Chunked plasticity run: recompute selected combo on demand.")
+        note.setText(get_recompute_note_text(self.stress_result))
 
         view_idx = self.view_combination_combo.currentIndex() if self.view_combination_combo is not None else 0
         combo_idx = view_idx - 1
@@ -387,13 +385,13 @@ class DisplayTab(QWidget):
         button.setVisible(True)
         cached = combo_idx in self.recomputed_stress_combo_cache
         if cached:
-            note.setText("Selected combination has cached corrected values.")
+            note.setText(get_recompute_cached_note_text(self.stress_result))
         if self._recompute_pending_combo == combo_idx:
             button.setEnabled(False)
             button.setText("Recomputing...")
         else:
             button.setEnabled(True)
-            button.setText("Recompute This Combination (Corrected)")
+            button.setText(get_recompute_button_text(self.stress_result))
     
     def populate_scalar_display_options(self, result_type: str, has_min_data: bool = False):
         """

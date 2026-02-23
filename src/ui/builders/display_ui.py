@@ -129,10 +129,10 @@ class DisplayTabUIBuilder:
         view_combination_label.setVisible(False)  # Hidden until batch results are loaded
         view_combination_combo.setVisible(False)
 
-        # On-demand recompute controls (chunked plasticity specific-combo workflow)
-        recompute_combo_note = QLabel("Chunked plasticity run: recompute selected combo on demand.")
+        # On-demand recompute controls (chunked stress specific-combo workflow)
+        recompute_combo_note = QLabel("Chunked stress run: recompute selected combo on demand.")
         recompute_combo_note.setVisible(False)
-        recompute_combo_button = QPushButton("Recompute This Combination (Corrected)")
+        recompute_combo_button = QPushButton("Recompute This Combination")
         recompute_combo_button.setStyleSheet(BUTTON_STYLE)
         recompute_combo_button.setVisible(False)
         

@@ -285,7 +285,11 @@ class DisplayContourSyncHandler(DisplayBaseHandler):
     def _family_supports_specific(self, contour_type: ContourType) -> bool:
         if contour_type == ContourType.STRESS:
             all_combo = self.tab.all_combo_results
-            return all_combo is not None
+            if all_combo is not None:
+                return True
+            if hasattr(self.tab, "is_stress_on_demand_recompute_available"):
+                return bool(self.tab.is_stress_on_demand_recompute_available())
+            return False
         if contour_type == ContourType.FORCES:
             result = self.tab.nodal_forces_result
             return result is not None and result.all_combo_fx is not None
