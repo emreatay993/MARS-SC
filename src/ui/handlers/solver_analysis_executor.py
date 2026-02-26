@@ -47,7 +47,7 @@ class SolverRunEngineCreationError(RuntimeError):
         self.cause = cause
 
 
-class SolverRunExecutionHandler:
+class SolverAnalysisExecutor:
     """Run stress, force, and deformation analyses for the current solver configuration."""
 
     def __init__(
@@ -256,7 +256,6 @@ class SolverRunExecutionHandler:
             if not is_valid:
                 raise NodalForcesNotAvailableError(error_msg)
 
-            progress_callback(5, 100, f"Computing force history for node {config.selected_node_id}...")
             combo_indices, fx, fy, fz, magnitude = engine.compute_single_node_history_fast(
                 config.selected_node_id,
                 progress_callback=progress_callback,
@@ -316,9 +315,6 @@ class SolverRunExecutionHandler:
             if not is_valid:
                 raise DisplacementNotAvailableError(error_msg)
 
-            progress_callback(
-                5, 100, f"Computing displacement history for node {config.selected_node_id}..."
-            )
             combo_indices, ux, uy, uz, magnitude = engine.compute_single_node_history_fast(
                 config.selected_node_id,
                 progress_callback=progress_callback,

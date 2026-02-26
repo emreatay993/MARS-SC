@@ -25,7 +25,7 @@ from ui.handlers.solver_result_summary_handler import SolverResultSummaryHandler
 from utils.constants import MSG_NODAL_FORCES_ANSYS
 
 
-class SolverRunLifecycleHandler:
+class SolverRunUiHandler:
     """Manage solve lifecycle behavior for the Solver tab."""
 
     def __init__(self, tab):

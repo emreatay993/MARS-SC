@@ -6,7 +6,7 @@ import numpy as np
 
 from core.data_models import SolverConfig
 from ui.handlers.solver_engine_factory import SolverEngineFactory
-from ui.handlers.solver_run_execution_handler import SolverRunExecutionHandler
+from ui.handlers.solver_analysis_executor import SolverAnalysisExecutor
 
 
 class _FakeConsole:
@@ -152,7 +152,7 @@ class _FakeDeformationEngineHistoryCylindrical:
 
 def test_run_nodal_forces_history_uses_fast_path(monkeypatch):
     tab = _FakeTab()
-    handler = SolverRunExecutionHandler(tab, SolverEngineFactory())
+    handler = SolverAnalysisExecutor(tab, SolverEngineFactory())
     fake_engine = _FakeNodalForcesEngineHistoryFast()
 
     monkeypatch.setattr(handler, "_create_nodal_forces_engine", lambda _config: fake_engine)
@@ -176,7 +176,7 @@ def test_run_nodal_forces_history_uses_fast_path(monkeypatch):
 
 def test_run_deformation_history_cartesian_uses_fast_path(monkeypatch):
     tab = _FakeTab()
-    handler = SolverRunExecutionHandler(tab, SolverEngineFactory())
+    handler = SolverAnalysisExecutor(tab, SolverEngineFactory())
     fake_engine = _FakeDeformationEngineHistoryCartesianFast()
 
     monkeypatch.setattr(handler, "_create_deformation_engine", lambda _config: fake_engine)
@@ -200,7 +200,7 @@ def test_run_deformation_history_cartesian_uses_fast_path(monkeypatch):
 
 def test_run_deformation_history_cylindrical_keeps_existing_path(monkeypatch):
     tab = _FakeTab()
-    handler = SolverRunExecutionHandler(tab, SolverEngineFactory())
+    handler = SolverAnalysisExecutor(tab, SolverEngineFactory())
     fake_engine = _FakeDeformationEngineHistoryCylindrical()
 
     monkeypatch.setattr(handler, "_create_deformation_engine", lambda _config: fake_engine)

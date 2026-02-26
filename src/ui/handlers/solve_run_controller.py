@@ -15,11 +15,11 @@ from file_io.dpf_reader import (
 )
 from solver.deformation_engine import CylindricalCSNotFoundError
 from solver.stress_engine import StressCombinationEngine
-from ui.handlers.solver_run_execution_handler import (
+from ui.handlers.solver_analysis_executor import (
     SolverRunEngineCreationError,
-    SolverRunExecutionHandler,
+    SolverAnalysisExecutor,
 )
-from ui.handlers.solver_run_lifecycle_handler import SolverRunLifecycleHandler
+from ui.handlers.solver_run_ui_handler import SolverRunUiHandler
 from ui.handlers.solver_engine_factory import SolverEngineFactory
 from ui.handlers.solver_input_validator import SolverInputValidator
 
@@ -33,12 +33,12 @@ class SolveRunController:
         self.tab = tab
         self.input_validator = SolverInputValidator(tab)
         self.engine_factory = SolverEngineFactory()
-        self.execution_handler = SolverRunExecutionHandler(
+        self.execution_handler = SolverAnalysisExecutor(
             tab=tab,
             engine_factory=self.engine_factory,
             memory_threshold_gb=self.MEMORY_THRESHOLD_GB,
         )
-        self.lifecycle_handler = SolverRunLifecycleHandler(tab)
+        self.lifecycle_handler = SolverRunUiHandler(tab)
 
     def solve(self, config: Optional[SolverConfig] = None) -> None:
         """Run selected analyses in the main thread while preserving UI responsiveness."""

@@ -76,8 +76,8 @@ Generated: `2026-02-21 23:16:44`
 | `src/ui/handlers/solver_output_state_handler.py` | `src.ui.handlers.solver_output_state_handler` | 138 | 1 | 0 | Output-selection and UI-state handling for the solver tab. |
 | `src/ui/handlers/solver_result_payload_handler.py` | `src.ui.handlers.solver_result_payload_handler` | 251 | 1 | 0 | Display/presentation handling for solver outputs. |
 | `src/ui/handlers/solver_result_summary_handler.py` | `src.ui.handlers.solver_result_summary_handler` | 494 | 1 | 0 | UI result handling for analysis runs. |
-| `src/ui/handlers/solver_run_execution_handler.py` | `src.ui.handlers.solver_run_execution_handler` | 294 | 2 | 0 | Execution concern for solver analysis runs. |
-| `src/ui/handlers/solver_run_lifecycle_handler.py` | `src.ui.handlers.solver_run_lifecycle_handler` | 215 | 1 | 0 | Lifecycle/UI concern for solver analysis runs. |
+| `src/ui/handlers/solver_analysis_executor.py` | `src.ui.handlers.solver_analysis_executor` | 294 | 2 | 0 | Execution concern for solver analysis runs. |
+| `src/ui/handlers/solver_run_ui_handler.py` | `src.ui.handlers.solver_run_ui_handler` | 215 | 1 | 0 | Lifecycle/UI concern for solver analysis runs. |
 | `src/ui/solver_tab.py` | `src.ui.solver_tab` | 744 | 1 | 0 | Solver tab: combine stress (and optionally forces/deformation) from two static RST files via linear combination coefficients. |
 | `src/ui/styles/__init__.py` | `src.ui.styles.__init__` | 1 | 0 | 0 | Styling constants for the app; applied via setStyleSheet(). |
 | `src/ui/styles/style_constants.py` | `src.ui.styles.style_constants` | 380 | 0 | 0 | Qt stylesheet strings for MARS-SC; applied via setStyleSheet(). |

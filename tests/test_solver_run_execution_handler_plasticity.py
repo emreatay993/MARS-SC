@@ -19,7 +19,7 @@ from core.data_models import (
     TemperatureFieldData,
 )
 from ui.handlers.solver_engine_factory import SolverEngineFactory
-from ui.handlers.solver_run_execution_handler import SolverRunExecutionHandler
+from ui.handlers.solver_analysis_executor import SolverAnalysisExecutor
 
 
 class _FakeConsole:
@@ -234,7 +234,7 @@ def _sample_material_profile():
 
 def test_run_stress_history_applies_plasticity(monkeypatch):
     tab = _FakeTab()
-    handler = SolverRunExecutionHandler(tab, SolverEngineFactory())
+    handler = SolverAnalysisExecutor(tab, SolverEngineFactory())
 
     combo_indices = np.array([0, 1, 2])
     elastic = np.array([300.0, 700.0, 950.0], dtype=np.float64)
@@ -266,7 +266,7 @@ def test_run_stress_history_applies_plasticity(monkeypatch):
 
 def test_run_stress_envelope_applies_plasticity_to_full_combination_matrix(monkeypatch):
     tab = _FakeTab()
-    handler = SolverRunExecutionHandler(tab, SolverEngineFactory())
+    handler = SolverAnalysisExecutor(tab, SolverEngineFactory())
 
     elastic_all = np.array(
         [
@@ -322,7 +322,7 @@ def test_run_stress_envelope_applies_plasticity_to_full_combination_matrix(monke
 
 def test_run_stress_non_von_mises_skips_plasticity(monkeypatch):
     tab = _FakeTab()
-    handler = SolverRunExecutionHandler(tab, SolverEngineFactory())
+    handler = SolverAnalysisExecutor(tab, SolverEngineFactory())
 
     combo_indices = np.array([0, 1, 2])
     elastic = np.array([100.0, 200.0, 300.0], dtype=np.float64)
@@ -352,7 +352,7 @@ def test_run_stress_non_von_mises_skips_plasticity(monkeypatch):
 
 def test_run_stress_chunked_envelope_corrects_full_chunk_before_reduction(monkeypatch):
     tab = _FakeTab()
-    handler = SolverRunExecutionHandler(tab, SolverEngineFactory())
+    handler = SolverAnalysisExecutor(tab, SolverEngineFactory())
 
     elastic_all = np.array(
         [
@@ -394,7 +394,7 @@ def test_run_stress_chunked_envelope_corrects_full_chunk_before_reduction(monkey
 
 def test_run_single_combination_applies_scalar_plasticity_transform(monkeypatch):
     tab = _FakeTab()
-    handler = SolverRunExecutionHandler(tab, SolverEngineFactory())
+    handler = SolverAnalysisExecutor(tab, SolverEngineFactory())
 
     fake_engine = _FakeStressEngineSingleCombination(node_ids=np.array([10, 20, 30], dtype=int))
     monkeypatch.setattr(handler, "_create_stress_engine", lambda *_args, **_kwargs: fake_engine)
