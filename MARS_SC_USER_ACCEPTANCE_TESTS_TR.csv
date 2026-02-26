@@ -1,4 +1,4 @@
-Test Kimliği,Başlık,Ön Koşullar,Adımlar,Beklenen Sonuç
+﻿Test Kimliği,Başlık,Ön Koşullar,Adımlar,Beklenen Sonuç
 UAT-NS-001,Named Selection Source açılır kutusu iki RST yüklendiğinde etkin olur,Uygulama açık; Analysis 1 ve Analysis 2 RST dosyaları hazır,Analysis 1 RST yükle > Analysis 2 RST yükle > Named Selection Source kontrolünü gözle,Named Selection Source açılır kutusu etkinleşir
 UAT-NS-002,Common modu yalnızca ortak named selection adlarını listeler,İki RST dosyası yüklü; Her ikisinde named selection mevcut,Named Selection Source değerini Common (A1 & A2) yap > Named Selection listesini aç,Liste yalnızca iki analizde ortak olan adları içerir
 UAT-NS-003,Analysis 1 modu base named selection adlarını listeler,İki RST dosyası yüklü,Named Selection Source değerini Analysis 1 (Base) yap > Listeyi aç,Analysis 1 named selection adları listelenir

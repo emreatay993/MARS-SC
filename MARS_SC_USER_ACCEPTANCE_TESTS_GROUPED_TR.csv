@@ -1,4 +1,4 @@
-Test Grubu,Test Kimliği,Başlık,Ön Koşullar,Adımlar,Beklenen Sonuç
+﻿Test Grubu,Test Kimliği,Başlık,Ön Koşullar,Adımlar,Beklenen Sonuç
 TEST CASE 1: NAMED SELECTION KAYNAK FİLTRELEME,,,,,
 ,UAT-NS-001,Named Selection Source açılır kutusu iki RST yüklendiğinde etkin olur,Uygulama açık; Analysis 1 ve Analysis 2 RST dosyaları hazır,Analysis 1 RST yükle > Analysis 2 RST yükle > Named Selection Source kontrolünü gözle,Named Selection Source açılır kutusu etkinleşir
 ,UAT-NS-002,Common modu yalnızca ortak named selection adlarını listeler,İki RST dosyası yüklü; Her ikisinde named selection mevcut,Named Selection Source değerini Common (A1 & A2) yap > Named Selection listesini aç,Liste yalnızca iki analizde ortak olan adları içerir
