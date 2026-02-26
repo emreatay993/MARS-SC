@@ -43,12 +43,12 @@ class SolverTab(QWidget):
 
     Signals:
         initial_data_loaded: Emitted when initial RST data is loaded
-        display_payload_ready: Emitted when display results payload is ready
+        visualization_data_ready: Emitted when display results payload is ready
     """
     
     # Signals
     initial_data_loaded = pyqtSignal(object)
-    display_payload_ready = pyqtSignal(object)
+    visualization_data_ready = pyqtSignal(object)
     corrected_combination_ready = pyqtSignal(object)
     
     def __init__(self, parent=None):

@@ -222,7 +222,7 @@ class ApplicationController(QMainWindow):
         )
         
         # Connect solver display payload to display tab
-        self.solver_tab.display_payload_ready.connect(
+        self.solver_tab.visualization_data_ready.connect(
             self.display_tab.update_view_with_payload
         )
         

@@ -115,7 +115,7 @@ class ResultVisualizationBridge:
             deformation_result=self.tab.deformation_result,
             output_flags=self._build_display_output_flags(),
         )
-        self.tab.display_payload_ready.emit(payload)
+        self.tab.visualization_data_ready.emit(payload)
 
     def _create_mesh_from_forces_result(self, result: NodalForcesResult):
         """Create a PyVista mesh from nodal forces results for visualization."""
