@@ -6,9 +6,30 @@ and post-solve result routing.
 """
 
 from datetime import datetime
+import time
 from typing import Optional
 
-from PyQt5.QtWidgets import QApplication, QMessageBox
+try:
+    from PyQt5.QtCore import QEventLoop, QTimer
+    from PyQt5.QtWidgets import QApplication, QMessageBox
+except Exception:  # pragma: no cover - fallback for headless/unit-test environments.
+    class QEventLoop:
+        ExcludeUserInputEvents = 0
+
+    class QTimer:
+        @staticmethod
+        def singleShot(_ms, callback):
+            callback()
+
+    class QApplication:
+        @staticmethod
+        def processEvents(*_args, **_kwargs):
+            return None
+
+    class QMessageBox:
+        @staticmethod
+        def critical(*_args, **_kwargs):
+            return None
 
 from core.data_models import (
     CombinationResult,
@@ -32,29 +53,69 @@ class SolverRunUiHandler:
         self.tab = tab
         self.results_handler = SolverResultSummaryHandler(tab)
         self._solve_start_time: Optional[datetime] = None
+        self._last_percent = 0
+        self._last_message = ""
+        self._last_emit_time = 0.0
+        self._progress_indeterminate = False
+        self._progress_throttle_seconds = 0.10
+        self._progress_hide_request_id = 0
 
     def begin_solve(self, config: SolverConfig) -> None:
         """Log solve start and initialize the progress UI."""
         self._log_solve_start(config)
+        self.tab.setEnabled(False)
+        self._reset_progress_state()
+        self._progress_hide_request_id += 1
+
+        self.tab.progress_bar.setRange(0, 100)
         self.tab.progress_bar.setVisible(True)
         self.tab.progress_bar.setValue(0)
+        self.tab.progress_bar.setFormat("Preparing analysis... (0%)")
         self.tab.console_textbox.append("Running combination analysis...\n")
-        QApplication.processEvents()
+        self._last_message = "Preparing analysis... (0%)"
+        self._process_events(force=True)
 
     def announce_stage(self, message: str) -> None:
         """Emit a stage message while keeping the UI responsive."""
         self.tab.console_textbox.append(message)
-        QApplication.processEvents()
+        self._process_events(force=True)
 
     def update_progress(self, current: int, total: int, message: str) -> None:
         """Update progress bar value/label from analysis callbacks."""
+        text = (message or "Working...").strip() or "Working..."
+
         if total > 0:
-            percent = int((current / total) * 100)
-            self.tab.progress_bar.setValue(percent)
-            self.tab.progress_bar.setFormat(f"{message} ({percent}%)")
+            raw_percent = int((float(current) / float(total)) * 100.0)
+            percent = min(100, max(0, raw_percent))
+            percent = max(percent, self._last_percent)
+
+            if self._progress_indeterminate:
+                self.tab.progress_bar.setRange(0, 100)
+                self._progress_indeterminate = False
+
+            percent_changed = percent != self._last_percent
+            formatted = f"{text} ({percent}%)"
+            message_changed = formatted != self._last_message
+
+            if percent_changed:
+                self.tab.progress_bar.setValue(percent)
+                self._last_percent = percent
+            if message_changed:
+                self.tab.progress_bar.setFormat(formatted)
+                self._last_message = formatted
+
+            self._process_events(force=(percent_changed or message_changed))
         else:
-            self.tab.progress_bar.setFormat(message)
-        QApplication.processEvents()
+            if not self._progress_indeterminate:
+                self.tab.progress_bar.setRange(0, 0)
+                self._progress_indeterminate = True
+
+            message_changed = text != self._last_message
+            if message_changed:
+                self.tab.progress_bar.setFormat(text)
+                self._last_message = text
+
+            self._process_events(force=message_changed)
 
     def complete_solve(
         self,
@@ -65,7 +126,7 @@ class SolverRunUiHandler:
     ) -> None:
         """Finalize solve state and route all produced results to UI handlers."""
         self.tab.setEnabled(True)
-        self.tab.progress_bar.setVisible(False)
+        self._show_completion("Complete")
 
         self.tab.combination_result = stress_result
         self.tab.nodal_forces_result = forces_result
@@ -105,17 +166,18 @@ class SolverRunUiHandler:
         self.tab._history_popup_requested = False
 
         self._log_solve_complete()
+        self._schedule_progress_hide(delay_ms=350)
 
     def finish_without_results(self) -> None:
         """Reset run-state UI when solve exits without producing any results."""
         self.tab.setEnabled(True)
-        self.tab.progress_bar.setVisible(False)
+        self._hide_progress_bar_immediately()
         self.tab._history_popup_requested = False
 
     def fail_solve(self, error_msg: str) -> None:
         """Handle unexpected solve failure."""
         self.tab.setEnabled(True)
-        self.tab.progress_bar.setVisible(False)
+        self._hide_progress_bar_immediately()
         self.tab._history_popup_requested = False
         self.tab.console_textbox.append(f"\nSolver Error:\n{error_msg}\n")
         QMessageBox.critical(
@@ -134,7 +196,8 @@ class SolverRunUiHandler:
 
     def handle_nodal_forces_unavailable(self, error: NodalForcesNotAvailableError) -> None:
         """Report nodal-forces output unavailability."""
-        self.tab.progress_bar.setVisible(False)
+        self.tab.setEnabled(True)
+        self._hide_progress_bar_immediately()
         error_msg = (
             f"Nodal Forces Not Available\n\n"
             f"{str(error)}\n\n"
@@ -144,7 +207,8 @@ class SolverRunUiHandler:
 
     def handle_displacement_unavailable(self, error: DisplacementNotAvailableError) -> None:
         """Report displacement output unavailability."""
-        self.tab.progress_bar.setVisible(False)
+        self.tab.setEnabled(True)
+        self._hide_progress_bar_immediately()
         error_msg = (
             f"Displacement Results Not Available\n\n"
             f"{str(error)}\n\n"
@@ -154,13 +218,15 @@ class SolverRunUiHandler:
 
     def handle_cylindrical_cs_error(self, error: CylindricalCSNotFoundError) -> None:
         """Report invalid/missing cylindrical coordinate system."""
-        self.tab.progress_bar.setVisible(False)
+        self.tab.setEnabled(True)
+        self._hide_progress_bar_immediately()
         error_msg = f"Cylindrical Coordinate System Error\n\n{str(error)}"
         QMessageBox.critical(self.tab, "Coordinate System Error", error_msg)
 
     def handle_memory_error(self, error: MemoryError) -> None:
         """Report out-of-memory failure with practical guidance."""
-        self.tab.progress_bar.setVisible(False)
+        self.tab.setEnabled(True)
+        self._hide_progress_bar_immediately()
         error_msg = (
             f"Out of Memory Error\n\n"
             f"The analysis requires more RAM than available.\n\n"
@@ -170,6 +236,54 @@ class SolverRunUiHandler:
             f"Details: {str(error)}"
         )
         QMessageBox.critical(self.tab, "Memory Error", error_msg)
+
+    def _show_completion(self, message: str) -> None:
+        """Render a final determinate completion state before hide."""
+        if self._progress_indeterminate:
+            self.tab.progress_bar.setRange(0, 100)
+            self._progress_indeterminate = False
+        self.tab.progress_bar.setValue(100)
+        formatted = f"{message} (100%)"
+        self.tab.progress_bar.setFormat(formatted)
+        self._last_percent = 100
+        self._last_message = formatted
+        self._process_events(force=True)
+
+    def _hide_progress_bar_immediately(self) -> None:
+        """Hide the progress bar and clear internal state now."""
+        self._progress_hide_request_id += 1
+        if self._progress_indeterminate:
+            self.tab.progress_bar.setRange(0, 100)
+            self._progress_indeterminate = False
+        self.tab.progress_bar.setVisible(False)
+        self._reset_progress_state()
+
+    def _schedule_progress_hide(self, delay_ms: int) -> None:
+        """Hide progress bar after a short completion grace period."""
+        request_id = self._progress_hide_request_id
+        QTimer.singleShot(delay_ms, lambda: self._hide_progress_if_current(request_id))
+
+    def _hide_progress_if_current(self, request_id: int) -> None:
+        """Hide only if this request is still current (ignore stale timers)."""
+        if request_id != self._progress_hide_request_id:
+            return
+        self.tab.progress_bar.setVisible(False)
+        self._reset_progress_state()
+
+    def _reset_progress_state(self) -> None:
+        """Reset tracked progress metadata for next solve run."""
+        self._last_percent = 0
+        self._last_message = ""
+        self._last_emit_time = 0.0
+        self._progress_indeterminate = False
+
+    def _process_events(self, force: bool = False) -> None:
+        """Pump UI events while excluding user input during solve flow."""
+        now = time.monotonic()
+        if not force and (now - self._last_emit_time) < self._progress_throttle_seconds:
+            return
+        QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)
+        self._last_emit_time = now
 
     def _log_solve_start(self, config: SolverConfig) -> None:
         current_time = datetime.now()

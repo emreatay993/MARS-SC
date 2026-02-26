@@ -50,6 +50,8 @@ class SolverRunEngineCreationError(RuntimeError):
 class SolverAnalysisExecutor:
     """Run stress, force, and deformation analyses for the current solver configuration."""
 
+    _PROGRESS_UNITS = 1000
+
     def __init__(
         self,
         tab,
@@ -80,7 +82,7 @@ class SolverAnalysisExecutor:
             calculate_scalar_plasticity=scalar_plasticity_requested,
         )
 
-        progress_callback(0, 100, "Estimating memory requirements...")
+        self._emit_progress(progress_callback, 0.00, "Estimating memory requirements...")
         try:
             is_sufficient, estimates = engine.check_memory_available(
                 raise_on_insufficient=False,
@@ -93,22 +95,27 @@ class SolverAnalysisExecutor:
                     f"  Using memory-efficient processing.\n"
                 )
         except Exception as memory_error:
-            progress_callback(0, 100, f"Memory check skipped: {memory_error}")
+            self._emit_progress(progress_callback, 0.00, f"Memory check skipped: {memory_error}")
 
         plasticity_ctx = None
         if self._should_apply_scalar_plasticity(config, stress_type):
-            progress_callback(2, 100, "Preparing plasticity inputs...")
+            self._emit_progress(progress_callback, 0.03, "Preparing plasticity inputs...")
             try:
                 plasticity_ctx = self._prepare_scalar_plasticity_context(config)
             except PlasticityDataError as error:
                 raise ValueError(f"Plasticity input error: {error}") from error
 
         if config.combination_history_mode and config.selected_node_id:
-            progress_callback(0, 100, f"Computing history for node {config.selected_node_id}...")
+            self._emit_progress(
+                progress_callback,
+                0.08,
+                f"Computing history for node {config.selected_node_id}...",
+            )
+            engine_progress = self._map_progress_callback(progress_callback, 0.08, 0.95)
             combo_indices, stress_values = engine.compute_single_node_history_fast(
                 config.selected_node_id,
                 stress_type,
-                progress_callback=progress_callback,
+                progress_callback=engine_progress,
             )
 
             result = CombinationResult(
@@ -124,10 +131,14 @@ class SolverAnalysisExecutor:
                 "stress_values": stress_values,
             }
             if plasticity_ctx is not None:
-                progress_callback(90, 100, "Applying plasticity correction to history...")
+                self._emit_progress(
+                    progress_callback,
+                    0.95,
+                    "Applying plasticity correction to history...",
+                )
                 self._apply_plasticity_to_history_result(result, plasticity_ctx)
         else:
-            progress_callback(5, 100, "Starting envelope analysis...")
+            self._emit_progress(progress_callback, 0.08, "Starting envelope analysis...")
             chunk_transform = None
             chunk_plasticity_state = None
             if plasticity_ctx is not None:
@@ -135,17 +146,19 @@ class SolverAnalysisExecutor:
                     engine,
                     plasticity_ctx,
                 )
+
+            engine_progress = self._map_progress_callback(progress_callback, 0.08, 0.95)
             if use_chunked:
                 result = engine.compute_full_analysis_chunked(
                     stress_type=stress_type,
-                    progress_callback=progress_callback,
+                    progress_callback=engine_progress,
                     calculate_scalar_plasticity=scalar_plasticity_requested,
                     chunk_results_transform=chunk_transform,
                 )
             else:
                 result = engine.compute_full_analysis_auto(
                     stress_type=stress_type,
-                    progress_callback=progress_callback,
+                    progress_callback=engine_progress,
                     memory_threshold_gb=self.memory_threshold_gb,
                     calculate_scalar_plasticity=scalar_plasticity_requested,
                     chunk_results_transform=chunk_transform,
@@ -163,10 +176,14 @@ class SolverAnalysisExecutor:
                         chunk_plasticity_state,
                     )
                 else:
-                    progress_callback(90, 100, "Applying plasticity correction to envelope...")
+                    self._emit_progress(
+                        progress_callback,
+                        0.95,
+                        "Applying plasticity correction to envelope...",
+                    )
                     self._apply_plasticity_to_envelope_result(result, plasticity_ctx)
 
-        progress_callback(100, 100, "Complete")
+        self._emit_progress(progress_callback, 1.0, "Complete")
         return result
 
     def run_stress_single_combination(
@@ -184,7 +201,7 @@ class SolverAnalysisExecutor:
         scalar_plasticity_requested = self._is_scalar_plasticity_requested(config, stress_type)
         plasticity_ctx = None
         if self._should_apply_scalar_plasticity(config, stress_type):
-            progress_callback(2, 100, "Preparing plasticity inputs...")
+            self._emit_progress(progress_callback, 0.02, "Preparing plasticity inputs...")
             try:
                 plasticity_ctx = self._prepare_scalar_plasticity_context(config)
             except PlasticityDataError as error:
@@ -214,10 +231,11 @@ class SolverAnalysisExecutor:
 
             chunk_transform = _transform_chunk_values
 
+        chunk_progress = self._map_progress_callback(progress_callback, 0.05, 0.99)
         result = engine.compute_single_combination_chunked(
             combination_index=combination_index,
             stress_type=stress_type,
-            progress_callback=progress_callback,
+            progress_callback=chunk_progress,
             calculate_scalar_plasticity=scalar_plasticity_requested,
             chunk_values_transform=chunk_transform,
         )
@@ -233,6 +251,7 @@ class SolverAnalysisExecutor:
                 "note": "On-demand corrected single combination.",
             }
         setattr(result, "metadata", metadata)
+        self._emit_progress(progress_callback, 1.0, "Recompute complete")
         return result
 
     def run_nodal_forces_analysis(
@@ -249,16 +268,17 @@ class SolverAnalysisExecutor:
                 config.selected_node_id,
                 engine.scoping,
             )
-            progress_callback(0, 100, "Validating nodal forces availability...")
+            self._emit_progress(progress_callback, 0.00, "Validating nodal forces availability...")
             is_valid, error_msg = engine.validate_nodal_forces_availability(
                 nodal_scoping=single_node_scoping
             )
             if not is_valid:
                 raise NodalForcesNotAvailableError(error_msg)
 
+            history_progress = self._map_progress_callback(progress_callback, 0.08, 0.98)
             combo_indices, fx, fy, fz, magnitude = engine.compute_single_node_history_fast(
                 config.selected_node_id,
-                progress_callback=progress_callback,
+                progress_callback=history_progress,
             )
 
             result = NodalForcesResult(
@@ -279,17 +299,20 @@ class SolverAnalysisExecutor:
                 "magnitude": magnitude,
             }
         else:
-            progress_callback(0, 100, "Validating nodal forces availability...")
+            self._emit_progress(progress_callback, 0.00, "Validating nodal forces availability...")
             is_valid, error_msg = engine.validate_nodal_forces_availability()
             if not is_valid:
                 raise NodalForcesNotAvailableError(error_msg)
 
-            progress_callback(5, 100, "Loading nodal forces from RST files...")
-            engine.preload_force_data(progress_callback=progress_callback)
-            progress_callback(10, 100, "Computing nodal forces for all combinations...")
-            result = engine.compute_full_analysis(progress_callback=progress_callback)
+            self._emit_progress(progress_callback, 0.08, "Loading nodal forces from RST files...")
+            preload_progress = self._map_progress_callback(progress_callback, 0.08, 0.45)
+            engine.preload_force_data(progress_callback=preload_progress)
 
-        progress_callback(100, 100, "Nodal forces complete")
+            self._emit_progress(progress_callback, 0.45, "Computing nodal forces for all combinations...")
+            compute_progress = self._map_progress_callback(progress_callback, 0.45, 0.98)
+            result = engine.compute_full_analysis(progress_callback=compute_progress)
+
+        self._emit_progress(progress_callback, 1.0, "Nodal forces complete")
         return result
 
     def run_deformation_analysis(
@@ -308,16 +331,17 @@ class SolverAnalysisExecutor:
                 config.selected_node_id,
                 engine.scoping,
             )
-            progress_callback(0, 100, "Validating displacement availability...")
+            self._emit_progress(progress_callback, 0.00, "Validating displacement availability...")
             is_valid, error_msg = engine.validate_displacement_availability(
                 nodal_scoping=single_node_scoping
             )
             if not is_valid:
                 raise DisplacementNotAvailableError(error_msg)
 
+            history_progress = self._map_progress_callback(progress_callback, 0.12, 0.98)
             combo_indices, ux, uy, uz, magnitude = engine.compute_single_node_history_fast(
                 config.selected_node_id,
-                progress_callback=progress_callback,
+                progress_callback=history_progress,
             )
 
             result = DeformationResult(
@@ -338,13 +362,17 @@ class SolverAnalysisExecutor:
                 "magnitude": magnitude,
             }
         else:
-            progress_callback(0, 100, "Validating displacement availability...")
+            self._emit_progress(progress_callback, 0.00, "Validating displacement availability...")
             is_valid, error_msg = engine.validate_displacement_availability()
             if not is_valid:
                 raise DisplacementNotAvailableError(error_msg)
 
             if engine.uses_cylindrical_cs:
-                progress_callback(2, 100, f"Validating coordinate system {config.deformation_cylindrical_cs_id}...")
+                self._emit_progress(
+                    progress_callback,
+                    0.06,
+                    f"Validating coordinate system {config.deformation_cylindrical_cs_id}...",
+                )
                 is_valid, error_msg = engine.validate_cylindrical_cs()
                 if not is_valid:
                     raise CylindricalCSNotFoundError(error_msg)
@@ -353,15 +381,29 @@ class SolverAnalysisExecutor:
                     f"results will be in cylindrical coordinates (R, Theta, Z)\n"
                 )
 
-            progress_callback(5, 100, "Loading displacement from RST files...")
-            engine.preload_displacement_data(progress_callback=progress_callback)
+            preload_start = 0.12
+            preload_end = 0.50 if is_history_mode else 0.45
+            self._emit_progress(progress_callback, preload_start, "Loading displacement from RST files...")
+            preload_progress = self._map_progress_callback(
+                progress_callback,
+                preload_start,
+                preload_end,
+            )
+            engine.preload_displacement_data(progress_callback=preload_progress)
 
             if is_history_mode:
-                progress_callback(
-                    50, 100, f"Computing displacement history for node {config.selected_node_id}..."
+                self._emit_progress(
+                    progress_callback,
+                    preload_end,
+                    f"Computing displacement history for node {config.selected_node_id}...",
                 )
                 combo_indices, ux, uy, uz, magnitude = engine.compute_single_node_history(
                     config.selected_node_id
+                )
+                self._emit_progress(
+                    progress_callback,
+                    0.98,
+                    f"Computed displacement history for node {config.selected_node_id}.",
                 )
 
                 result = DeformationResult(
@@ -382,10 +424,11 @@ class SolverAnalysisExecutor:
                     "magnitude": magnitude,
                 }
             else:
-                progress_callback(10, 100, "Computing deformation for all combinations...")
-                result = engine.compute_full_analysis(progress_callback=progress_callback)
+                self._emit_progress(progress_callback, 0.45, "Computing deformation for all combinations...")
+                compute_progress = self._map_progress_callback(progress_callback, 0.45, 0.98)
+                result = engine.compute_full_analysis(progress_callback=compute_progress)
 
-        progress_callback(100, 100, "Deformation complete")
+        self._emit_progress(progress_callback, 1.0, "Deformation complete")
         return result
 
     def get_stress_engine(self) -> Optional[StressCombinationEngine]:
@@ -478,6 +521,39 @@ class SolverAnalysisExecutor:
 
     def _append_console(self, message: str) -> None:
         self.tab.console_textbox.append(message)
+
+    def _map_progress_callback(
+        self,
+        progress_callback: Callable[[int, int, str], None],
+        start_fraction: float,
+        end_fraction: float,
+    ) -> Callable[[int, int, str], None]:
+        """Map a local progress callback into one fractional range of global progress."""
+        start = min(max(start_fraction, 0.0), 1.0)
+        end = min(max(end_fraction, start), 1.0)
+
+        def _mapped(current: int, total: int, message: str) -> None:
+            if total <= 0:
+                progress_callback(0, 0, message)
+                return
+            ratio = float(current) / float(total)
+            ratio = min(max(ratio, 0.0), 1.0)
+            mapped_ratio = start + ((end - start) * ratio)
+            mapped_current = int(round(mapped_ratio * self._PROGRESS_UNITS))
+            progress_callback(mapped_current, self._PROGRESS_UNITS, message)
+
+        return _mapped
+
+    def _emit_progress(
+        self,
+        progress_callback: Callable[[int, int, str], None],
+        fraction: float,
+        message: str,
+    ) -> None:
+        """Emit direct progress update using shared precision."""
+        clamped = min(max(fraction, 0.0), 1.0)
+        current = int(round(clamped * self._PROGRESS_UNITS))
+        progress_callback(current, self._PROGRESS_UNITS, message)
 
     @staticmethod
     def _is_scalar_plasticity_requested(config: SolverConfig, stress_type: str) -> bool:

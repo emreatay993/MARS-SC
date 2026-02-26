@@ -255,21 +255,19 @@ class DeformationCombinationEngine:
         
         # Load Analysis 1 displacement data (only active steps)
         for step_id in a1_steps:
-            if progress_callback:
-                progress_callback(current, total_steps, f"Loading A1 Displacement Step {step_id}...")
-            
             result = self.reader1.read_displacement_for_loadstep(step_id, self.scoping)
             self._displacement_cache[(1, step_id)] = result
             current += 1
+            if progress_callback:
+                progress_callback(current, total_steps, f"Loading A1 Displacement Step {step_id}...")
         
         # Load Analysis 2 displacement data (only active steps)
         for step_id in a2_steps:
-            if progress_callback:
-                progress_callback(current, total_steps, f"Loading A2 Displacement Step {step_id}...")
-            
             result = self.reader2.read_displacement_for_loadstep(step_id, self.scoping)
             self._displacement_cache[(2, step_id)] = result
             current += 1
+            if progress_callback:
+                progress_callback(current, total_steps, f"Loading A2 Displacement Step {step_id}...")
         
         if progress_callback:
             progress_callback(total_steps, total_steps, "Displacement data loading complete.")
@@ -418,6 +416,8 @@ class DeformationCombinationEngine:
             - uz_all contains axial displacement (UZ)
         """
         num_combos = self.table.num_combinations
+        if num_combos <= 0:
+            raise ValueError("No combinations defined.")
         num_nodes = self.num_nodes
         
         ux_all = np.zeros((num_combos, num_nodes))
@@ -428,10 +428,6 @@ class DeformationCombinationEngine:
         cs_info = f" (CS {self.cylindrical_cs_id})" if self.uses_cylindrical_cs else ""
         
         for combo_idx in range(num_combos):
-            if progress_callback:
-                combo_name = self.table.combination_names[combo_idx]
-                progress_callback(combo_idx, num_combos, f"Computing displacement{cs_info}: {combo_name}...")
-            
             # Compute combination in global Cartesian
             ux, uy, uz = self.compute_combination_numpy(combo_idx)
             
@@ -443,6 +439,10 @@ class DeformationCombinationEngine:
             uy_all[combo_idx, :] = uy
             uz_all[combo_idx, :] = uz
             magnitude_all[combo_idx, :] = self.compute_magnitude(ux, uy, uz)
+
+            if progress_callback:
+                combo_name = self.table.combination_names[combo_idx]
+                progress_callback(combo_idx + 1, num_combos, f"Computing displacement{cs_info}: {combo_name}...")
         
         if progress_callback:
             msg = "Displacement computation complete."
@@ -585,6 +585,8 @@ class DeformationCombinationEngine:
         active_a1_set = set(active_a1_steps)
         active_a2_set = set(active_a2_steps)
         total_steps = len(active_a1_steps) + len(active_a2_steps)
+        if total_steps <= 0:
+            raise ValueError("No active load steps found. All coefficients are zero.")
         current_step = 0
 
         for step_id in active_a1_steps:
@@ -607,6 +609,8 @@ class DeformationCombinationEngine:
             progress_callback(50, 100, f"Computing combinations for node {node_id}...")
 
         num_combos = self.table.num_combinations
+        if num_combos <= 0:
+            raise ValueError("No combinations defined.")
         ux = np.zeros(num_combos, dtype=np.float64)
         uy = np.zeros(num_combos, dtype=np.float64)
         uz = np.zeros(num_combos, dtype=np.float64)

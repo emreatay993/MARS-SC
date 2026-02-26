@@ -15,6 +15,7 @@ from file_io.dpf_reader import (
 )
 from solver.deformation_engine import CylindricalCSNotFoundError
 from solver.stress_engine import StressCombinationEngine
+from ui.handlers.progress_coordinator import ProgressCoordinator, StageSpec
 from ui.handlers.solver_analysis_executor import (
     SolverRunEngineCreationError,
     SolverAnalysisExecutor,
@@ -39,17 +40,26 @@ class SolveRunController:
             memory_threshold_gb=self.MEMORY_THRESHOLD_GB,
         )
         self.lifecycle_handler = SolverRunUiHandler(tab)
+        self._solve_in_progress = False
 
     def solve(self, config: Optional[SolverConfig] = None) -> None:
         """Run selected analyses in the main thread while preserving UI responsiveness."""
+        if self._solve_in_progress:
+            self.lifecycle_handler.announce_stage(
+                "\nSolve request ignored: analysis is already running.\n"
+            )
+            return
+
         if config is None:
             config = self.tab._build_solver_config()
 
         if not self.input_validator.validate_inputs(config):
             return
 
+        self._solve_in_progress = True
         stress_type = self.input_validator.get_selected_stress_type(config)
         self.lifecycle_handler.begin_solve(config)
+        coordinator = self._build_progress_coordinator(config, stress_type)
 
         stress_result = None
         forces_result = None
@@ -58,10 +68,15 @@ class SolveRunController:
         try:
             if stress_type is not None:
                 try:
+                    stress_progress = (
+                        coordinator.stage_callback("stress")
+                        if coordinator is not None
+                        else self.lifecycle_handler.update_progress
+                    )
                     stress_result = self.execution_handler.run_stress_analysis(
                         config=config,
                         stress_type=stress_type,
-                        progress_callback=self.lifecycle_handler.update_progress,
+                        progress_callback=stress_progress,
                     )
                 except SolverRunEngineCreationError as error:
                     self.lifecycle_handler.handle_engine_creation_error(
@@ -74,9 +89,14 @@ class SolveRunController:
             if config.calculate_nodal_forces:
                 self.lifecycle_handler.announce_stage("\nRunning nodal forces combination...\n")
                 try:
+                    forces_progress = (
+                        coordinator.stage_callback("forces")
+                        if coordinator is not None
+                        else self.lifecycle_handler.update_progress
+                    )
                     forces_result = self.execution_handler.run_nodal_forces_analysis(
                         config=config,
-                        progress_callback=self.lifecycle_handler.update_progress,
+                        progress_callback=forces_progress,
                     )
                 except SolverRunEngineCreationError as error:
                     self.lifecycle_handler.handle_engine_creation_error(
@@ -87,9 +107,14 @@ class SolveRunController:
             if config.calculate_deformation:
                 self.lifecycle_handler.announce_stage("\nRunning deformation combination...\n")
                 try:
+                    deformation_progress = (
+                        coordinator.stage_callback("deformation")
+                        if coordinator is not None
+                        else self.lifecycle_handler.update_progress
+                    )
                     deformation_result = self.execution_handler.run_deformation_analysis(
                         config=config,
-                        progress_callback=self.lifecycle_handler.update_progress,
+                        progress_callback=deformation_progress,
                     )
                 except SolverRunEngineCreationError as error:
                     self.lifecycle_handler.handle_engine_creation_error(
@@ -118,6 +143,8 @@ class SolveRunController:
         except Exception as error:
             error_msg = f"{str(error)}\n\n{traceback.format_exc()}"
             self.lifecycle_handler.fail_solve(error_msg)
+        finally:
+            self._solve_in_progress = False
 
     def recompute_stress_combination_for_display(
         self,
@@ -168,3 +195,23 @@ class SolveRunController:
     def get_combination_engine(self) -> Optional[StressCombinationEngine]:
         """Return the current stress engine instance if one exists."""
         return self.execution_handler.get_stress_engine()
+
+    def _build_progress_coordinator(
+        self,
+        config: SolverConfig,
+        stress_type: Optional[str],
+    ) -> Optional[ProgressCoordinator]:
+        """Create staged global progress mapping for active outputs."""
+        stages = []
+        if stress_type is not None:
+            stages.append(StageSpec(key="stress", label="Stress", weight=1.0))
+        if config.calculate_nodal_forces:
+            stages.append(StageSpec(key="forces", label="Nodal Forces", weight=1.0))
+        if config.calculate_deformation:
+            stages.append(StageSpec(key="deformation", label="Deformation", weight=1.0))
+        if not stages:
+            return None
+        return ProgressCoordinator(
+            sink_callback=self.lifecycle_handler.update_progress,
+            stages=stages,
+        )

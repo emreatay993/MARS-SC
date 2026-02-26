@@ -203,25 +203,23 @@ class NodalForcesCombinationEngine:
         
         # Load Analysis 1 force data (only active steps, numpy arrays only)
         for step_id in a1_steps:
-            if progress_callback:
-                progress_callback(current, total_steps, f"Loading A1 Forces Step {step_id}...")
-            
             result = self.reader1.read_nodal_forces_for_loadstep(
                 step_id, self.scoping, rotate_to_global=self.rotate_to_global
             )
             self._force_cache[(1, step_id)] = result
             current += 1
+            if progress_callback:
+                progress_callback(current, total_steps, f"Loading A1 Forces Step {step_id}...")
         
         # Load Analysis 2 force data (only active steps, numpy arrays only)
         for step_id in a2_steps:
-            if progress_callback:
-                progress_callback(current, total_steps, f"Loading A2 Forces Step {step_id}...")
-            
             result = self.reader2.read_nodal_forces_for_loadstep(
                 step_id, self.scoping, rotate_to_global=self.rotate_to_global
             )
             self._force_cache[(2, step_id)] = result
             current += 1
+            if progress_callback:
+                progress_callback(current, total_steps, f"Loading A2 Forces Step {step_id}...")
         
         if progress_callback:
             progress_callback(total_steps, total_steps, "Force data loading complete.")
@@ -356,6 +354,8 @@ class NodalForcesCombinationEngine:
             each of shape (num_combinations, num_nodes).
         """
         num_combos = self.table.num_combinations
+        if num_combos <= 0:
+            raise ValueError("No combinations defined.")
         num_nodes = self.num_nodes
         
         fx_all = np.zeros((num_combos, num_nodes))
@@ -364,15 +364,15 @@ class NodalForcesCombinationEngine:
         magnitude_all = np.zeros((num_combos, num_nodes))
         
         for combo_idx in range(num_combos):
-            if progress_callback:
-                combo_name = self.table.combination_names[combo_idx]
-                progress_callback(combo_idx, num_combos, f"Computing forces: {combo_name}...")
-            
             fx, fy, fz = self.compute_combination_numpy(combo_idx)
             fx_all[combo_idx, :] = fx
             fy_all[combo_idx, :] = fy
             fz_all[combo_idx, :] = fz
             magnitude_all[combo_idx, :] = self.compute_magnitude(fx, fy, fz)
+
+            if progress_callback:
+                combo_name = self.table.combination_names[combo_idx]
+                progress_callback(combo_idx + 1, num_combos, f"Computing forces: {combo_name}...")
         
         if progress_callback:
             progress_callback(num_combos, num_combos, "Force computation complete.")
@@ -453,37 +453,6 @@ class NodalForcesCombinationEngine:
         
         return result
     
-    def compute_single_node_history(
-        self,
-        node_id: int
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Compute force history for a single node across all combinations.
-        
-        Args:
-            node_id: Node ID to analyze.
-            
-        Returns:
-            Tuple of (combination_indices, fx, fy, fz, magnitude) arrays.
-        """
-        # Find node index
-        node_idx = np.where(self.node_ids == node_id)[0]
-        if len(node_idx) == 0:
-            raise ValueError(f"Node ID {node_id} not found in scoping.")
-        node_idx = node_idx[0]
-        
-        # Compute all combinations and extract single node
-        fx_all, fy_all, fz_all, magnitude_all = self.compute_all_combinations()
-        
-        fx = fx_all[:, node_idx]
-        fy = fy_all[:, node_idx]
-        fz = fz_all[:, node_idx]
-        magnitude = magnitude_all[:, node_idx]
-        
-        combination_indices = np.arange(self.table.num_combinations)
-        
-        return (combination_indices, fx, fy, fz, magnitude)
-
     def compute_single_node_history_fast(
         self,
         node_id: int,
@@ -508,6 +477,8 @@ class NodalForcesCombinationEngine:
         active_a1_set = set(active_a1_steps)
         active_a2_set = set(active_a2_steps)
         total_steps = len(active_a1_steps) + len(active_a2_steps)
+        if total_steps <= 0:
+            raise ValueError("No active load steps found. All coefficients are zero.")
         current_step = 0
 
         for step_id in active_a1_steps:
@@ -538,6 +509,8 @@ class NodalForcesCombinationEngine:
             progress_callback(50, 100, f"Computing combinations for node {node_id}...")
 
         num_combos = self.table.num_combinations
+        if num_combos <= 0:
+            raise ValueError("No combinations defined.")
         fx = np.zeros(num_combos, dtype=np.float64)
         fy = np.zeros(num_combos, dtype=np.float64)
         fz = np.zeros(num_combos, dtype=np.float64)
