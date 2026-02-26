@@ -244,18 +244,22 @@ class SolverRunExecutionHandler:
         engine = self._create_nodal_forces_engine(config)
         self._nodal_forces_engine = engine
 
-        progress_callback(0, 100, "Validating nodal forces availability...")
-        is_valid, error_msg = engine.validate_nodal_forces_availability()
-        if not is_valid:
-            raise NodalForcesNotAvailableError(error_msg)
-
-        progress_callback(5, 100, "Loading nodal forces from RST files...")
-        engine.preload_force_data(progress_callback=progress_callback)
-
         if config.combination_history_mode and config.selected_node_id:
-            progress_callback(50, 100, f"Computing force history for node {config.selected_node_id}...")
-            combo_indices, fx, fy, fz, magnitude = engine.compute_single_node_history(
-                config.selected_node_id
+            single_node_scoping = engine.reader1.create_single_node_scoping(
+                config.selected_node_id,
+                engine.scoping,
+            )
+            progress_callback(0, 100, "Validating nodal forces availability...")
+            is_valid, error_msg = engine.validate_nodal_forces_availability(
+                nodal_scoping=single_node_scoping
+            )
+            if not is_valid:
+                raise NodalForcesNotAvailableError(error_msg)
+
+            progress_callback(5, 100, f"Computing force history for node {config.selected_node_id}...")
+            combo_indices, fx, fy, fz, magnitude = engine.compute_single_node_history_fast(
+                config.selected_node_id,
+                progress_callback=progress_callback,
             )
 
             result = NodalForcesResult(
@@ -276,6 +280,13 @@ class SolverRunExecutionHandler:
                 "magnitude": magnitude,
             }
         else:
+            progress_callback(0, 100, "Validating nodal forces availability...")
+            is_valid, error_msg = engine.validate_nodal_forces_availability()
+            if not is_valid:
+                raise NodalForcesNotAvailableError(error_msg)
+
+            progress_callback(5, 100, "Loading nodal forces from RST files...")
+            engine.preload_force_data(progress_callback=progress_callback)
             progress_callback(10, 100, "Computing nodal forces for all combinations...")
             result = engine.compute_full_analysis(progress_callback=progress_callback)
 
@@ -291,30 +302,26 @@ class SolverRunExecutionHandler:
         engine = self._create_deformation_engine(config)
         self._deformation_engine = engine
 
-        progress_callback(0, 100, "Validating displacement availability...")
-        is_valid, error_msg = engine.validate_displacement_availability()
-        if not is_valid:
-            raise DisplacementNotAvailableError(error_msg)
+        is_history_mode = bool(config.combination_history_mode and config.selected_node_id)
 
-        if engine.uses_cylindrical_cs:
-            progress_callback(2, 100, f"Validating coordinate system {config.deformation_cylindrical_cs_id}...")
-            is_valid, error_msg = engine.validate_cylindrical_cs()
+        if is_history_mode and not engine.uses_cylindrical_cs:
+            single_node_scoping = engine.reader1.create_single_node_scoping(
+                config.selected_node_id,
+                engine.scoping,
+            )
+            progress_callback(0, 100, "Validating displacement availability...")
+            is_valid, error_msg = engine.validate_displacement_availability(
+                nodal_scoping=single_node_scoping
+            )
             if not is_valid:
-                raise CylindricalCSNotFoundError(error_msg)
-            self._append_console(
-                f"  Cylindrical CS {config.deformation_cylindrical_cs_id} validated - "
-                f"results will be in cylindrical coordinates (R, Theta, Z)\n"
-            )
+                raise DisplacementNotAvailableError(error_msg)
 
-        progress_callback(5, 100, "Loading displacement from RST files...")
-        engine.preload_displacement_data(progress_callback=progress_callback)
-
-        if config.combination_history_mode and config.selected_node_id:
             progress_callback(
-                50, 100, f"Computing displacement history for node {config.selected_node_id}..."
+                5, 100, f"Computing displacement history for node {config.selected_node_id}..."
             )
-            combo_indices, ux, uy, uz, magnitude = engine.compute_single_node_history(
-                config.selected_node_id
+            combo_indices, ux, uy, uz, magnitude = engine.compute_single_node_history_fast(
+                config.selected_node_id,
+                progress_callback=progress_callback,
             )
 
             result = DeformationResult(
@@ -335,8 +342,52 @@ class SolverRunExecutionHandler:
                 "magnitude": magnitude,
             }
         else:
-            progress_callback(10, 100, "Computing deformation for all combinations...")
-            result = engine.compute_full_analysis(progress_callback=progress_callback)
+            progress_callback(0, 100, "Validating displacement availability...")
+            is_valid, error_msg = engine.validate_displacement_availability()
+            if not is_valid:
+                raise DisplacementNotAvailableError(error_msg)
+
+            if engine.uses_cylindrical_cs:
+                progress_callback(2, 100, f"Validating coordinate system {config.deformation_cylindrical_cs_id}...")
+                is_valid, error_msg = engine.validate_cylindrical_cs()
+                if not is_valid:
+                    raise CylindricalCSNotFoundError(error_msg)
+                self._append_console(
+                    f"  Cylindrical CS {config.deformation_cylindrical_cs_id} validated - "
+                    f"results will be in cylindrical coordinates (R, Theta, Z)\n"
+                )
+
+            progress_callback(5, 100, "Loading displacement from RST files...")
+            engine.preload_displacement_data(progress_callback=progress_callback)
+
+            if is_history_mode:
+                progress_callback(
+                    50, 100, f"Computing displacement history for node {config.selected_node_id}..."
+                )
+                combo_indices, ux, uy, uz, magnitude = engine.compute_single_node_history(
+                    config.selected_node_id
+                )
+
+                result = DeformationResult(
+                    node_ids=np.array([config.selected_node_id]),
+                    node_coords=np.array([[0, 0, 0]]),
+                    all_combo_ux=ux.reshape(-1, 1),
+                    all_combo_uy=uy.reshape(-1, 1),
+                    all_combo_uz=uz.reshape(-1, 1),
+                    displacement_unit=engine.displacement_unit,
+                )
+                result.metadata = {
+                    "mode": "history",
+                    "node_id": config.selected_node_id,
+                    "combination_indices": combo_indices,
+                    "ux": ux,
+                    "uy": uy,
+                    "uz": uz,
+                    "magnitude": magnitude,
+                }
+            else:
+                progress_callback(10, 100, "Computing deformation for all combinations...")
+                result = engine.compute_full_analysis(progress_callback=progress_callback)
 
         progress_callback(100, 100, "Deformation complete")
         return result

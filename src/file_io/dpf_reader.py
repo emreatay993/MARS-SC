@@ -952,6 +952,150 @@ class DPFAnalysisReader:
             sxz *= factor
         
         return (dpf_node_ids, sx, sy, sz, sxy, syz, sxz)
+
+    def read_stress_tensor_for_loadsteps(
+        self,
+        load_steps: List[int],
+        nodal_scoping: Optional['dpf.Scoping'] = None,
+        convert_to_mpa: bool = True,
+    ) -> Dict[int, Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+        """
+        Read 6-component stress tensors for multiple load steps in one DPF request.
+
+        This is an optimized batch variant of ``read_stress_tensor_for_loadstep``
+        and is primarily used by single-node history workflows.
+
+        Args:
+            load_steps: Load step/set IDs (1-based).
+            nodal_scoping: Optional DPF Scoping to filter nodes.
+            convert_to_mpa: If True, convert stress values to MPa. Default True.
+
+        Returns:
+            Mapping ``step_id -> (node_ids, sx, sy, sz, sxy, syz, sxz)``.
+        """
+        if not load_steps:
+            return {}
+
+        requested_steps = [int(step_id) for step_id in load_steps]
+
+        # Preserve input scoping order for deterministic output alignment.
+        input_node_ids_order = None
+        if nodal_scoping is not None:
+            input_node_ids_order = np.array(nodal_scoping.ids)
+
+        stress_op = self.model.results.stress()
+        time_scoping = dpf.Scoping()
+        time_scoping.ids = requested_steps
+        stress_op.inputs.time_scoping.connect(time_scoping)
+        stress_op.inputs.requested_location.connect(dpf.locations.nodal)
+
+        if nodal_scoping is not None:
+            stress_op.inputs.mesh_scoping.connect(nodal_scoping)
+
+        fields_container = stress_op.outputs.fields_container()
+        step_to_tensor: Dict[int, Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = {}
+
+        for field_idx in range(len(fields_container)):
+            stress_field = fields_container[field_idx]
+
+            step_id: Optional[int] = None
+            try:
+                label_space = fields_container.get_label_space(field_idx)
+                step_value = label_space.get("time")
+                if step_value is not None:
+                    step_id = int(step_value)
+            except Exception:
+                step_id = None
+
+            if step_id is None:
+                if field_idx < len(requested_steps):
+                    step_id = requested_steps[field_idx]
+                else:
+                    continue
+
+            dpf_node_ids = np.array(stress_field.scoping.ids)
+            stress_data = stress_field.data
+
+            if stress_data.ndim == 1:
+                raise BeamElementNotSupportedError(
+                    f"Stress data is 1-dimensional (shape: {stress_data.shape}). "
+                    f"This typically occurs when the scoping includes beam or line elements "
+                    f"which don't have a 6-component stress tensor. "
+                    f"Please ensure your named selection contains only solid/shell elements."
+                )
+
+            if stress_data.shape[1] < 6:
+                raise ValueError(
+                    f"Expected 6 stress components but got {stress_data.shape[1]}. "
+                    f"Stress data shape: {stress_data.shape}. "
+                    f"This may occur with element types that don't support full stress tensors."
+                )
+
+            sx = stress_data[:, 0].copy()
+            sy = stress_data[:, 1].copy()
+            sz = stress_data[:, 2].copy()
+            sxy = stress_data[:, 3].copy()
+            syz = stress_data[:, 4].copy()
+            sxz = stress_data[:, 5].copy()
+
+            if input_node_ids_order is not None:
+                dpf_id_to_idx = {nid: idx for idx, nid in enumerate(dpf_node_ids)}
+
+                if len(input_node_ids_order) == len(dpf_node_ids) and np.array_equal(dpf_node_ids, input_node_ids_order):
+                    pass
+                elif len(input_node_ids_order) == len(dpf_node_ids):
+                    reorder_indices = np.array([dpf_id_to_idx[nid] for nid in input_node_ids_order])
+                    sx = sx[reorder_indices]
+                    sy = sy[reorder_indices]
+                    sz = sz[reorder_indices]
+                    sxy = sxy[reorder_indices]
+                    syz = syz[reorder_indices]
+                    sxz = sxz[reorder_indices]
+                    dpf_node_ids = input_node_ids_order
+                else:
+                    num_requested = len(input_node_ids_order)
+                    sx_full = np.zeros(num_requested)
+                    sy_full = np.zeros(num_requested)
+                    sz_full = np.zeros(num_requested)
+                    sxy_full = np.zeros(num_requested)
+                    syz_full = np.zeros(num_requested)
+                    sxz_full = np.zeros(num_requested)
+
+                    for req_idx, nid in enumerate(input_node_ids_order):
+                        if nid in dpf_id_to_idx:
+                            dpf_idx = dpf_id_to_idx[nid]
+                            sx_full[req_idx] = sx[dpf_idx]
+                            sy_full[req_idx] = sy[dpf_idx]
+                            sz_full[req_idx] = sz[dpf_idx]
+                            sxy_full[req_idx] = sxy[dpf_idx]
+                            syz_full[req_idx] = syz[dpf_idx]
+                            sxz_full[req_idx] = sxz[dpf_idx]
+
+                    sx, sy, sz = sx_full, sy_full, sz_full
+                    sxy, syz, sxz = sxy_full, syz_full, sxz_full
+                    dpf_node_ids = input_node_ids_order
+
+            if convert_to_mpa:
+                factor = self.stress_conversion_factor
+                sx *= factor
+                sy *= factor
+                sz *= factor
+                sxy *= factor
+                syz *= factor
+                sxz *= factor
+
+            step_to_tensor[step_id] = (dpf_node_ids, sx, sy, sz, sxy, syz, sxz)
+
+        # Fallback per missing step to preserve behavior across DPF variants.
+        for step_id in requested_steps:
+            if step_id not in step_to_tensor:
+                step_to_tensor[step_id] = self.read_stress_tensor_for_loadstep(
+                    load_step=step_id,
+                    nodal_scoping=nodal_scoping,
+                    convert_to_mpa=convert_to_mpa,
+                )
+
+        return {step_id: step_to_tensor[step_id] for step_id in requested_steps}
     
     def read_stress_field_for_loadstep(
         self, 

@@ -541,19 +541,24 @@ class StressCombinationEngine:
         total_steps = len(active_a1_steps) + len(active_a2_steps)
         current_step = 0
         
-        # Load Analysis 1 stress data for single node (only active steps)
+        # Batch-load per analysis to reduce per-step DPF operator overhead.
+        a1_stress_by_step = self.reader1.read_stress_tensor_for_loadsteps(
+            active_a1_steps,
+            single_node_scoping,
+        )
         for step_id in active_a1_steps:
-            result = self.reader1.read_stress_tensor_for_loadstep(step_id, single_node_scoping)
-            single_stress_cache[(1, step_id)] = result
+            single_stress_cache[(1, step_id)] = a1_stress_by_step[step_id]
             current_step += 1
             if progress_callback:
                 progress = int((current_step / total_steps) * 40)  # 0-40% for loading
                 progress_callback(progress, 100, f"Loading A1 step {step_id}...")
-        
-        # Load Analysis 2 stress data for single node (only active steps)
+
+        a2_stress_by_step = self.reader2.read_stress_tensor_for_loadsteps(
+            active_a2_steps,
+            single_node_scoping,
+        )
         for step_id in active_a2_steps:
-            result = self.reader2.read_stress_tensor_for_loadstep(step_id, single_node_scoping)
-            single_stress_cache[(2, step_id)] = result
+            single_stress_cache[(2, step_id)] = a2_stress_by_step[step_id]
             current_step += 1
             if progress_callback:
                 progress = int((current_step / total_steps) * 40)  # 0-40% for loading

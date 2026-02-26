@@ -173,15 +173,23 @@ class DeformationCombinationEngine:
                 f"Please verify the coordinate system ID exists in your ANSYS model."
             )
     
-    def validate_displacement_availability(self) -> Tuple[bool, str]:
+    def validate_displacement_availability(
+        self,
+        nodal_scoping=None,  # dpf.Scoping
+    ) -> Tuple[bool, str]:
         """
         Validate that displacement results are available in both RST files
         for all active load steps (those with non-zero coefficients).
+
+        Args:
+            nodal_scoping: Optional scoping to validate against. If None,
+                uses the engine's full scoping.
         
         Returns:
             Tuple of (is_valid, error_message). If valid, error_message is empty.
         """
         errors = []
+        target_scoping = nodal_scoping if nodal_scoping is not None else self.scoping
         
         # Get only active steps (those with non-zero coefficients)
         active_a1_steps, active_a2_steps = self.table.get_active_step_ids()
@@ -197,7 +205,7 @@ class DeformationCombinationEngine:
                 # Check only active load steps
                 for step_id in active_a1_steps:
                     try:
-                        self.reader1.read_displacement_for_loadstep(step_id, self.scoping)
+                        self.reader1.read_displacement_for_loadstep(step_id, target_scoping)
                     except DisplacementNotAvailableError as e:
                         errors.append(f"Analysis 1, Load Step {step_id}: {str(e)}")
         
@@ -212,7 +220,7 @@ class DeformationCombinationEngine:
                 # Check only active load steps
                 for step_id in active_a2_steps:
                     try:
-                        self.reader2.read_displacement_for_loadstep(step_id, self.scoping)
+                        self.reader2.read_displacement_for_loadstep(step_id, target_scoping)
                     except DisplacementNotAvailableError as e:
                         errors.append(f"Analysis 2, Load Step {step_id}: {str(e)}")
         
@@ -544,6 +552,100 @@ class DeformationCombinationEngine:
         
         combination_indices = np.arange(self.table.num_combinations)
         
+        return (combination_indices, ux, uy, uz, magnitude)
+
+    def compute_single_node_history_fast(
+        self,
+        node_id: int,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Compute displacement history for one node without full-node preloading.
+
+        Notes:
+            - This fast path currently supports Cartesian output only.
+            - Cylindrical history remains on the existing full-data path.
+        """
+        if self.uses_cylindrical_cs:
+            raise ValueError(
+                "compute_single_node_history_fast supports Cartesian output only. "
+                "Use compute_single_node_history for cylindrical mode."
+            )
+
+        single_node_scoping = self.reader1.create_single_node_scoping(node_id, self.scoping)
+
+        if progress_callback:
+            progress_callback(0, 100, f"Loading displacement data for node {node_id}...")
+
+        self._displacement_unit = self.reader1.get_displacement_unit()
+        self._node_ids, self._node_coords = self.reader1.get_node_coordinates(single_node_scoping)
+
+        single_disp_cache: Dict[Tuple[int, int], Tuple] = {}
+        active_a1_steps, active_a2_steps = self.table.get_active_step_ids()
+        active_a1_set = set(active_a1_steps)
+        active_a2_set = set(active_a2_steps)
+        total_steps = len(active_a1_steps) + len(active_a2_steps)
+        current_step = 0
+
+        for step_id in active_a1_steps:
+            result = self.reader1.read_displacement_for_loadstep(step_id, single_node_scoping)
+            single_disp_cache[(1, step_id)] = result
+            current_step += 1
+            if progress_callback and total_steps > 0:
+                progress = int((current_step / total_steps) * 40)
+                progress_callback(progress, 100, f"Loading A1 step {step_id}...")
+
+        for step_id in active_a2_steps:
+            result = self.reader2.read_displacement_for_loadstep(step_id, single_node_scoping)
+            single_disp_cache[(2, step_id)] = result
+            current_step += 1
+            if progress_callback and total_steps > 0:
+                progress = int((current_step / total_steps) * 40)
+                progress_callback(progress, 100, f"Loading A2 step {step_id}...")
+
+        if progress_callback:
+            progress_callback(50, 100, f"Computing combinations for node {node_id}...")
+
+        num_combos = self.table.num_combinations
+        ux = np.zeros(num_combos, dtype=np.float64)
+        uy = np.zeros(num_combos, dtype=np.float64)
+        uz = np.zeros(num_combos, dtype=np.float64)
+
+        all_a1_steps = self.table.analysis1_step_ids
+        all_a2_steps = self.table.analysis2_step_ids
+
+        for combo_idx in range(num_combos):
+            a1_coeffs, a2_coeffs = self.table.get_coeffs_for_combination(combo_idx)
+            combo_ux = 0.0
+            combo_uy = 0.0
+            combo_uz = 0.0
+
+            for i, step_id in enumerate(all_a1_steps):
+                coeff = a1_coeffs[i]
+                if coeff != 0.0 and step_id in active_a1_set:
+                    _, s_ux, s_uy, s_uz = single_disp_cache[(1, step_id)]
+                    combo_ux += coeff * s_ux[0]
+                    combo_uy += coeff * s_uy[0]
+                    combo_uz += coeff * s_uz[0]
+
+            for i, step_id in enumerate(all_a2_steps):
+                coeff = a2_coeffs[i]
+                if coeff != 0.0 and step_id in active_a2_set:
+                    _, s_ux, s_uy, s_uz = single_disp_cache[(2, step_id)]
+                    combo_ux += coeff * s_ux[0]
+                    combo_uy += coeff * s_uy[0]
+                    combo_uz += coeff * s_uz[0]
+
+            ux[combo_idx] = combo_ux
+            uy[combo_idx] = combo_uy
+            uz[combo_idx] = combo_uz
+
+            if progress_callback:
+                progress = 50 + int((combo_idx + 1) / num_combos * 50)
+                progress_callback(progress, 100, f"Computing combination {combo_idx + 1}/{num_combos}...")
+
+        magnitude = self.compute_magnitude(ux, uy, uz)
+        combination_indices = np.arange(num_combos)
         return (combination_indices, ux, uy, uz, magnitude)
     
     def get_combination_names(self) -> List[str]:
