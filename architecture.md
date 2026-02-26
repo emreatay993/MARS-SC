@@ -30,6 +30,86 @@ The design idea is simple:
 - File I/O owns reading/writing formats.
 - Core models keep data contracts stable between modules.
 
+## Visual architecture maps
+If your Markdown viewer supports Mermaid, these diagrams will render automatically.
+
+### 1) Component map (who talks to whom)
+```mermaid
+flowchart LR
+    U[User] --> AC[ApplicationController]
+    AC --> ST[SolverTab]
+    AC --> DT[DisplayTab]
+    AC --> NAV[Navigator + Menu]
+
+    ST --> FH[SolverFileHandler]
+    ST --> SRC[SolveRunController]
+    ST --> SRPH[SolverResultPayloadHandler]
+
+    SRC --> SIV[SolverInputValidator]
+    SRC --> SAE[SolverAnalysisExecutor]
+    SAE --> SEF[SolverEngineFactory]
+
+    SEF --> SSE[StressCombinationEngine]
+    SEF --> NFE[NodalForcesCombinationEngine]
+    SEF --> DFE[DeformationCombinationEngine]
+
+    FH --> R1[DPFAnalysisReader A1]
+    FH --> R2[DPFAnalysisReader A2]
+    SSE --> R1
+    SSE --> R2
+    NFE --> R1
+    NFE --> R2
+    DFE --> R1
+    DFE --> R2
+
+    R1 --> A1[(Analysis 1 .rst)]
+    R2 --> A2[(Analysis 2 .rst)]
+
+    SRPH --> PAY[DisplayResultPayload]
+    PAY --> DT
+    DT --> EXP[DisplayExportHandler]
+```
+
+### 2) Solve pipeline (happy path)
+```mermaid
+flowchart TD
+    A[Load Analysis 1 and Analysis 2 .rst files] --> B[Pick named selection + set combination table]
+    B --> C[Choose outputs: Stress / Forces / Deformation]
+    C --> D[Click Solve]
+    D --> E[Validate inputs]
+    E -->|Valid| F[Create engines]
+    E -->|Invalid| X[Show warning and stop]
+    F --> G[Run stress and/or forces and/or deformation analysis]
+    G --> H[Build result payload + summary]
+    H --> I[Update Display tab mesh and controls]
+    I --> J[User explores contours, picks nodes, exports CSV]
+```
+
+### 3) One solve run as a sequence
+```mermaid
+sequenceDiagram
+    participant User
+    participant SolverTab
+    participant SolveRunController
+    participant SolverAnalysisExecutor
+    participant Engines
+    participant DPFAnalysisReader
+    participant DisplayTab
+
+    User->>SolverTab: Load .rst files + set combinations + click Solve
+    SolverTab->>SolveRunController: solve(config)
+    SolveRunController->>SolveRunController: validate inputs
+    SolveRunController->>SolverAnalysisExecutor: run selected analyses
+    SolverAnalysisExecutor->>Engines: create and execute stress/forces/deformation engines
+    Engines->>DPFAnalysisReader: read scoped result data from .rst
+    DPFAnalysisReader-->>Engines: stress/force/displacement arrays
+    Engines-->>SolverAnalysisExecutor: combined and envelope results
+    SolverAnalysisExecutor-->>SolveRunController: result objects
+    SolveRunController-->>SolverTab: complete_solve(...)
+    SolverTab->>DisplayTab: emit DisplayResultPayload
+    DisplayTab-->>User: 3D contours, combo view, exports
+```
+
 ## Startup flow
 1. `mars_sc_entry.py` prepares import paths (especially for packaged builds).
 2. `src/main.py` starts Qt and creates `ApplicationController`.
