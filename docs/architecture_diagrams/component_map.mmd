@@ -6,7 +6,7 @@ flowchart LR
 
     ST --> FH[SolverFileHandler]
     ST --> SRC[SolveRunController]
-    ST --> SRPH[SolverResultPayloadHandler]
+    ST --> SRPH[ResultVisualizationBridge]
 
     SRC --> SIV[SolverInputValidator]
     SRC --> SAE[SolverAnalysisExecutor]
@@ -28,6 +28,6 @@ flowchart LR
     R1 --> A1[(Analysis 1 .rst)]
     R2 --> A2[(Analysis 2 .rst)]
 
-    SRPH --> PAY[DisplayResultPayload]
+    SRPH --> PAY[VisualizationData]
     PAY --> DT
     DT --> EXP[DisplayExportHandler]

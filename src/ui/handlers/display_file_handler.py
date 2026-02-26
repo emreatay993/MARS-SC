@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import QFileDialog, QMessageBox
 
 from ui.handlers.display_base_handler import DisplayBaseHandler
 from core.visualization import VisualizationManager
-from ui.display_payload import SolverOutputFlags
+from ui.visualization_data import SolverOutputFlags
 
 
 class DisplayFileHandler(DisplayBaseHandler):

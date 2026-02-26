@@ -23,7 +23,7 @@ from ui.handlers.display_recompute_policy import (
     get_recompute_note_text,
     is_stress_on_demand_recompute_available as stress_recompute_available,
 )
-from ui.display_payload import DisplayResultPayload, SolverOutputFlags
+from ui.visualization_data import VisualizationData, SolverOutputFlags
 
 
 class DisplayTab(QWidget):
@@ -629,7 +629,7 @@ class DisplayTab(QWidget):
         """Update visualization state from a typed solver payload."""
         if payload is None:
             return
-        if not isinstance(payload, DisplayResultPayload):
+        if not isinstance(payload, VisualizationData):
             QMessageBox.warning(self, "Invalid Payload", "Display payload has an unexpected type.")
             return
 
@@ -753,5 +753,3 @@ class DisplayTab(QWidget):
                 self.plotter.close()
         except Exception:
             pass
-
-

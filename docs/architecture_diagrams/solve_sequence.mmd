@@ -17,5 +17,5 @@ sequenceDiagram
     Engines-->>SolverAnalysisExecutor: combined and envelope results
     SolverAnalysisExecutor-->>SolveRunController: result objects
     SolveRunController-->>SolverTab: complete_solve(...)
-    SolverTab->>DisplayTab: emit DisplayResultPayload
+    SolverTab->>DisplayTab: emit VisualizationData
     DisplayTab-->>User: 3D contours, combo view, exports

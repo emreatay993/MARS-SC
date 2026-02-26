@@ -50,7 +50,7 @@ flowchart LR
 
     ST --> FH[SolverFileHandler]
     ST --> SRC[SolveRunController]
-    ST --> SRPH[SolverResultPayloadHandler]
+    ST --> SRPH[ResultVisualizationBridge]
 
     SRC --> SIV[SolverInputValidator]
     SRC --> SAE[SolverAnalysisExecutor]
@@ -72,7 +72,7 @@ flowchart LR
     R1 --> A1[(Analysis 1 .rst)]
     R2 --> A2[(Analysis 2 .rst)]
 
-    SRPH --> PAY[DisplayResultPayload]
+    SRPH --> PAY[VisualizationData]
     PAY --> DT
     DT --> EXP[DisplayExportHandler]
 ```
@@ -113,7 +113,7 @@ sequenceDiagram
     Engines-->>SolverAnalysisExecutor: combined and envelope results
     SolverAnalysisExecutor-->>SolveRunController: result objects
     SolveRunController-->>SolverTab: complete_solve(...)
-    SolverTab->>DisplayTab: emit DisplayResultPayload
+    SolverTab->>DisplayTab: emit VisualizationData
     DisplayTab-->>User: 3D contours, combo view, exports
 ```
 
@@ -159,7 +159,7 @@ Important behavior in stress solve:
 
 ### 5) Results are summarized, exported, and sent to Display
 - `SolverResultSummaryHandler` logs key result summaries and writes envelope CSV outputs.
-- `SolverResultPayloadHandler` builds a `DisplayResultPayload` with mesh and metadata.
+- `ResultVisualizationBridge` builds a `VisualizationData` with mesh and metadata.
 - `SolverTab` emits payload to `DisplayTab`.
 
 ### 6) Display tab renders and lets user inspect/export
@@ -229,7 +229,7 @@ Commonly important regression areas include:
 - Add or change solve orchestration: `solve_run_controller.py`, `solver_analysis_executor.py`.
 - Add a new compute path: usually a `src/solver/*_engine.py` module + wiring in executor/factory.
 - Change RST extraction behavior: `src/file_io/dpf_reader.py`.
-- Change what gets visualized: `solver_result_payload_handler.py` + display handlers.
+- Change what gets visualized: `result_visualization_bridge.py` + display handlers.
 - Change CSV output format: `src/file_io/exporters.py` and related display/summary handlers.
 
 ## Practical architecture summary

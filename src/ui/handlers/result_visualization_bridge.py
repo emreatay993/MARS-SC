@@ -8,10 +8,10 @@ and emits them to the display tab.
 import numpy as np
 
 from core.data_models import CombinationResult, DeformationResult, NodalForcesResult
-from ui.display_payload import DisplayResultPayload, SolverOutputFlags
+from ui.visualization_data import VisualizationData, SolverOutputFlags
 
 
-class SolverResultPayloadHandler:
+class ResultVisualizationBridge:
     """Build display payloads and meshes from solver output results."""
 
     def __init__(self, tab):
@@ -33,7 +33,7 @@ class SolverResultPayloadHandler:
         data_min = float(np.min(result.max_over_combo)) if result.max_over_combo is not None else 0.0
         data_max = float(np.max(result.max_over_combo)) if result.max_over_combo is not None else 0.0
 
-        self._emit_display_payload(mesh, scalar_bar_title, data_min, data_max)
+        self._emit_visualization_data(mesh, scalar_bar_title, data_min, data_max)
 
     def on_forces_analysis_complete(self, result: NodalForcesResult) -> None:
         """Handle nodal forces analysis completion."""
@@ -53,7 +53,7 @@ class SolverResultPayloadHandler:
             else 0.0
         )
 
-        self._emit_display_payload(mesh, scalar_bar_title, data_min, data_max)
+        self._emit_visualization_data(mesh, scalar_bar_title, data_min, data_max)
 
     def on_deformation_analysis_complete(
         self,
@@ -76,7 +76,7 @@ class SolverResultPayloadHandler:
                 if result.max_magnitude_over_combo is not None
                 else 0.0
             )
-            self._emit_display_payload(mesh, scalar_bar_title, data_min, data_max)
+            self._emit_visualization_data(mesh, scalar_bar_title, data_min, data_max)
 
     def _build_display_output_flags(self) -> SolverOutputFlags:
         stress_type = (
@@ -92,7 +92,7 @@ class SolverResultPayloadHandler:
             compute_deformation=self.tab.deformation_result is not None,
         )
 
-    def _emit_display_payload(
+    def _emit_visualization_data(
         self,
         mesh,
         scalar_bar_title: str,
@@ -104,7 +104,7 @@ class SolverResultPayloadHandler:
             if self.tab.combination_table is not None
             else []
         )
-        payload = DisplayResultPayload(
+        payload = VisualizationData(
             mesh=mesh,
             scalar_bar_title=scalar_bar_title,
             data_min=data_min,

@@ -19,7 +19,7 @@ from PyQt5.QtWidgets import (
 from ui.builders.solver_ui import SolverTabUIBuilder
 from ui.handlers.file_handler import SolverFileHandler
 from ui.handlers.solve_run_controller import SolveRunController
-from ui.handlers.solver_result_payload_handler import SolverResultPayloadHandler
+from ui.handlers.result_visualization_bridge import ResultVisualizationBridge
 from ui.handlers.solver_combination_table_handler import SolverCombinationTableHandler
 from ui.handlers.solver_named_selection_handler import SolverNamedSelectionHandler
 from ui.handlers.solver_output_state_handler import SolverOutputStateHandler
@@ -76,7 +76,7 @@ class SolverTab(QWidget):
         # Handlers
         self.file_handler = SolverFileHandler(self)
         self.solve_run_controller = SolveRunController(self)
-        self.result_payload_handler = SolverResultPayloadHandler(self)
+        self.result_payload_handler = ResultVisualizationBridge(self)
         self.combination_table_handler = SolverCombinationTableHandler(self)
         self.named_selection_handler = SolverNamedSelectionHandler(self)
         self.output_state_handler = SolverOutputStateHandler(self)

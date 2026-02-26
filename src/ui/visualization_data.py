@@ -20,7 +20,7 @@ class SolverOutputFlags:
 
 
 @dataclass
-class DisplayResultPayload:
+class VisualizationData:
     """Full display update payload emitted by SolverTab."""
 
     mesh: object
