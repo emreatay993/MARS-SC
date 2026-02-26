@@ -33,6 +33,13 @@ The design idea is simple:
 ## Visual architecture maps
 If your Markdown viewer supports Mermaid, these diagrams will render automatically.
 
+Static exports are available in `docs/architecture_diagrams/` as `.svg` and `.png`.
+To regenerate them:
+
+```bash
+python scripts/export_architecture_diagrams.py
+```
+
 ### 1) Component map (who talks to whom)
 ```mermaid
 flowchart LR

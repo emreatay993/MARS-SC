@@ -1,0 +1,33 @@
+flowchart LR
+    U[User] --> AC[ApplicationController]
+    AC --> ST[SolverTab]
+    AC --> DT[DisplayTab]
+    AC --> NAV[Navigator + Menu]
+
+    ST --> FH[SolverFileHandler]
+    ST --> SRC[SolveRunController]
+    ST --> SRPH[SolverResultPayloadHandler]
+
+    SRC --> SIV[SolverInputValidator]
+    SRC --> SAE[SolverAnalysisExecutor]
+    SAE --> SEF[SolverEngineFactory]
+
+    SEF --> SSE[StressCombinationEngine]
+    SEF --> NFE[NodalForcesCombinationEngine]
+    SEF --> DFE[DeformationCombinationEngine]
+
+    FH --> R1[DPFAnalysisReader A1]
+    FH --> R2[DPFAnalysisReader A2]
+    SSE --> R1
+    SSE --> R2
+    NFE --> R1
+    NFE --> R2
+    DFE --> R1
+    DFE --> R2
+
+    R1 --> A1[(Analysis 1 .rst)]
+    R2 --> A2[(Analysis 2 .rst)]
+
+    SRPH --> PAY[DisplayResultPayload]
+    PAY --> DT
+    DT --> EXP[DisplayExportHandler]

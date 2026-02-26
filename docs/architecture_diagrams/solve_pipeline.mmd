@@ -1,0 +1,11 @@
+flowchart TD
+    A[Load Analysis 1 and Analysis 2 .rst files] --> B[Pick named selection + set combination table]
+    B --> C[Choose outputs: Stress / Forces / Deformation]
+    C --> D[Click Solve]
+    D --> E[Validate inputs]
+    E -->|Valid| F[Create engines]
+    E -->|Invalid| X[Show warning and stop]
+    F --> G[Run stress and/or forces and/or deformation analysis]
+    G --> H[Build result payload + summary]
+    H --> I[Update Display tab mesh and controls]
+    I --> J[User explores contours, picks nodes, exports CSV]
