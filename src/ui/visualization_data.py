@@ -1,5 +1,5 @@
 """
-Typed payloads for solver-to-display communication.
+Typed data objects for solver-to-display communication.
 """
 
 from dataclasses import dataclass, field
@@ -21,7 +21,7 @@ class SolverOutputFlags:
 
 @dataclass
 class VisualizationData:
-    """Full display update payload emitted by SolverTab."""
+    """Full display update data emitted by SolverTab."""
 
     mesh: object
     scalar_bar_title: str

@@ -324,7 +324,7 @@ class DisplayTab(QWidget):
         self.recompute_corrected_combination_requested.emit(combo_idx)
 
     def is_stress_on_demand_recompute_available(self) -> bool:
-        """Whether current stress payload supports on-demand combination recompute."""
+        """Whether current stress data supports on-demand combination recompute."""
         return stress_recompute_available(self.stress_result)
 
     def get_recomputed_stress_values(self, combo_idx: int):
@@ -333,7 +333,7 @@ class DisplayTab(QWidget):
 
     @pyqtSlot(object)
     def on_recomputed_combination_ready(self, payload):
-        """Receive on-demand corrected combination payload from Solver tab."""
+        """Receive on-demand corrected combination data from Solver tab."""
         combo_idx = int(payload.get("combination_index", -1))
         success = bool(payload.get("success", False))
 
@@ -626,11 +626,11 @@ class DisplayTab(QWidget):
 
     @pyqtSlot(object)
     def update_view_with_payload(self, payload):
-        """Update visualization state from a typed solver payload."""
+        """Update visualization state from typed solver data."""
         if payload is None:
             return
         if not isinstance(payload, VisualizationData):
-            QMessageBox.warning(self, "Invalid Payload", "Display payload has an unexpected type.")
+            QMessageBox.warning(self, "Invalid Data", "Display data has an unexpected type.")
             return
 
         self.stress_result = payload.stress_result

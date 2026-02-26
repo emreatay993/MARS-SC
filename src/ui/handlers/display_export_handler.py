@@ -338,7 +338,7 @@ class DisplayExportHandler(DisplayBaseHandler):
 
     def _build_deformation_component_payload(self, deformation_result) -> Optional[dict]:
         """
-        Build optional deformation component-envelope payload for CSV export.
+        Build optional deformation component-envelope data for CSV export.
 
         Priority:
         1) Use Def_* arrays already attached to the active mesh.

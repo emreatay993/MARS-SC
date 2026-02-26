@@ -221,7 +221,7 @@ class ApplicationController(QMainWindow):
             self.display_tab._setup_initial_view
         )
         
-        # Connect solver display payload to display tab
+        # Connect solver visualization data to display tab
         self.solver_tab.visualization_data_ready.connect(
             self.display_tab.update_view_with_payload
         )

@@ -31,7 +31,7 @@ class PlottingHandler:
             )
 
             # Use local-file loading first. QWebEngineView.setHtml can fail silently for
-            # large Plotly payloads (embedded plotly.js), resulting in blank plots.
+            # large Plotly data blobs (embedded plotly.js), resulting in blank plots.
             with NamedTemporaryFile(
                     mode='w', suffix='.html', delete=False, encoding='utf-8'
             ) as tmp_file:

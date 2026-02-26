@@ -49,7 +49,7 @@ Generated: `2026-02-26 22:13:18`
 | `src/ui/dialogs/__init__.py` | `src.ui.dialogs.__init__` | 6 | 0 | 0 | Dialog components for the UI package. |
 | `src/ui/dialogs/auto_populate_screening_dialog.py` | `src.ui.dialogs.auto_populate_screening_dialog` | 204 | 1 | 0 | Dialog for auto-generating screening combinations in the solver table. |
 | `src/ui/dialogs/material_profile_dialog.py` | `src.ui.dialogs.material_profile_dialog` | 518 | 1 | 0 | Material profile dialog providing editors for temperature-dependent properties. |
-| `src/ui/visualization_data.py` | `src.ui.visualization_data` | 35 | 2 | 0 | Typed payloads for solver-to-display communication. |
+| `src/ui/visualization_data.py` | `src.ui.visualization_data` | 35 | 2 | 0 | Typed data objects for solver-to-display communication. |
 | `src/ui/display_tab.py` | `src.ui.display_tab` | 757 | 1 | 0 | Display tab: 3D visualization of FEA results (PyVista). |
 | `src/ui/handlers/display_base_handler.py` | `src.ui.handlers.display_base_handler` | 26 | 1 | 0 | Base utilities for Display tab handler classes. |
 | `src/ui/handlers/display_contour_context.py` | `src.ui.handlers.display_contour_context` | 144 | 1 | 3 | No module docstring. |

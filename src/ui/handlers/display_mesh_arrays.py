@@ -133,7 +133,7 @@ def attach_deformation_envelope_arrays(mesh, deformation_result) -> bool:
 
 
 def build_deformation_component_payload_from_result(deformation_result) -> Optional[dict[str, np.ndarray]]:
-    """Build deformation component envelope payload from DeformationResult."""
+    """Build deformation component envelope data from DeformationResult."""
     if deformation_result is None:
         return None
 

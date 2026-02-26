@@ -87,7 +87,7 @@ flowchart TD
     E -->|Valid| F[Create engines]
     E -->|Invalid| X[Show warning and stop]
     F --> G[Run stress and/or forces and/or deformation analysis]
-    G --> H[Build result payload + summary]
+    G --> H[Build result data + summary]
     H --> I[Update Display tab mesh and controls]
     I --> J[User explores contours, picks nodes, exports CSV]
 ```
@@ -160,10 +160,10 @@ Important behavior in stress solve:
 ### 5) Results are summarized, exported, and sent to Display
 - `SolverResultSummaryHandler` logs key result summaries and writes envelope CSV outputs.
 - `ResultVisualizationBridge` builds a `VisualizationData` with mesh and metadata.
-- `SolverTab` emits payload to `DisplayTab`.
+- `SolverTab` emits data to `DisplayTab`.
 
 ### 6) Display tab renders and lets user inspect/export
-- `DisplayTab` stores the incoming payload and updates PyVista view.
+- `DisplayTab` stores the incoming data and updates PyVista view.
 - Contour behavior is synchronized by `display_contour_sync_handler`.
 - Export buttons call `DisplayExportHandler`.
 - Node picking can trigger history solves in the solver tab.

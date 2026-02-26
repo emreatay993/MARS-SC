@@ -6,6 +6,6 @@ flowchart TD
     E -->|Valid| F[Create engines]
     E -->|Invalid| X[Show warning and stop]
     F --> G[Run stress and/or forces and/or deformation analysis]
-    G --> H[Build result payload + summary]
+    G --> H[Build result data + summary]
     H --> I[Update Display tab mesh and controls]
     I --> J[User explores contours, picks nodes, exports CSV]

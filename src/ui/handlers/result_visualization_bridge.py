@@ -1,7 +1,7 @@
 """
 Display/presentation handling for solver outputs.
 
-This module converts solver results into visualization-ready payloads
+This module converts solver results into visualization-ready data
 and emits them to the display tab.
 """
 
@@ -12,7 +12,7 @@ from ui.visualization_data import VisualizationData, SolverOutputFlags
 
 
 class ResultVisualizationBridge:
-    """Build display payloads and meshes from solver output results."""
+    """Build display data and meshes from solver output results."""
 
     def __init__(self, tab):
         self.tab = tab

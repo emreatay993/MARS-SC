@@ -43,7 +43,7 @@ class SolverTab(QWidget):
 
     Signals:
         initial_data_loaded: Emitted when initial RST data is loaded
-        visualization_data_ready: Emitted when display results payload is ready
+        visualization_data_ready: Emitted when display results data is ready
     """
     
     # Signals
