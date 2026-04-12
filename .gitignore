@@ -21,3 +21,11 @@ __pycache__/
 /src/anan.csv
 /src/ui/handlers/*.csv
 /src/ui/handlers/*.dat
+
+# Local/generated artifacts
+/build/
+/dist/
+/example_dataset/
+/python_result_templates/
+/tests/joint_rsts/
+/combination_table_example.csv
