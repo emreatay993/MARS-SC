@@ -268,7 +268,8 @@ TOOLTIP_COMBINE_RST = (
 
 TOOLTIP_NAMED_SELECTION = (
     "Select the Named Selection used to scope the analysis.\n\n"
-    "Only nodes within the selected Named Selection are processed.\n"
+    "Nodal and elemental Named Selections are supported.\n"
+    "Elemental selections are converted to their attached nodes for the current outputs.\n"
     "The available list depends on 'Named Selection Source'.\n\n"
     "If a name exists in both analyses, node content is always taken\n"
     "from Analysis 1 (Base) to avoid mismatched node sets."

@@ -231,6 +231,57 @@ class DPFAnalysisReader:
             return list(available_ns) if available_ns else []
         except Exception:
             return []
+
+    @staticmethod
+    def _normalize_scoping_location(location) -> str:
+        """Return a stable location label for DPF scoping variants."""
+        try:
+            if dpf is not None:
+                if location == dpf.locations.nodal:
+                    return "nodal"
+                if location == dpf.locations.elemental:
+                    return "elemental"
+        except Exception:
+            pass
+
+        location_text = str(location).lower()
+        if "element" in location_text:
+            return "elemental"
+        if "nodal" in location_text or "node" in location_text:
+            return "nodal"
+        return "unknown"
+
+    def get_named_selection_scoping(self, ns_name: str) -> 'dpf.Scoping':
+        """
+        Return the original DPF scoping for a named selection.
+
+        The returned scoping preserves the source location from the RST file,
+        which may be nodal or elemental.
+        """
+        try:
+            return self.model.metadata.named_selection(ns_name)
+        except Exception as e:
+            raise ValueError(f"Failed to get named selection '{ns_name}': {e}")
+
+    def get_named_selection_location(self, ns_name: str) -> str:
+        """
+        Return the source location for a named selection.
+
+        Returns:
+            "nodal", "elemental", or "unknown".
+        """
+        try:
+            ns_scoping = self.get_named_selection_scoping(ns_name)
+            return self._normalize_scoping_location(ns_scoping.location)
+        except Exception:
+            return "unknown"
+
+    def get_named_selection_locations(self) -> Dict[str, str]:
+        """Return a map of named-selection names to source locations."""
+        locations = {}
+        for ns_name in self.get_named_selections():
+            locations[ns_name] = self.get_named_selection_location(ns_name)
+        return locations
     
     def get_load_step_count(self) -> int:
         """
@@ -496,6 +547,7 @@ class DPFAnalysisReader:
             load_step_ids=load_step_ids,
             time_values=time_values,
             named_selections=self.get_named_selections(),
+            named_selection_locations=self.get_named_selection_locations(),
             unit_system=self.unit_system,
             stress_unit=self.stress_unit,
             stress_conversion_factor=self.stress_conversion_factor,
@@ -617,10 +669,11 @@ class DPFAnalysisReader:
         """
         try:
             # Get the named selection scoping
-            ns_scoping = self.model.metadata.named_selection(ns_name)
+            ns_scoping = self.get_named_selection_scoping(ns_name)
+            ns_location = self._normalize_scoping_location(ns_scoping.location)
             
             # If it's already a nodal scoping, return it
-            if ns_scoping.location == dpf.locations.nodal:
+            if ns_location == "nodal":
                 return ns_scoping
             
             # If it's elemental, we need to convert to nodal
@@ -637,19 +690,23 @@ class DPFAnalysisReader:
                 return self._resolve_transpose_output_scoping(transpose_op)
             except Exception:
                 # Fallback: manually get nodes from elements
-                if ns_scoping.location == dpf.locations.elemental:
+                if ns_location == "elemental":
                     element_ids = ns_scoping.ids
-                    node_ids_set = set()
+                    node_ids = []
+                    seen_node_ids = set()
                     for elem_id in element_ids:
                         try:
                             elem_idx = mesh.elements.scoping.index(elem_id)
                             connectivity = mesh.elements.element_by_index(elem_idx).connectivity
-                            node_ids_set.update(connectivity)
+                            for node_id in connectivity:
+                                if node_id not in seen_node_ids:
+                                    seen_node_ids.add(node_id)
+                                    node_ids.append(node_id)
                         except Exception:
                             continue
                     
                     nodal_scoping = dpf.Scoping(location=dpf.locations.nodal)
-                    nodal_scoping.ids = list(node_ids_set)
+                    nodal_scoping.ids = node_ids
                     return nodal_scoping
                 else:
                     raise

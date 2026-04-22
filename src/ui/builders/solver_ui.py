@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (
     QCheckBox, QComboBox, QGridLayout, QGroupBox, QHBoxLayout,
     QLabel, QLineEdit, QProgressBar, QPushButton, QSizePolicy,
     QTabWidget, QVBoxLayout, QTableWidget, QTableWidgetItem,
-    QHeaderView, QAbstractItemView, QSpinBox, QWidget
+    QHeaderView, QAbstractItemView, QSpinBox, QWidget, QCompleter
 )
 
 
@@ -21,6 +21,33 @@ class ClearableSelectionTableWidget(QTableWidget):
             self.clearSelection()
             self.setCurrentItem(None)
         super().mousePressEvent(event)
+
+
+class SearchableComboBox(QComboBox):
+    """Editable combo box with case-insensitive contains filtering."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setEditable(True)
+        self.setInsertPolicy(QComboBox.NoInsert)
+
+        self._search_completer = QCompleter(self)
+        self._search_completer.setModel(self.model())
+        self._search_completer.setCompletionMode(QCompleter.PopupCompletion)
+        self._search_completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self._search_completer.setFilterMode(Qt.MatchContains)
+        self._search_completer.activated[str].connect(self._on_completion_activated)
+        self.setCompleter(self._search_completer)
+
+    def setModel(self, model):
+        super().setModel(model)
+        if hasattr(self, "_search_completer"):
+            self._search_completer.setModel(model)
+
+    def _on_completion_activated(self, text: str) -> None:
+        index = self.findText(text)
+        if index >= 0:
+            self.setCurrentIndex(index)
 
 from utils.constants import (
     WINDOW_BACKGROUND_COLOR
@@ -103,13 +130,14 @@ class SolverTabUIBuilder:
         named_selection_source_combo.setItemData(2, "Show names from Analysis 2 only.", Qt.ToolTipRole)
 
         named_selection_label = QLabel("Named Selection:")
-        named_selection_combo = QComboBox()
+        named_selection_combo = SearchableComboBox()
         named_selection_combo.setMinimumWidth(420)
         named_selection_combo.setMinimumContentsLength(48)
         named_selection_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         named_selection_combo.view().setMinimumWidth(520)
         named_selection_combo.setEnabled(False)
         named_selection_combo.addItem("(Load RST files first)")
+        named_selection_combo.lineEdit().setPlaceholderText("Search named selections")
         named_selection_combo.setToolTip(TOOLTIP_NAMED_SELECTION)
         named_selection_label.setToolTip(TOOLTIP_NAMED_SELECTION)
         

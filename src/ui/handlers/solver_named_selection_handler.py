@@ -29,6 +29,45 @@ class SolverNamedSelectionHandler:
         ns2 = set(self.tab.analysis2_data.named_selections) if self.tab.analysis2_data else set()
         return ns1, ns2
 
+    def _get_display_location(self, ns_name: str) -> str:
+        """Return the location that matches the active scoping source precedence."""
+        source_mode = self.get_named_selection_source_mode()
+        data = None
+
+        if source_mode == "analysis2":
+            data = self.tab.analysis2_data or self.tab.analysis1_data
+        else:
+            data = self.tab.analysis1_data or self.tab.analysis2_data
+
+        if data is None:
+            return "unknown"
+
+        locations = getattr(data, "named_selection_locations", {}) or {}
+        return locations.get(ns_name, "unknown")
+
+    def _format_named_selection_label(self, ns_name: str) -> str:
+        """Build the dropdown label while keeping raw name in item data."""
+        location = self._get_display_location(ns_name)
+        if location == "elemental":
+            return f"{ns_name} (Elemental)"
+        return ns_name
+
+    def _add_named_selection_items(self, selections) -> None:
+        """Add named-selection entries with raw names stored as item data."""
+        for ns_name in selections:
+            self.tab.named_selection_combo.addItem(
+                self._format_named_selection_label(ns_name),
+                ns_name,
+            )
+
+    def _set_current_named_selection(self, ns_name: str) -> None:
+        """Restore a previous raw named-selection value after repopulating."""
+        combo = self.tab.named_selection_combo
+        for index in range(combo.count()):
+            if combo.itemData(index) == ns_name:
+                combo.setCurrentIndex(index)
+                return
+
     def update_named_selections(self) -> None:
         """Update named-selection dropdown based on active source filter."""
         previous_selection = self.get_selected_named_selection()
@@ -54,22 +93,22 @@ class SolverNamedSelectionHandler:
                 empty_text = "(No common named selections)"
 
             if selections:
-                self.tab.named_selection_combo.addItems(selections)
+                self._add_named_selection_items(selections)
                 self.tab.named_selection_combo.setEnabled(True)
                 if previous_selection and previous_selection in selections:
-                    self.tab.named_selection_combo.setCurrentText(previous_selection)
+                    self._set_current_named_selection(previous_selection)
             else:
                 self.tab.named_selection_combo.addItem(empty_text)
                 self.tab.named_selection_combo.setEnabled(False)
         elif has_analysis1:
             if self.tab.analysis1_data.named_selections:
-                self.tab.named_selection_combo.addItems(self.tab.analysis1_data.named_selections)
+                self._add_named_selection_items(self.tab.analysis1_data.named_selections)
             else:
                 self.tab.named_selection_combo.addItem("(No named selections)")
             self.tab.named_selection_combo.setEnabled(False)
         elif has_analysis2:
             if self.tab.analysis2_data.named_selections:
-                self.tab.named_selection_combo.addItems(self.tab.analysis2_data.named_selections)
+                self._add_named_selection_items(self.tab.analysis2_data.named_selections)
             else:
                 self.tab.named_selection_combo.addItem("(No named selections)")
             self.tab.named_selection_combo.setEnabled(False)
@@ -79,10 +118,29 @@ class SolverNamedSelectionHandler:
 
     def get_selected_named_selection(self):
         """Get currently selected named selection name."""
-        text = self.tab.named_selection_combo.currentText()
+        combo = self.tab.named_selection_combo
+        text = combo.currentText().strip()
         if not text or text.startswith("("):
             return None
-        return text
+
+        current_index = combo.currentIndex()
+        if current_index >= 0 and combo.itemText(current_index) == text:
+            raw_name = combo.itemData(current_index)
+            return raw_name if raw_name else text
+
+        for index in range(combo.count()):
+            if combo.itemText(index) == text:
+                raw_name = combo.itemData(index)
+                combo.setCurrentIndex(index)
+                return raw_name if raw_name else text
+
+        for index in range(combo.count()):
+            raw_name = combo.itemData(index)
+            if raw_name == text:
+                combo.setCurrentIndex(index)
+                return raw_name
+
+        return None
 
     def get_scoping_reader_for_named_selection(self, ns_name: str):
         """

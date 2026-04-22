@@ -25,6 +25,8 @@ class AnalysisData:
         load_step_ids: List of load step IDs available in the RST.
         time_values: List of time values (in seconds) for each set.
         named_selections: List of named selection names in the RST.
+        named_selection_locations: Map of named selection name to source location
+            ("nodal", "elemental", or "unknown").
         unit_system: Unit system string from the RST file (e.g., "MKS: m, kg, N, s...").
         stress_unit: Original stress unit from the RST file (e.g., "Pa").
         stress_conversion_factor: Factor to convert stress to MPa.
@@ -45,6 +47,7 @@ class AnalysisData:
     force_unit: str = "N"
     displacement_available: bool = False
     displacement_unit: str = "mm"
+    named_selection_locations: Dict[str, str] = field(default_factory=dict)
     
     def get_time_for_step(self, step_id: int) -> Optional[float]:
         """
