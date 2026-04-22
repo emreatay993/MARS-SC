@@ -151,6 +151,7 @@ class DPFAnalysisReader:
         self._nodal_forces_available = None
         self._force_unit = None
         self.cdb_named_selection_reader = None
+        self.txt_named_selection_readers = []
     
     @property
     def mesh(self):
@@ -224,6 +225,22 @@ class DPFAnalysisReader:
         """Attach a supplemental CDB named-selection source to this RST reader."""
         self.cdb_named_selection_reader = cdb_reader
 
+    def attach_txt_named_selection_reader(self, txt_reader) -> None:
+        """Attach one supplemental TXT named-selection source to this RST reader."""
+        if txt_reader is not None:
+            self.txt_named_selection_readers.append(txt_reader)
+
+    def clear_txt_named_selection_readers(self) -> None:
+        """Remove all supplemental TXT named-selection sources from this reader."""
+        self.txt_named_selection_readers = []
+
+    def _iter_supplemental_named_selection_readers(self):
+        """Yield attached supplemental named-selection readers in precedence order."""
+        if self.cdb_named_selection_reader is not None:
+            yield self.cdb_named_selection_reader
+        for txt_reader in self.txt_named_selection_readers:
+            yield txt_reader
+
     def get_rst_named_selections(self) -> List[str]:
         """
         Return list of named selection names from RST metadata.
@@ -247,8 +264,8 @@ class DPFAnalysisReader:
         names = list(self.get_rst_named_selections())
         seen = set(names)
 
-        if self.cdb_named_selection_reader is not None:
-            for ns_name in self.cdb_named_selection_reader.get_named_selections():
+        for supplemental_reader in self._iter_supplemental_named_selection_readers():
+            for ns_name in supplemental_reader.get_named_selections():
                 if ns_name not in seen:
                     names.append(ns_name)
                     seen.add(ns_name)
@@ -268,6 +285,12 @@ class DPFAnalysisReader:
             pass
 
         location_text = str(location).lower()
+        if "body" in location_text:
+            return "body"
+        if "face" in location_text:
+            return "face"
+        if "vertex" in location_text:
+            return "vertex"
         if "element" in location_text:
             return "elemental"
         if "nodal" in location_text or "node" in location_text:
@@ -284,11 +307,11 @@ class DPFAnalysisReader:
         try:
             return self.model.metadata.named_selection(ns_name)
         except Exception as e:
-            if (
-                self.cdb_named_selection_reader is not None
-                and self.cdb_named_selection_reader.has_named_selection(ns_name)
-            ):
-                selection = self.cdb_named_selection_reader.selections[ns_name]
+            for supplemental_reader in self._iter_supplemental_named_selection_readers():
+                if not supplemental_reader.has_named_selection(ns_name):
+                    continue
+
+                selection = supplemental_reader.selections[ns_name]
                 location = (
                     dpf.locations.nodal
                     if selection.location == "nodal"
@@ -317,8 +340,8 @@ class DPFAnalysisReader:
         locations = {}
         for ns_name in self.get_rst_named_selections():
             locations[ns_name] = self.get_named_selection_location(ns_name)
-        if self.cdb_named_selection_reader is not None:
-            for ns_name, location in self.cdb_named_selection_reader.get_named_selection_locations().items():
+        for supplemental_reader in self._iter_supplemental_named_selection_readers():
+            for ns_name, location in supplemental_reader.get_named_selection_locations().items():
                 locations.setdefault(ns_name, location)
         return locations
 
@@ -329,12 +352,13 @@ class DPFAnalysisReader:
             for ns_name in self.get_rst_named_selections()
         }
 
-        if self.cdb_named_selection_reader is not None:
-            for ns_name in self.cdb_named_selection_reader.get_named_selections():
+        for supplemental_reader in self._iter_supplemental_named_selection_readers():
+            for ns_name in supplemental_reader.get_named_selections():
+                source = supplemental_reader.get_named_selection_sources().get(ns_name, "supplemental")
                 if ns_name in sources:
-                    sources[ns_name] = "rst+cdb"
+                    sources[ns_name] = f"{sources[ns_name]}+{source}"
                 else:
-                    sources[ns_name] = "cdb"
+                    sources[ns_name] = source
 
         return sources
     
@@ -741,15 +765,13 @@ class DPFAnalysisReader:
             ValueError: If the named selection is not found.
         """
         try:
-            if (
-                self.cdb_named_selection_reader is not None
-                and ns_name not in self.get_rst_named_selections()
-                and self.cdb_named_selection_reader.has_named_selection(ns_name)
-            ):
-                return self.cdb_named_selection_reader.get_nodal_scoping_from_named_selection(
-                    ns_name,
-                    self,
-                )
+            if ns_name not in self.get_rst_named_selections():
+                for supplemental_reader in self._iter_supplemental_named_selection_readers():
+                    if supplemental_reader.has_named_selection(ns_name):
+                        return supplemental_reader.get_nodal_scoping_from_named_selection(
+                            ns_name,
+                            self,
+                        )
 
             # Get the named selection scoping
             ns_scoping = self.get_named_selection_scoping(ns_name)

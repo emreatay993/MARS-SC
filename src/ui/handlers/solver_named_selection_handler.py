@@ -16,12 +16,28 @@ class SolverNamedSelectionHandler:
         if self.tab.analysis1_data and self.tab.analysis2_data:
             self.update_named_selections()
 
+    def on_named_selection_type_filter_changed(self, _index: int) -> None:
+        """Refresh list when the named selection type/source filter changes."""
+        if self.tab.analysis1_data or self.tab.analysis2_data:
+            self.update_named_selections()
+
     def get_named_selection_source_mode(self) -> str:
         """Return active source mode for named selection list."""
         mode = self.tab.named_selection_source_combo.currentData()
         if mode in ("common", "analysis1", "analysis2"):
             return mode
         return "common"
+
+    def get_named_selection_type_filter(self) -> str:
+        """Return active named-selection location/source filter."""
+        combo = getattr(self.tab, "named_selection_type_filter_combo", None)
+        if combo is None:
+            return "all"
+
+        filter_value = combo.currentData()
+        if filter_value in ("all", "nodal", "elemental", "body", "face", "vertex", "imported"):
+            return filter_value
+        return "all"
 
     def get_named_selection_sets(self):
         """Get named-selection name sets for both analyses."""
@@ -60,13 +76,39 @@ class SolverNamedSelectionHandler:
         location = self._get_display_location(ns_name)
         source = self._get_display_source(ns_name)
         suffix_parts = []
-        if source == "cdb":
+        if "cdb" in source:
             suffix_parts.append("CDB")
+        if "txt" in source:
+            suffix_parts.append("TXT")
         if location == "elemental":
             suffix_parts.append("Elemental")
+        elif location in ("body", "face", "vertex"):
+            suffix_parts.append(location.title())
         if suffix_parts:
             return f"{ns_name} ({' '.join(suffix_parts)})"
         return ns_name
+
+    def _matches_named_selection_type_filter(self, ns_name: str) -> bool:
+        """Return True if ``ns_name`` passes the active type/source filter."""
+        filter_value = self.get_named_selection_type_filter()
+        if filter_value == "all":
+            return True
+
+        location = self._get_display_location(ns_name)
+        source = self._get_display_source(ns_name)
+
+        if filter_value == "imported":
+            return "cdb" in source or "txt" in source or source == "supplemental"
+
+        return location == filter_value
+
+    def _filter_named_selections(self, selections):
+        """Apply the active type/source filter to a sequence of names."""
+        return [
+            ns_name
+            for ns_name in selections
+            if self._matches_named_selection_type_filter(ns_name)
+        ]
 
     def _add_named_selection_items(self, selections) -> None:
         """Add named-selection entries with raw names stored as item data."""
@@ -92,22 +134,26 @@ class SolverNamedSelectionHandler:
         has_analysis1 = self.tab.analysis1_data is not None
         has_analysis2 = self.tab.analysis2_data is not None
         self.tab.named_selection_source_combo.setEnabled(has_analysis1 and has_analysis2)
+        if hasattr(self.tab, "named_selection_type_filter_combo"):
+            self.tab.named_selection_type_filter_combo.setEnabled(has_analysis1 or has_analysis2)
         self.tab.refresh_ns_button.setEnabled(has_analysis1 or has_analysis2)
         if hasattr(self.tab, "import_cdb_button"):
             self.tab.import_cdb_button.setEnabled(has_analysis1 and has_analysis2)
+        if hasattr(self.tab, "import_txt_ns_button"):
+            self.tab.import_txt_ns_button.setEnabled(has_analysis1 and has_analysis2)
 
         if has_analysis1 and has_analysis2:
             ns1, ns2 = self.get_named_selection_sets()
             source_mode = self.get_named_selection_source_mode()
 
             if source_mode == "analysis1":
-                selections = sorted(ns1)
+                selections = self._filter_named_selections(sorted(ns1))
                 empty_text = "(No named selections in Analysis 1)"
             elif source_mode == "analysis2":
-                selections = sorted(ns2)
+                selections = self._filter_named_selections(sorted(ns2))
                 empty_text = "(No named selections in Analysis 2)"
             else:
-                selections = sorted(ns1.intersection(ns2))
+                selections = self._filter_named_selections(sorted(ns1.intersection(ns2)))
                 empty_text = "(No common named selections)"
 
             if selections:
@@ -119,14 +165,16 @@ class SolverNamedSelectionHandler:
                 self.tab.named_selection_combo.addItem(empty_text)
                 self.tab.named_selection_combo.setEnabled(False)
         elif has_analysis1:
-            if self.tab.analysis1_data.named_selections:
-                self._add_named_selection_items(self.tab.analysis1_data.named_selections)
+            selections = self._filter_named_selections(self.tab.analysis1_data.named_selections)
+            if selections:
+                self._add_named_selection_items(selections)
             else:
                 self.tab.named_selection_combo.addItem("(No named selections)")
             self.tab.named_selection_combo.setEnabled(False)
         elif has_analysis2:
-            if self.tab.analysis2_data.named_selections:
-                self._add_named_selection_items(self.tab.analysis2_data.named_selections)
+            selections = self._filter_named_selections(self.tab.analysis2_data.named_selections)
+            if selections:
+                self._add_named_selection_items(selections)
             else:
                 self.tab.named_selection_combo.addItem("(No named selections)")
             self.tab.named_selection_combo.setEnabled(False)

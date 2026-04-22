@@ -116,6 +116,40 @@ def test_cdb_named_selection_import_controls_are_wired():
     assert "*.cdb" in app_src
 
 
+def test_txt_named_selection_import_controls_are_wired():
+    """Solver UI should expose one-file TXT nodal named-selection import."""
+    ui_src = _read(SOLVER_UI_FILE)
+    tab_src = _read(SOLVER_TAB_FILE)
+    handler_src = _read(FILE_HANDLER_FILE)
+
+    assert 'import_txt_ns_button = QPushButton("Import TXT NS")' in ui_src
+    assert "ns_row.addWidget(import_txt_ns_button)" in ui_src
+    assert "self.import_txt_ns_button.clicked.connect(self.file_handler.select_txt_named_selection_file)" in tab_src
+    assert "on_txt_named_selection_loaded" in tab_src
+    assert "select_txt_named_selection_file" in handler_src
+    assert "QFileDialog.getOpenFileNames" in handler_src
+    assert "Multiple file selection is not supported. Please select one TXT file for each import." in handler_src
+    assert "TXTNamedSelectionReader.from_file" in handler_src
+
+
+def test_named_selection_type_filter_controls_are_defined():
+    """UI and handler should support source/location filtering of named selections."""
+    ui_src = _read(SOLVER_UI_FILE)
+    tab_src = _read(SOLVER_TAB_FILE)
+    handler_src = _read(NAMED_SELECTION_HANDLER_FILE)
+
+    assert 'named_selection_type_filter_combo.addItem("Nodal", "nodal")' in ui_src
+    assert 'named_selection_type_filter_combo.addItem("Elemental", "elemental")' in ui_src
+    assert 'named_selection_type_filter_combo.addItem("Body", "body")' in ui_src
+    assert 'named_selection_type_filter_combo.addItem("Face", "face")' in ui_src
+    assert 'named_selection_type_filter_combo.addItem("Vertex", "vertex")' in ui_src
+    assert 'named_selection_type_filter_combo.addItem("Imported", "imported")' in ui_src
+    assert "self.named_selection_type_filter_combo.currentIndexChanged.connect" in tab_src
+    assert "def on_named_selection_type_filter_changed" in handler_src
+    assert "def _matches_named_selection_type_filter" in handler_src
+    assert '"txt" in source' in handler_src
+
+
 class _FakeCombo:
     def __init__(self, items, current_index=0, edit_text=None):
         self._items = items
@@ -169,3 +203,96 @@ def test_selected_named_selection_rejects_uncommitted_partial_search():
     handler = SolverNamedSelectionHandler(_FakeTab(_FakeCombo(items, edit_text="RIB")))
 
     assert handler.get_selected_named_selection() is None
+
+
+class _MutableFakeCombo:
+    def __init__(self, items=None, current_index=0):
+        self._items = list(items or [])
+        self._current_index = current_index
+        self.enabled = True
+
+    def currentData(self):
+        if not self._items:
+            return None
+        return self._items[self._current_index][1]
+
+    def currentText(self):
+        if not self._items:
+            return ""
+        return self._items[self._current_index][0]
+
+    def currentIndex(self):
+        return self._current_index
+
+    def clear(self):
+        self._items = []
+        self._current_index = -1
+
+    def addItem(self, text, data=None):
+        self._items.append((text, data))
+        if self._current_index < 0:
+            self._current_index = 0
+
+    def itemText(self, index):
+        return self._items[index][0]
+
+    def itemData(self, index):
+        return self._items[index][1]
+
+    def count(self):
+        return len(self._items)
+
+    def setCurrentIndex(self, index):
+        self._current_index = index
+
+    def setEnabled(self, enabled):
+        self.enabled = enabled
+
+
+class _FakeAnalysisData:
+    def __init__(self):
+        self.named_selections = ["NODE_NS", "ELEM_NS", "TXT_NS"]
+        self.named_selection_locations = {
+            "NODE_NS": "nodal",
+            "ELEM_NS": "elemental",
+            "TXT_NS": "nodal",
+        }
+        self.named_selection_sources = {
+            "NODE_NS": "rst",
+            "ELEM_NS": "rst",
+            "TXT_NS": "txt",
+        }
+
+
+class _FilterFakeTab:
+    def __init__(self, type_filter):
+        self.analysis1_data = _FakeAnalysisData()
+        self.analysis2_data = _FakeAnalysisData()
+        self.named_selection_source_combo = _MutableFakeCombo([("Analysis 1", "analysis1")])
+        self.named_selection_type_filter_combo = _MutableFakeCombo([("Filter", type_filter)])
+        self.named_selection_combo = _MutableFakeCombo()
+        self.refresh_ns_button = _MutableFakeCombo()
+        self.import_cdb_button = _MutableFakeCombo()
+        self.import_txt_ns_button = _MutableFakeCombo()
+
+
+def test_named_selection_type_filter_limits_dropdown_to_imported_sources():
+    """Imported filter should show supplemental TXT/CDB selections only."""
+    tab = _FilterFakeTab("imported")
+    handler = SolverNamedSelectionHandler(tab)
+
+    handler.update_named_selections()
+
+    items = [tab.named_selection_combo.itemData(i) for i in range(tab.named_selection_combo.count())]
+    assert items == ["TXT_NS"]
+
+
+def test_named_selection_type_filter_limits_dropdown_to_elemental_locations():
+    """Elemental filter should use named-selection location metadata."""
+    tab = _FilterFakeTab("elemental")
+    handler = SolverNamedSelectionHandler(tab)
+
+    handler.update_named_selections()
+
+    items = [tab.named_selection_combo.itemData(i) for i in range(tab.named_selection_combo.count())]
+    assert items == ["ELEM_NS"]

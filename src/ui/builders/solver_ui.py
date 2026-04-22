@@ -60,7 +60,8 @@ from utils.tooltips import (
     TOOLTIP_MATERIAL_PROFILE, TOOLTIP_TEMPERATURE_FIELD_FILE, TOOLTIP_ITERATION_CONTROLS,
     TOOLTIP_DEFORMATION, TOOLTIP_DEFORMATION_CYLINDRICAL_CS,
     TOOLTIP_NAMED_SELECTION, TOOLTIP_NAMED_SELECTION_SOURCE, TOOLTIP_NAMED_SELECTION_REFRESH,
-    TOOLTIP_BASE_RST, TOOLTIP_COMBINE_RST, TOOLTIP_CDB_IMPORT,
+    TOOLTIP_BASE_RST, TOOLTIP_COMBINE_RST, TOOLTIP_CDB_IMPORT, TOOLTIP_TXT_NS_IMPORT,
+    TOOLTIP_NAMED_SELECTION_TYPE_FILTER,
     TOOLTIP_COMBINATION_TABLE,
     TOOLTIP_ADD_ROW, TOOLTIP_DELETE_ROW, TOOLTIP_AUTO_POPULATE_SCREENING
 )
@@ -130,6 +131,20 @@ class SolverTabUIBuilder:
         named_selection_source_combo.setItemData(1, "Show names from Analysis 1 only.", Qt.ToolTipRole)
         named_selection_source_combo.setItemData(2, "Show names from Analysis 2 only.", Qt.ToolTipRole)
 
+        named_selection_type_filter_label = QLabel("NS Type:")
+        named_selection_type_filter_combo = QComboBox()
+        named_selection_type_filter_combo.addItem("All", "all")
+        named_selection_type_filter_combo.addItem("Nodal", "nodal")
+        named_selection_type_filter_combo.addItem("Elemental", "elemental")
+        named_selection_type_filter_combo.addItem("Body", "body")
+        named_selection_type_filter_combo.addItem("Face", "face")
+        named_selection_type_filter_combo.addItem("Vertex", "vertex")
+        named_selection_type_filter_combo.addItem("Imported", "imported")
+        named_selection_type_filter_combo.setMinimumWidth(110)
+        named_selection_type_filter_combo.setEnabled(False)
+        named_selection_type_filter_combo.setToolTip(TOOLTIP_NAMED_SELECTION_TYPE_FILTER)
+        named_selection_type_filter_label.setToolTip(TOOLTIP_NAMED_SELECTION_TYPE_FILTER)
+
         named_selection_label = QLabel("Named Selection:")
         named_selection_combo = SearchableComboBox()
         named_selection_combo.setMinimumWidth(420)
@@ -155,6 +170,13 @@ class SolverTabUIBuilder:
         import_cdb_button.setMaximumWidth(90)
         import_cdb_button.setEnabled(False)
         import_cdb_button.setToolTip(TOOLTIP_CDB_IMPORT)
+
+        import_txt_ns_button = QPushButton("Import TXT NS")
+        import_txt_ns_button.setStyleSheet(BUTTON_STYLE)
+        import_txt_ns_button.setFont(QFont('Arial', 8))
+        import_txt_ns_button.setMaximumWidth(105)
+        import_txt_ns_button.setEnabled(False)
+        import_txt_ns_button.setToolTip(TOOLTIP_TXT_NS_IMPORT)
         
         # Skip substeps checkbox
         skip_substeps_checkbox = QCheckBox("Skip Substeps (use last substep of each load step only)")
@@ -179,10 +201,13 @@ class SolverTabUIBuilder:
         ns_row = QHBoxLayout()
         ns_row.addWidget(named_selection_source_label)
         ns_row.addWidget(named_selection_source_combo)
+        ns_row.addWidget(named_selection_type_filter_label)
+        ns_row.addWidget(named_selection_type_filter_combo)
         ns_row.addWidget(named_selection_label)
         ns_row.addWidget(named_selection_combo)
         ns_row.addWidget(refresh_ns_button)
         ns_row.addWidget(import_cdb_button)
+        ns_row.addWidget(import_txt_ns_button)
         ns_row.addStretch()
         
         file_layout.addLayout(ns_row, 2, 0, 1, 3)
@@ -203,9 +228,11 @@ class SolverTabUIBuilder:
         self.components['combine_rst_path'] = combine_rst_path
         self.components['combine_info_label'] = combine_info_label
         self.components['named_selection_source_combo'] = named_selection_source_combo
+        self.components['named_selection_type_filter_combo'] = named_selection_type_filter_combo
         self.components['named_selection_combo'] = named_selection_combo
         self.components['refresh_ns_button'] = refresh_ns_button
         self.components['import_cdb_button'] = import_cdb_button
+        self.components['import_txt_ns_button'] = import_txt_ns_button
         self.components['skip_substeps_checkbox'] = skip_substeps_checkbox
         self.components['file_input_group'] = file_group
         

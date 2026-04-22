@@ -28,7 +28,7 @@ class AnalysisData:
         named_selection_locations: Map of named selection name to source location
             ("nodal", "elemental", or "unknown").
         named_selection_sources: Map of named selection name to metadata source
-            ("rst", "cdb", or "rst+cdb").
+            ("rst", "cdb", "txt", or combined source labels such as "rst+cdb").
         cdb_file_path: Optional CDB file used as a supplemental scoping source.
         unit_system: Unit system string from the RST file (e.g., "MKS: m, kg, N, s...").
         stress_unit: Original stress unit from the RST file (e.g., "Pa").

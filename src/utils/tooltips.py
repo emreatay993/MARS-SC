@@ -273,11 +273,26 @@ TOOLTIP_CDB_IMPORT = (
     "still come from the loaded RST files."
 )
 
+TOOLTIP_TXT_NS_IMPORT = (
+    "<html>"
+    "<b>Import TXT Nodal Named Selection</b><br><br>"
+    "Import one ANSYS Mechanical text export as a nodal named selection.<br><br>"
+    "<b>Expected header format:</b><br>"
+    "<code>Node Number&nbsp;&nbsp;X Location (mm)&nbsp;&nbsp;Y Location (mm)&nbsp;&nbsp;Z Location (mm)</code><br><br>"
+    "Location units in the headers can be <code>m</code>, <code>cm</code>, or <code>mm</code>.<br><br>"
+    "<b>How to create this TXT file in ANSYS Mechanical:</b><br>"
+    "Right-click a named selection or result worksheet, then use "
+    "<b>Export &gt; Export Text File</b> as shown in the ANSYS context menu.<br><br>"
+    "Only one TXT file can be imported at a time. The TXT supplies node IDs for scoping only; "
+    "result values, mesh, units, and load steps still come from the loaded RST files."
+    "</html>"
+)
+
 TOOLTIP_NAMED_SELECTION = (
     "Select the Named Selection used to scope the analysis.\n\n"
     "Nodal and elemental Named Selections are supported.\n"
     "Elemental selections are converted to their attached nodes for the current outputs.\n"
-    "CDB CMBLOCK components can be imported as supplemental named selections.\n"
+    "CDB CMBLOCK components and TXT node tables can be imported as supplemental named selections.\n"
     "The available list depends on 'Named Selection Source'.\n\n"
     "If a name exists in both analyses, node content is always taken\n"
     "from Analysis 1 (Base) to avoid mismatched node sets."
@@ -294,6 +309,11 @@ TOOLTIP_NAMED_SELECTION_SOURCE = (
 
 TOOLTIP_NAMED_SELECTION_REFRESH = (
     "Refresh the Named Selection list using the current source filter."
+)
+
+TOOLTIP_NAMED_SELECTION_TYPE_FILTER = (
+    "Filter the Named Selection list by source or location.\n\n"
+    "Imported shows supplemental selections imported from CDB or TXT files."
 )
 
 # =============================================================================

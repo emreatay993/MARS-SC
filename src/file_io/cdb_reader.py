@@ -8,7 +8,6 @@ selections reliably.
 """
 
 from dataclasses import dataclass
-from pathlib import Path
 import re
 from typing import Dict, Iterable, List, Optional
 
@@ -82,8 +81,7 @@ class CDBNamedSelectionReader:
             if ids:
                 cls._store_selection(raw_selections, name, location, ids)
 
-        selections = cls._build_file_alias_selections(cdb_path, raw_selections)
-        return cls(cdb_path=cdb_path, selections=selections)
+        return cls(cdb_path=cdb_path, selections=raw_selections)
 
     @staticmethod
     def _strip_comment(line: str) -> str:
@@ -97,7 +95,7 @@ class CDBNamedSelectionReader:
         if len(parts) < 3 or parts[0].upper() != "CMBLOCK":
             return None
 
-        name = parts[1]
+        name = cls._sanitize_selection_name(parts[1])
         if not name:
             return None
 
@@ -144,33 +142,9 @@ class CDBNamedSelectionReader:
                 seen.add(item_id)
                 existing.ids.append(item_id)
 
-    @classmethod
-    def _build_file_alias_selections(
-        cls,
-        cdb_path: str,
-        raw_selections: Dict[str, CDBNamedSelection],
-    ) -> Dict[str, CDBNamedSelection]:
-        """Expose parsed components under stable filename-based aliases."""
-        if not raw_selections:
-            return {}
-
-        alias_base = cls._sanitize_selection_name(Path(cdb_path).stem)
-        use_suffixes = len(raw_selections) > 1
-        selections: Dict[str, CDBNamedSelection] = {}
-
-        for index, selection in enumerate(raw_selections.values(), start=1):
-            alias = f"{alias_base}_NS{index}" if use_suffixes else alias_base
-            selections[alias] = CDBNamedSelection(
-                name=alias,
-                location=selection.location,
-                ids=list(selection.ids),
-            )
-
-        return selections
-
     @staticmethod
     def _sanitize_selection_name(name: str) -> str:
-        """Return a DPF-friendly name using only letters, digits, and underscores."""
+        """Return a UI/DPF-friendly name using only letters, digits, and underscores."""
         sanitized = re.sub(r"[^A-Za-z0-9_]+", "_", name)
         sanitized = re.sub(r"_+", "_", sanitized).strip("_")
         if not sanitized:
@@ -191,7 +165,7 @@ class CDBNamedSelectionReader:
         return f"{name}_{suffix}"
 
     def rename_conflicting_selections(self, reserved_names: Iterable[str]) -> None:
-        """Rename CDB aliases in-place so they do not shadow reserved names."""
+        """Rename CDB names in-place so they do not shadow reserved names."""
         used_names = set(reserved_names)
         renamed: Dict[str, CDBNamedSelection] = {}
 
@@ -207,7 +181,7 @@ class CDBNamedSelectionReader:
         self.selections = renamed
 
     def get_named_selections(self) -> List[str]:
-        """Return filename-based CDB named-selection aliases in file order."""
+        """Return CMBLOCK named-selection names in file order."""
         return list(self.selections.keys())
 
     def get_named_selection_locations(self) -> Dict[str, str]:

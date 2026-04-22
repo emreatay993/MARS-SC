@@ -8,11 +8,12 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-from PyQt5.QtWidgets import QFileDialog, QMessageBox
+from PyQt5.QtWidgets import QFileDialog, QInputDialog, QMessageBox
 from PyQt5.QtCore import QThread, pyqtSignal
 
 from file_io.dpf_reader import DPFAnalysisReader, DPFNotAvailableError
 from file_io.cdb_reader import CDBNamedSelectionReader
+from file_io.txt_named_selection_reader import TXTNamedSelectionReader
 from file_io.combination_parser import CombinationTableParser, CombinationTableParseError
 from file_io.loaders import load_temperature_field
 from core.data_models import AnalysisData, CombinationResult
@@ -76,6 +77,7 @@ class SolverFileHandler:
         self.base_reader = None
         self.combine_reader = None
         self.cdb_reader = None
+        self.txt_named_selection_readers = []
 
     # ========== RST File Loading ==========
 
@@ -106,6 +108,7 @@ class SolverFileHandler:
             is_base: True for base analysis (Analysis 1), False for combine (Analysis 2).
         """
         self._clear_shared_cdb_named_selections()
+        self._clear_shared_txt_named_selections()
 
         # Disable UI during load
         self.tab.setEnabled(False)
@@ -194,7 +197,7 @@ class SolverFileHandler:
         self.tab._update_named_selections()
         self.tab.console_textbox.append("Named selections refreshed.\n")
 
-    # ========== Optional CDB Named Selection Loading ==========
+    # ========== Optional Supplemental Named Selection Loading ==========
 
     def select_cdb_file(self, checked=False):
         """Open file dialog for shared CDB named-selection import."""
@@ -239,6 +242,8 @@ class SolverFileHandler:
 
             reserved_names = set(self.base_reader.get_rst_named_selections())
             reserved_names.update(self.combine_reader.get_rst_named_selections())
+            for txt_reader in self.txt_named_selection_readers:
+                reserved_names.update(txt_reader.get_named_selections())
             cdb_reader.rename_conflicting_selections(reserved_names)
 
             self.base_reader.attach_cdb_named_selection_reader(cdb_reader)
@@ -265,6 +270,110 @@ class SolverFileHandler:
 
         self.tab.on_cdb_loaded(cdb_reader, filename)
 
+    def select_txt_named_selection_file(self, checked=False):
+        """Open file dialog for one TXT nodal named-selection import."""
+        file_names, _ = QFileDialog.getOpenFileNames(
+            self.tab,
+            "Import TXT Nodal Named Selection",
+            "",
+            "Text Files (*.txt *.TXT);;All Files (*)",
+        )
+        if not file_names:
+            return
+
+        if len(file_names) > 1:
+            QMessageBox.warning(
+                self.tab,
+                "Select One TXT File",
+                "Multiple file selection is not supported. Please select one TXT file for each import.",
+            )
+            return
+
+        self._load_shared_txt_named_selection(file_names[0])
+
+    def _load_shared_txt_named_selection(self, filename: str):
+        """
+        Load one nodal TXT table as a supplemental named selection.
+
+        The imported TXT supplies node IDs only for scoping. Result values,
+        mesh, units, and load steps still come from the loaded RST files.
+        """
+        if (
+            self.base_reader is None
+            or self.combine_reader is None
+            or self.tab.analysis1_data is None
+            or self.tab.analysis2_data is None
+        ):
+            QMessageBox.information(
+                self.tab,
+                "Load RST Files First",
+                "Please load both RST files before importing TXT named selections.",
+            )
+            return
+
+        reserved_names = set(self.base_reader.get_named_selections())
+        reserved_names.update(self.combine_reader.get_named_selections())
+        selection_name = self._prompt_txt_named_selection_name(reserved_names)
+        if selection_name is None:
+            return
+
+        try:
+            txt_reader = TXTNamedSelectionReader.from_file(filename, selection_name)
+
+            self.base_reader.attach_txt_named_selection_reader(txt_reader)
+            self.combine_reader.attach_txt_named_selection_reader(txt_reader)
+            self.txt_named_selection_readers.append(txt_reader)
+
+            self._sync_analysis_named_selection_metadata(
+                analysis_data=self.tab.analysis1_data,
+                reader=self.base_reader,
+                cdb_path=self.tab.analysis1_data.cdb_file_path,
+            )
+            self._sync_analysis_named_selection_metadata(
+                analysis_data=self.tab.analysis2_data,
+                reader=self.combine_reader,
+                cdb_path=self.tab.analysis2_data.cdb_file_path,
+            )
+        except Exception as error:
+            QMessageBox.warning(
+                self.tab,
+                "TXT Import Error",
+                f"Failed to import TXT named selection:\n\n{error}",
+            )
+            return
+
+        self.tab.on_txt_named_selection_loaded(txt_reader, filename)
+
+    def _prompt_txt_named_selection_name(self, reserved_names: set) -> Optional[str]:
+        """Prompt until the user enters a valid unique imported NS name or cancels."""
+        while True:
+            name, accepted = QInputDialog.getText(
+                self.tab,
+                "Name Imported Named Selection",
+                "Enter a named selection name using letters, numbers, and underscores:",
+            )
+            if not accepted:
+                return None
+
+            name = name.strip()
+            if not TXTNamedSelectionReader.is_valid_selection_name(name):
+                QMessageBox.warning(
+                    self.tab,
+                    "Invalid Name",
+                    "Use a name that starts with a letter or underscore and contains only letters, numbers, and underscores.",
+                )
+                continue
+
+            if name in reserved_names:
+                QMessageBox.warning(
+                    self.tab,
+                    "Name Already Exists",
+                    "That named selection already exists. Please choose a unique name for this import.",
+                )
+                continue
+
+            return name
+
     def _clear_shared_cdb_named_selections(self) -> None:
         """Remove the currently attached shared CDB source from loaded readers."""
         if self.cdb_reader is None:
@@ -284,6 +393,28 @@ class SolverFileHandler:
                     analysis_data=analysis_data,
                     reader=reader,
                     cdb_path=None,
+                )
+        self.tab._update_named_selections()
+
+    def _clear_shared_txt_named_selections(self) -> None:
+        """Remove currently attached TXT named-selection imports from loaded readers."""
+        if not self.txt_named_selection_readers:
+            return
+
+        self.txt_named_selection_readers = []
+        loaded_pairs = (
+            (self.base_reader, self.tab.analysis1_data),
+            (self.combine_reader, self.tab.analysis2_data),
+        )
+        for reader, analysis_data in loaded_pairs:
+            if reader is None:
+                continue
+            reader.clear_txt_named_selection_readers()
+            if analysis_data is not None:
+                self._sync_analysis_named_selection_metadata(
+                    analysis_data=analysis_data,
+                    reader=reader,
+                    cdb_path=analysis_data.cdb_file_path,
                 )
         self.tab._update_named_selections()
 

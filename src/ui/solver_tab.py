@@ -131,9 +131,11 @@ class SolverTab(QWidget):
         self.combine_rst_path = self.components['combine_rst_path']
         self.combine_info_label = self.components['combine_info_label']
         self.named_selection_source_combo = self.components['named_selection_source_combo']
+        self.named_selection_type_filter_combo = self.components['named_selection_type_filter_combo']
         self.named_selection_combo = self.components['named_selection_combo']
         self.refresh_ns_button = self.components['refresh_ns_button']
         self.import_cdb_button = self.components['import_cdb_button']
+        self.import_txt_ns_button = self.components['import_txt_ns_button']
         self.skip_substeps_checkbox = self.components['skip_substeps_checkbox']
         
         # Combination table
@@ -197,7 +199,9 @@ class SolverTab(QWidget):
         self.combine_rst_button.clicked.connect(self.file_handler.select_combine_rst_file)
         self.refresh_ns_button.clicked.connect(self.file_handler.refresh_named_selections)
         self.import_cdb_button.clicked.connect(self.file_handler.select_cdb_file)
+        self.import_txt_ns_button.clicked.connect(self.file_handler.select_txt_named_selection_file)
         self.named_selection_source_combo.currentIndexChanged.connect(self._on_named_selection_source_changed)
+        self.named_selection_type_filter_combo.currentIndexChanged.connect(self._on_named_selection_type_filter_changed)
         
         # Combination table controls
         self.import_csv_btn.clicked.connect(self.file_handler.import_combination_table)
@@ -300,6 +304,14 @@ class SolverTab(QWidget):
             f"  Named Selections: {len(cdb_reader.get_named_selections())}\n"
         )
         self._update_named_selections()
+
+    def on_txt_named_selection_loaded(self, txt_reader, filename: str):
+        """Handle UI updates after TXT nodal named selection is loaded."""
+        self.console_textbox.append(
+            f"Imported TXT nodal named selection: {os.path.basename(filename)}\n"
+            f"  Named Selection: {', '.join(txt_reader.get_named_selections())}\n"
+        )
+        self._update_named_selections()
     
     def on_combine_rst_loaded(self, analysis_data: AnalysisData, filename: str):
         """Handle UI updates after combine RST file is loaded."""
@@ -356,6 +368,10 @@ class SolverTab(QWidget):
     def _on_named_selection_source_changed(self, index: int):
         """Refresh list when the named selection source filter changes."""
         self.named_selection_handler.on_named_selection_source_changed(index)
+
+    def _on_named_selection_type_filter_changed(self, index: int):
+        """Refresh list when the named selection type filter changes."""
+        self.named_selection_handler.on_named_selection_type_filter_changed(index)
 
     def _get_named_selection_source_mode(self) -> str:
         """Return active source mode for named selection list."""
