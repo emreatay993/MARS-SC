@@ -112,6 +112,11 @@ class BeamElementNotSupportedError(Exception):
     pass
 
 
+class DPFStressReadInputError(ValueError):
+    """Raised when stress read inputs are invalid for the current RST."""
+    pass
+
+
 class DPFAnalysisReader:
     """
     Reads RST files using ansys-dpf-core.
@@ -969,6 +974,186 @@ class DPFAnalysisReader:
                     continue
 
             return self.create_nodal_scoping_from_node_ids(node_ids)
+
+    def _get_mesh_node_id_set(self):
+        """Return cached node IDs for the current RST mesh."""
+        node_id_set = getattr(self, '_mesh_node_id_set', None)
+        if node_id_set is None:
+            node_id_set = {int(node_id) for node_id in self.mesh.nodes.scoping.ids}
+            self._mesh_node_id_set = node_id_set
+        return node_id_set
+
+    def _get_stress_supported_node_sets(self):
+        """
+        Return cached node sets grouped by stress tensor support.
+
+        DPF can fail natively when asked for nodal tensor stress on scoping that
+        only covers beam/line elements. Build the support map in Python so those
+        cases fail with a controlled exception before fields_container() is
+        evaluated.
+        """
+        cached = getattr(self, '_stress_supported_node_sets', None)
+        if cached is not None:
+            return cached
+
+        supported_node_ids = set()
+        beam_node_ids = set()
+        mesh = self.mesh
+
+        for elem_idx in range(mesh.elements.n_elements):
+            try:
+                element = mesh.elements.element_by_index(elem_idx)
+                target = (
+                    beam_node_ids
+                    if self._is_beam_element(element, include_pipe=True)
+                    else supported_node_ids
+                )
+                for node_id in element.connectivity:
+                    target.add(int(node_id))
+            except Exception:
+                continue
+
+        cached = (supported_node_ids, beam_node_ids)
+        self._stress_supported_node_sets = cached
+        return cached
+
+    def _validate_stress_read_inputs(
+        self,
+        load_step: int,
+        nodal_scoping: Optional['dpf.Scoping'] = None,
+    ) -> None:
+        """Validate stress-read inputs before DPF native evaluation."""
+        try:
+            step_id = int(load_step)
+        except (TypeError, ValueError) as exc:
+            raise DPFStressReadInputError(
+                f"Invalid stress load step {load_step!r}: expected a 1-based result set ID."
+            ) from exc
+
+        try:
+            n_sets = int(self.time_freq_support.n_sets)
+        except Exception as exc:
+            raise DPFStressReadInputError(
+                "Unable to inspect result set count before reading stress results."
+            ) from exc
+
+        if step_id < 1 or step_id > n_sets:
+            raise DPFStressReadInputError(
+                f"Cannot read stress for load step {step_id}: this RST has "
+                f"{n_sets} result set(s). Check that the combination table step IDs "
+                f"exist in both result files."
+            )
+
+        if nodal_scoping is None:
+            supported_node_ids, beam_node_ids = self._get_stress_supported_node_sets()
+            if not supported_node_ids:
+                if beam_node_ids:
+                    raise BeamElementNotSupportedError(
+                        f"Cannot read 6-component nodal stress for load step {step_id}: "
+                        "the result mesh only appears to contain beam/line elements. "
+                        "Please use a result file or named selection with solid/shell elements."
+                    )
+
+                raise DPFStressReadInputError(
+                    f"Cannot read stress for load step {step_id}: the mesh has no nodes "
+                    "attached to elements with supported tensor stress results."
+                )
+            return
+
+        location = getattr(nodal_scoping, 'location', None)
+        if location is not None and 'nodal' not in str(location).lower():
+            raise DPFStressReadInputError(
+                f"Cannot read nodal stress for load step {step_id}: expected nodal "
+                f"scoping, got {location!r}."
+            )
+
+        try:
+            node_ids = [int(node_id) for node_id in nodal_scoping.ids]
+        except Exception as exc:
+            raise DPFStressReadInputError(
+                f"Cannot read stress for load step {step_id}: failed to read node IDs "
+                f"from the provided scoping."
+            ) from exc
+
+        if not node_ids:
+            raise DPFStressReadInputError(
+                f"Cannot read stress for load step {step_id}: the selected nodal "
+                f"scoping is empty. Check the named selection and result file."
+            )
+
+        mesh_node_ids = self._get_mesh_node_id_set()
+        missing_node_ids = [node_id for node_id in node_ids if node_id not in mesh_node_ids]
+        if missing_node_ids:
+            sample = ', '.join(str(node_id) for node_id in missing_node_ids[:10])
+            raise DPFStressReadInputError(
+                f"Cannot read stress for load step {step_id}: the scoping contains "
+                f"{len(missing_node_ids)} node ID(s) that are not present in this RST "
+                f"mesh. This usually means a named selection or chunk scoping from one "
+                f"analysis is being reused for another analysis with a different mesh. "
+                f"Missing node sample: {sample}."
+            )
+
+        supported_node_ids, beam_node_ids = self._get_stress_supported_node_sets()
+        requested_node_ids = set(node_ids)
+        if not requested_node_ids.intersection(supported_node_ids):
+            beam_count = len(requested_node_ids.intersection(beam_node_ids))
+            if beam_count:
+                raise BeamElementNotSupportedError(
+                    f"Cannot read 6-component nodal stress for load step {step_id}: "
+                    f"the selected scoping only covers beam/line nodes "
+                    f"({beam_count} selected node(s)). Please use a named selection "
+                    f"that contains solid/shell elements."
+                )
+
+            raise DPFStressReadInputError(
+                f"Cannot read stress for load step {step_id}: none of the selected "
+                f"nodes are attached to elements with supported tensor stress results."
+            )
+
+    def _get_stress_fields_container(self, stress_op, load_steps, nodal_scoping):
+        """Evaluate stress fields_container with context for native DPF failures."""
+        try:
+            fields_container = stress_op.outputs.fields_container()
+        except OSError as exc:
+            if isinstance(load_steps, (list, tuple, set)):
+                step_text = ', '.join(str(step_id) for step_id in load_steps)
+            else:
+                step_text = str(load_steps)
+
+            if nodal_scoping is None:
+                scope_text = "all mesh nodes"
+            else:
+                try:
+                    node_ids = [int(node_id) for node_id in nodal_scoping.ids]
+                    sample = ', '.join(str(node_id) for node_id in node_ids[:10])
+                    scope_text = f"{len(node_ids)} scoped node(s); sample: {sample}"
+                except Exception:
+                    scope_text = "provided scoping with unreadable node IDs"
+
+            raise DPFStressReadInputError(
+                "PyDPF failed while evaluating nodal stress fields after Python-side "
+                f"input validation. Load step(s): {step_text}. Scope: {scope_text}. "
+                f"Original native error: {exc}"
+            ) from exc
+
+        try:
+            if len(fields_container) == 0:
+                if isinstance(load_steps, (list, tuple, set)):
+                    step_text = ', '.join(str(step_id) for step_id in load_steps)
+                else:
+                    step_text = str(load_steps)
+
+                raise DPFStressReadInputError(
+                    "DPF returned no nodal stress fields for the requested input. "
+                    f"Load step(s): {step_text}. Check that those result sets contain "
+                    "stress data for the selected scoping."
+                )
+        except DPFStressReadInputError:
+            raise
+        except Exception:
+            pass
+
+        return fields_container
     
     def read_stress_tensor_for_loadstep(
         self, 
@@ -1010,6 +1195,8 @@ class DPFAnalysisReader:
         input_node_ids_order = None
         if nodal_scoping is not None:
             input_node_ids_order = np.array(nodal_scoping.ids)
+
+        self._validate_stress_read_inputs(load_step, nodal_scoping)
         
         # Create stress operator
         stress_op = self.model.results.stress()
@@ -1027,7 +1214,11 @@ class DPFAnalysisReader:
             stress_op.inputs.mesh_scoping.connect(nodal_scoping)
         
         # Get the stress field (first field in container for single time step)
-        fields_container = stress_op.outputs.fields_container()
+        fields_container = self._get_stress_fields_container(
+            stress_op,
+            load_step,
+            nodal_scoping,
+        )
         stress_field = fields_container[0]
         
         # Get node IDs from the field scoping (DPF's returned order)
@@ -1150,12 +1341,20 @@ class DPFAnalysisReader:
         if not load_steps:
             return {}
 
-        requested_steps = [int(step_id) for step_id in load_steps]
+        try:
+            requested_steps = [int(step_id) for step_id in load_steps]
+        except (TypeError, ValueError) as exc:
+            raise DPFStressReadInputError(
+                f"Invalid stress load steps {load_steps!r}: expected 1-based result set IDs."
+            ) from exc
 
         # Preserve input scoping order for deterministic output alignment.
         input_node_ids_order = None
         if nodal_scoping is not None:
             input_node_ids_order = np.array(nodal_scoping.ids)
+
+        for step_id in requested_steps:
+            self._validate_stress_read_inputs(step_id, nodal_scoping)
 
         stress_op = self.model.results.stress()
         time_scoping = dpf.Scoping()
@@ -1166,7 +1365,11 @@ class DPFAnalysisReader:
         if nodal_scoping is not None:
             stress_op.inputs.mesh_scoping.connect(nodal_scoping)
 
-        fields_container = stress_op.outputs.fields_container()
+        fields_container = self._get_stress_fields_container(
+            stress_op,
+            requested_steps,
+            nodal_scoping,
+        )
         step_to_tensor: Dict[int, Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = {}
 
         for field_idx in range(len(fields_container)):
@@ -1278,6 +1481,8 @@ class DPFAnalysisReader:
         convert_to_mpa: bool = True
     ) -> 'dpf.Field':
         """Read stress field for one load step; returns DPF Field (MPa by default)."""
+        self._validate_stress_read_inputs(load_step, nodal_scoping)
+
         # Create stress operator
         stress_op = self.model.results.stress()
         
@@ -1294,7 +1499,11 @@ class DPFAnalysisReader:
             stress_op.inputs.mesh_scoping.connect(nodal_scoping)
         
         # Get the stress field
-        fields_container = stress_op.outputs.fields_container()
+        fields_container = self._get_stress_fields_container(
+            stress_op,
+            load_step,
+            nodal_scoping,
+        )
         stress_field = fields_container[0]
         
         # Convert to MPa if requested
