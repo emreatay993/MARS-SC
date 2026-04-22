@@ -359,6 +359,10 @@ class StressCombinationEngine:
         results = np.zeros((num_combos, num_nodes))
         
         for combo_idx in range(num_combos):
+            if progress_callback:
+                combo_name = self.table.combination_names[combo_idx]
+                progress_callback(combo_idx + 1, num_combos, f"Computing {combo_name}...")
+
             if use_dpf and DPF_AVAILABLE:
                 # Use DPF for combination and invariant computation
                 combined_field = self.compute_combination_dpf(combo_idx)
@@ -374,10 +378,6 @@ class StressCombinationEngine:
                     results[combo_idx, :] = s3.data.flatten()
                 else:
                     raise ValueError(f"Unknown stress type: {stress_type}")
-
-            if progress_callback:
-                combo_name = self.table.combination_names[combo_idx]
-                progress_callback(combo_idx + 1, num_combos, f"Computing {combo_name}...")
             else:
                 # Use numpy for all calculations
                 sx, sy, sz, sxy, syz, sxz = self.compute_combination_numpy(combo_idx)

@@ -355,6 +355,53 @@ class TestCombinationComputation:
         # Should only include step 1 (coeff=1.0), step 2 (coeff=0.0) ignored
         np.testing.assert_array_almost_equal(sx, np.array([100, 100]))
 
+    def test_compute_all_combinations_with_progress_callback_computes_values(self):
+        """Regression: progress reporting must not skip numeric computation."""
+        node_ids = np.array([1, 2])
+        stress_cache = {
+            (1, 1): (
+                node_ids,
+                np.array([100.0, 200.0]),
+                np.zeros(2),
+                np.zeros(2),
+                np.zeros(2),
+                np.zeros(2),
+                np.zeros(2),
+            ),
+        }
+        table = CombinationTableData(
+            combination_names=["BaseOnly"],
+            combination_types=["Linear"],
+            analysis1_coeffs=np.array([[1.0]]),
+            analysis2_coeffs=np.zeros((1, 0)),
+            analysis1_step_ids=[1],
+            analysis2_step_ids=[],
+        )
+
+        engine = Mock()
+        engine._stress_cache = stress_cache
+        engine.table = table
+        engine._node_ids = node_ids
+        engine.num_nodes = 2
+        engine.compute_combination_numpy = StressCombinationEngine.compute_combination_numpy.__get__(
+            engine, StressCombinationEngine
+        )
+        engine.compute_von_mises = StressCombinationEngine.compute_von_mises
+        engine.compute_all_combinations = StressCombinationEngine.compute_all_combinations.__get__(
+            engine, StressCombinationEngine
+        )
+
+        progress_events = []
+        result = engine.compute_all_combinations(
+            stress_type="von_mises",
+            progress_callback=lambda current, total, message: progress_events.append(
+                (current, total, message)
+            ),
+        )
+
+        np.testing.assert_array_almost_equal(result, np.array([[100.0, 200.0]]))
+        assert progress_events
+
 
 class TestCombinationEngineHelpers:
     """Tests for helper methods."""
