@@ -8,8 +8,9 @@ selections reliably.
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 import re
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 
 @dataclass
@@ -45,7 +46,7 @@ class CDBNamedSelectionReader:
         except OSError as exc:
             raise ValueError(f"Failed to read CDB file: {exc}") from exc
 
-        selections: Dict[str, CDBNamedSelection] = {}
+        raw_selections: Dict[str, CDBNamedSelection] = {}
         index = 0
 
         while index < len(lines):
@@ -79,8 +80,9 @@ class CDBNamedSelectionReader:
                 ids = ids[:expected_count]
 
             if ids:
-                cls._store_selection(selections, name, location, ids)
+                cls._store_selection(raw_selections, name, location, ids)
 
+        selections = cls._build_file_alias_selections(cdb_path, raw_selections)
         return cls(cdb_path=cdb_path, selections=selections)
 
     @staticmethod
@@ -142,8 +144,70 @@ class CDBNamedSelectionReader:
                 seen.add(item_id)
                 existing.ids.append(item_id)
 
+    @classmethod
+    def _build_file_alias_selections(
+        cls,
+        cdb_path: str,
+        raw_selections: Dict[str, CDBNamedSelection],
+    ) -> Dict[str, CDBNamedSelection]:
+        """Expose parsed components under stable filename-based aliases."""
+        if not raw_selections:
+            return {}
+
+        alias_base = cls._sanitize_selection_name(Path(cdb_path).stem)
+        use_suffixes = len(raw_selections) > 1
+        selections: Dict[str, CDBNamedSelection] = {}
+
+        for index, selection in enumerate(raw_selections.values(), start=1):
+            alias = f"{alias_base}_NS{index}" if use_suffixes else alias_base
+            selections[alias] = CDBNamedSelection(
+                name=alias,
+                location=selection.location,
+                ids=list(selection.ids),
+            )
+
+        return selections
+
+    @staticmethod
+    def _sanitize_selection_name(name: str) -> str:
+        """Return a DPF-friendly name using only letters, digits, and underscores."""
+        sanitized = re.sub(r"[^A-Za-z0-9_]+", "_", name)
+        sanitized = re.sub(r"_+", "_", sanitized).strip("_")
+        if not sanitized:
+            sanitized = "CDB"
+        if sanitized[0].isdigit():
+            sanitized = f"NS_{sanitized}"
+        return sanitized
+
+    @staticmethod
+    def _unique_name(name: str, used_names: set) -> str:
+        """Return name or name_N when the preferred alias is already used."""
+        if name not in used_names:
+            return name
+
+        suffix = 2
+        while f"{name}_{suffix}" in used_names:
+            suffix += 1
+        return f"{name}_{suffix}"
+
+    def rename_conflicting_selections(self, reserved_names: Iterable[str]) -> None:
+        """Rename CDB aliases in-place so they do not shadow reserved names."""
+        used_names = set(reserved_names)
+        renamed: Dict[str, CDBNamedSelection] = {}
+
+        for name, selection in self.selections.items():
+            unique_name = self._unique_name(name, used_names)
+            used_names.add(unique_name)
+            renamed[unique_name] = CDBNamedSelection(
+                name=unique_name,
+                location=selection.location,
+                ids=list(selection.ids),
+            )
+
+        self.selections = renamed
+
     def get_named_selections(self) -> List[str]:
-        """Return CDB component names in file order."""
+        """Return filename-based CDB named-selection aliases in file order."""
         return list(self.selections.keys())
 
     def get_named_selection_locations(self) -> Dict[str, str]:

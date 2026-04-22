@@ -60,7 +60,7 @@ from utils.tooltips import (
     TOOLTIP_MATERIAL_PROFILE, TOOLTIP_TEMPERATURE_FIELD_FILE, TOOLTIP_ITERATION_CONTROLS,
     TOOLTIP_DEFORMATION, TOOLTIP_DEFORMATION_CYLINDRICAL_CS,
     TOOLTIP_NAMED_SELECTION, TOOLTIP_NAMED_SELECTION_SOURCE, TOOLTIP_NAMED_SELECTION_REFRESH,
-    TOOLTIP_BASE_RST, TOOLTIP_COMBINE_RST, TOOLTIP_BASE_CDB, TOOLTIP_COMBINE_CDB,
+    TOOLTIP_BASE_RST, TOOLTIP_COMBINE_RST, TOOLTIP_CDB_IMPORT,
     TOOLTIP_COMBINATION_TABLE,
     TOOLTIP_ADD_ROW, TOOLTIP_DELETE_ROW, TOOLTIP_AUTO_POPULATE_SCREENING
 )
@@ -101,16 +101,6 @@ class SolverTabUIBuilder:
         base_info_label.setStyleSheet("color: #666; font-size: 10px;")
         base_info_label.setToolTip(TOOLTIP_BASE_RST)
 
-        base_cdb_button = QPushButton('Import Base CDB Named Selections')
-        base_cdb_button.setStyleSheet(BUTTON_STYLE)
-        base_cdb_button.setFont(QFont('Arial', 8))
-        base_cdb_button.setToolTip(TOOLTIP_BASE_CDB)
-        base_cdb_path = QLineEdit()
-        base_cdb_path.setReadOnly(True)
-        base_cdb_path.setStyleSheet(READONLY_INPUT_STYLE)
-        base_cdb_path.setPlaceholderText("Optional CDB not selected")
-        base_cdb_path.setToolTip(TOOLTIP_BASE_CDB)
-
         # Analysis to Combine RST (Analysis 2)
         combine_rst_button = QPushButton('Select Analysis to Combine RST')
         combine_rst_button.setStyleSheet(BUTTON_STYLE)
@@ -126,16 +116,6 @@ class SolverTabUIBuilder:
         combine_info_label.setStyleSheet("color: #666; font-size: 10px;")
         combine_info_label.setToolTip(TOOLTIP_COMBINE_RST)
 
-        combine_cdb_button = QPushButton('Import Combine CDB Named Selections')
-        combine_cdb_button.setStyleSheet(BUTTON_STYLE)
-        combine_cdb_button.setFont(QFont('Arial', 8))
-        combine_cdb_button.setToolTip(TOOLTIP_COMBINE_CDB)
-        combine_cdb_path = QLineEdit()
-        combine_cdb_path.setReadOnly(True)
-        combine_cdb_path.setStyleSheet(READONLY_INPUT_STYLE)
-        combine_cdb_path.setPlaceholderText("Optional CDB not selected")
-        combine_cdb_path.setToolTip(TOOLTIP_COMBINE_CDB)
-        
         # Named Selection source and dropdown
         named_selection_source_label = QLabel("Named Selection Source:")
         named_selection_source_combo = QComboBox()
@@ -168,6 +148,13 @@ class SolverTabUIBuilder:
         refresh_ns_button.setMaximumWidth(80)
         refresh_ns_button.setEnabled(False)
         refresh_ns_button.setToolTip(TOOLTIP_NAMED_SELECTION_REFRESH)
+
+        import_cdb_button = QPushButton("Import CDB")
+        import_cdb_button.setStyleSheet(BUTTON_STYLE)
+        import_cdb_button.setFont(QFont('Arial', 8))
+        import_cdb_button.setMaximumWidth(90)
+        import_cdb_button.setEnabled(False)
+        import_cdb_button.setToolTip(TOOLTIP_CDB_IMPORT)
         
         # Skip substeps checkbox
         skip_substeps_checkbox = QCheckBox("Skip Substeps (use last substep of each load step only)")
@@ -184,13 +171,9 @@ class SolverTabUIBuilder:
         file_layout.addWidget(base_rst_button, 0, 0)
         file_layout.addWidget(base_rst_path, 0, 1)
         file_layout.addWidget(base_info_label, 0, 2)
-        file_layout.addWidget(base_cdb_button, 1, 0)
-        file_layout.addWidget(base_cdb_path, 1, 1, 1, 2)
-        file_layout.addWidget(combine_rst_button, 2, 0)
-        file_layout.addWidget(combine_rst_path, 2, 1)
-        file_layout.addWidget(combine_info_label, 2, 2)
-        file_layout.addWidget(combine_cdb_button, 3, 0)
-        file_layout.addWidget(combine_cdb_path, 3, 1, 1, 2)
+        file_layout.addWidget(combine_rst_button, 1, 0)
+        file_layout.addWidget(combine_rst_path, 1, 1)
+        file_layout.addWidget(combine_info_label, 1, 2)
         
         # Named selection row
         ns_row = QHBoxLayout()
@@ -199,12 +182,13 @@ class SolverTabUIBuilder:
         ns_row.addWidget(named_selection_label)
         ns_row.addWidget(named_selection_combo)
         ns_row.addWidget(refresh_ns_button)
+        ns_row.addWidget(import_cdb_button)
         ns_row.addStretch()
         
-        file_layout.addLayout(ns_row, 4, 0, 1, 3)
+        file_layout.addLayout(ns_row, 2, 0, 1, 3)
         
         # Skip substeps row
-        file_layout.addWidget(skip_substeps_checkbox, 5, 0, 1, 3)
+        file_layout.addWidget(skip_substeps_checkbox, 3, 0, 1, 3)
         
         # Use collapsible group box instead of QGroupBox
         file_group = CollapsibleGroupBoxStyled("Input Files", initially_expanded=True)
@@ -215,16 +199,13 @@ class SolverTabUIBuilder:
         self.components['base_rst_button'] = base_rst_button
         self.components['base_rst_path'] = base_rst_path
         self.components['base_info_label'] = base_info_label
-        self.components['base_cdb_button'] = base_cdb_button
-        self.components['base_cdb_path'] = base_cdb_path
         self.components['combine_rst_button'] = combine_rst_button
         self.components['combine_rst_path'] = combine_rst_path
         self.components['combine_info_label'] = combine_info_label
-        self.components['combine_cdb_button'] = combine_cdb_button
-        self.components['combine_cdb_path'] = combine_cdb_path
         self.components['named_selection_source_combo'] = named_selection_source_combo
         self.components['named_selection_combo'] = named_selection_combo
         self.components['refresh_ns_button'] = refresh_ns_button
+        self.components['import_cdb_button'] = import_cdb_button
         self.components['skip_substeps_checkbox'] = skip_substeps_checkbox
         self.components['file_input_group'] = file_group
         

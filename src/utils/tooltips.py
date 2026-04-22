@@ -266,17 +266,11 @@ TOOLTIP_COMBINE_RST = (
     "using the coefficients defined in the combination table."
 )
 
-TOOLTIP_BASE_CDB = (
-    "Optional: import a Base Analysis CDB file to read Mechanical/APDL "
-    "CMBLOCK components as named selections.\n\n"
-    "Use this when the RST file, especially from 2023 R2 workflows, does "
-    "not expose named selections through DPF metadata."
-)
-
-TOOLTIP_COMBINE_CDB = (
-    "Optional: import an Analysis to Combine CDB file to read Mechanical/APDL "
-    "CMBLOCK components as named selections.\n\n"
-    "The CDB supplies scoping only; result values still come from the RST file."
+TOOLTIP_CDB_IMPORT = (
+    "Optional: import a CDB file to read Mechanical/APDL CMBLOCK components "
+    "as supplemental named selections.\n\n"
+    "The CDB supplies scoping only; result values, mesh, units, and load steps "
+    "still come from the loaded RST files."
 )
 
 TOOLTIP_NAMED_SELECTION = (

@@ -93,6 +93,8 @@ class SolverNamedSelectionHandler:
         has_analysis2 = self.tab.analysis2_data is not None
         self.tab.named_selection_source_combo.setEnabled(has_analysis1 and has_analysis2)
         self.tab.refresh_ns_button.setEnabled(has_analysis1 or has_analysis2)
+        if hasattr(self.tab, "import_cdb_button"):
+            self.tab.import_cdb_button.setEnabled(has_analysis1 and has_analysis2)
 
         if has_analysis1 and has_analysis2:
             ns1, ns2 = self.get_named_selection_sets()

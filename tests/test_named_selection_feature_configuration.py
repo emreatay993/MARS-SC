@@ -97,16 +97,21 @@ def test_named_selection_combo_is_searchable():
 
 
 def test_cdb_named_selection_import_controls_are_wired():
-    """Solver UI should allow optional per-analysis CDB named-selection import."""
+    """Solver UI should expose one compact shared CDB named-selection import."""
     ui_src = _read(SOLVER_UI_FILE)
     tab_src = _read(SOLVER_TAB_FILE)
     handler_src = _read(FILE_HANDLER_FILE)
     app_src = _read(APP_CONTROLLER_FILE)
 
-    assert "Import Base CDB Named Selections" in ui_src
-    assert "Import Combine CDB Named Selections" in ui_src
-    assert "select_base_cdb_file" in tab_src
-    assert "select_combine_cdb_file" in tab_src
+    assert 'import_cdb_button = QPushButton("Import CDB")' in ui_src
+    assert "ns_row.addWidget(import_cdb_button)" in ui_src
+    assert "base_cdb_path" not in ui_src
+    assert "combine_cdb_path" not in ui_src
+    assert "self.import_cdb_button.clicked.connect(self.file_handler.select_cdb_file)" in tab_src
+    assert "select_cdb_file" in handler_src
+    assert "_load_shared_cdb_named_selections" in handler_src
+    assert "select_base_cdb_file" not in handler_src
+    assert "select_combine_cdb_file" not in handler_src
     assert "CDBNamedSelectionReader.from_file" in handler_src
     assert "*.cdb" in app_src
 

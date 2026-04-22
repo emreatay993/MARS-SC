@@ -127,16 +127,13 @@ class SolverTab(QWidget):
         self.base_rst_button = self.components['base_rst_button']
         self.base_rst_path = self.components['base_rst_path']
         self.base_info_label = self.components['base_info_label']
-        self.base_cdb_button = self.components['base_cdb_button']
-        self.base_cdb_path = self.components['base_cdb_path']
         self.combine_rst_button = self.components['combine_rst_button']
         self.combine_rst_path = self.components['combine_rst_path']
         self.combine_info_label = self.components['combine_info_label']
-        self.combine_cdb_button = self.components['combine_cdb_button']
-        self.combine_cdb_path = self.components['combine_cdb_path']
         self.named_selection_source_combo = self.components['named_selection_source_combo']
         self.named_selection_combo = self.components['named_selection_combo']
         self.refresh_ns_button = self.components['refresh_ns_button']
+        self.import_cdb_button = self.components['import_cdb_button']
         self.skip_substeps_checkbox = self.components['skip_substeps_checkbox']
         
         # Combination table
@@ -198,9 +195,8 @@ class SolverTab(QWidget):
         # RST File loading
         self.base_rst_button.clicked.connect(self.file_handler.select_base_rst_file)
         self.combine_rst_button.clicked.connect(self.file_handler.select_combine_rst_file)
-        self.base_cdb_button.clicked.connect(self.file_handler.select_base_cdb_file)
-        self.combine_cdb_button.clicked.connect(self.file_handler.select_combine_cdb_file)
         self.refresh_ns_button.clicked.connect(self.file_handler.refresh_named_selections)
+        self.import_cdb_button.clicked.connect(self.file_handler.select_cdb_file)
         self.named_selection_source_combo.currentIndexChanged.connect(self._on_named_selection_source_changed)
         
         # Combination table controls
@@ -252,7 +248,6 @@ class SolverTab(QWidget):
         
         # Update UI
         self.base_rst_path.setText(filename)
-        self.base_cdb_path.clear()
         self.base_info_label.setText(f"Load steps: {analysis_data.num_load_steps}")
         
         # Format time values for display
@@ -298,12 +293,11 @@ class SolverTab(QWidget):
         self._update_solve_button_state()
         self._enable_output_checkboxes()
 
-    def on_base_cdb_loaded(self, cdb_reader, filename: str):
-        """Handle UI updates after base CDB named selections are loaded."""
-        self.base_cdb_path.setText(filename)
+    def on_cdb_loaded(self, cdb_reader, filename: str, scope_label: str = "both analyses"):
+        """Handle UI updates after CDB named selections are loaded."""
         self.console_textbox.append(
-            f"Imported Base Analysis CDB named selections: {os.path.basename(filename)}\n"
-            f"  Components: {len(cdb_reader.get_named_selections())}\n"
+            f"Imported CDB named selections for {scope_label}: {os.path.basename(filename)}\n"
+            f"  Named Selections: {len(cdb_reader.get_named_selections())}\n"
         )
         self._update_named_selections()
     
@@ -314,7 +308,6 @@ class SolverTab(QWidget):
         
         # Update UI
         self.combine_rst_path.setText(filename)
-        self.combine_cdb_path.clear()
         self.combine_info_label.setText(f"Load steps: {analysis_data.num_load_steps}")
         
         # Format time values for display
@@ -360,15 +353,6 @@ class SolverTab(QWidget):
         self._update_solve_button_state()
         self._enable_output_checkboxes()
 
-    def on_combine_cdb_loaded(self, cdb_reader, filename: str):
-        """Handle UI updates after combine CDB named selections are loaded."""
-        self.combine_cdb_path.setText(filename)
-        self.console_textbox.append(
-            f"Imported Analysis to Combine CDB named selections: {os.path.basename(filename)}\n"
-            f"  Components: {len(cdb_reader.get_named_selections())}\n"
-        )
-        self._update_named_selections()
-    
     def _on_named_selection_source_changed(self, index: int):
         """Refresh list when the named selection source filter changes."""
         self.named_selection_handler.on_named_selection_source_changed(index)
@@ -860,17 +844,6 @@ class SolverTab(QWidget):
                     else:
                         self.file_handler._load_rst_file(file_path, is_base=False)
             elif file_path.lower().endswith('.cdb'):
-                from PyQt5.QtWidgets import QInputDialog
-                choice, ok = QInputDialog.getItem(
-                    self, "Select Analysis",
-                    "Load CDB named selections as:",
-                    ["Base Analysis (Analysis 1)", "Analysis to Combine (Analysis 2)"],
-                    0, False
-                )
-                if ok:
-                    self.file_handler._load_cdb_named_selections(
-                        file_path,
-                        is_base="Base" in choice,
-                    )
+                self.file_handler._load_shared_cdb_named_selections(file_path)
             elif file_path.lower().endswith('.csv'):
                 self.file_handler._load_combination_csv(file_path)

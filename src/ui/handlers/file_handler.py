@@ -4,6 +4,8 @@ tables, and updating the tab state/UI.
 """
 
 import os
+from typing import Optional
+
 import numpy as np
 import pandas as pd
 from PyQt5.QtWidgets import QFileDialog, QMessageBox
@@ -73,8 +75,7 @@ class SolverFileHandler:
         # DPF readers (kept for later use in analysis)
         self.base_reader = None
         self.combine_reader = None
-        self.base_cdb_reader = None
-        self.combine_cdb_reader = None
+        self.cdb_reader = None
 
     # ========== RST File Loading ==========
 
@@ -104,13 +105,11 @@ class SolverFileHandler:
             filename: Path to RST file.
             is_base: True for base analysis (Analysis 1), False for combine (Analysis 2).
         """
+        self._clear_shared_cdb_named_selections()
+
         # Disable UI during load
         self.tab.setEnabled(False)
         analysis_name = "Base Analysis" if is_base else "Analysis to Combine"
-        if is_base:
-            self.base_cdb_reader = None
-        else:
-            self.combine_cdb_reader = None
         
         # Check if skip substeps is enabled
         skip_substeps = self.tab.skip_substeps_checkbox.isChecked()
@@ -197,41 +196,34 @@ class SolverFileHandler:
 
     # ========== Optional CDB Named Selection Loading ==========
 
-    def select_base_cdb_file(self, checked=False):
-        """Open file dialog for base-analysis CDB named selections."""
-        self._select_cdb_file(is_base=True)
-
-    def select_combine_cdb_file(self, checked=False):
-        """Open file dialog for combine-analysis CDB named selections."""
-        self._select_cdb_file(is_base=False)
-
-    def _select_cdb_file(self, is_base: bool):
-        analysis_name = "Base Analysis" if is_base else "Analysis to Combine"
+    def select_cdb_file(self, checked=False):
+        """Open file dialog for shared CDB named-selection import."""
         file_name, _ = QFileDialog.getOpenFileName(
             self.tab,
-            f"Select {analysis_name} CDB File",
+            "Import CDB Named Selections",
             "",
             "ANSYS CDB Files (*.cdb *.CDB);;All Files (*)",
         )
         if file_name:
-            self._load_cdb_named_selections(file_name, is_base=is_base)
+            self._load_shared_cdb_named_selections(file_name)
 
-    def _load_cdb_named_selections(self, filename: str, is_base: bool):
+    def _load_shared_cdb_named_selections(self, filename: str):
         """
-        Load CDB component blocks as supplemental named selections.
+        Load one CDB as supplemental named selections for both analyses.
 
-        CDB components are used only for scoping. The RST file remains the
+        CDB components are used only for scoping. The RST files remain the
         source for results, mesh, load steps, and units.
         """
-        reader = self.base_reader if is_base else self.combine_reader
-        analysis_data = self.tab.analysis1_data if is_base else self.tab.analysis2_data
-        analysis_name = "Base Analysis" if is_base else "Analysis to Combine"
-
-        if reader is None or analysis_data is None:
+        if (
+            self.base_reader is None
+            or self.combine_reader is None
+            or self.tab.analysis1_data is None
+            or self.tab.analysis2_data is None
+        ):
             QMessageBox.information(
                 self.tab,
-                "Load RST First",
-                f"Please load the {analysis_name} RST file before importing its CDB named selections.",
+                "Load RST Files First",
+                "Please load both RST files before importing CDB named selections.",
             )
             return
 
@@ -245,15 +237,22 @@ class SolverFileHandler:
                 )
                 return
 
-            reader.attach_cdb_named_selection_reader(cdb_reader)
-            if is_base:
-                self.base_cdb_reader = cdb_reader
-            else:
-                self.combine_cdb_reader = cdb_reader
+            reserved_names = set(self.base_reader.get_rst_named_selections())
+            reserved_names.update(self.combine_reader.get_rst_named_selections())
+            cdb_reader.rename_conflicting_selections(reserved_names)
+
+            self.base_reader.attach_cdb_named_selection_reader(cdb_reader)
+            self.combine_reader.attach_cdb_named_selection_reader(cdb_reader)
+            self.cdb_reader = cdb_reader
 
             self._sync_analysis_named_selection_metadata(
-                analysis_data=analysis_data,
-                reader=reader,
+                analysis_data=self.tab.analysis1_data,
+                reader=self.base_reader,
+                cdb_path=filename,
+            )
+            self._sync_analysis_named_selection_metadata(
+                analysis_data=self.tab.analysis2_data,
+                reader=self.combine_reader,
                 cdb_path=filename,
             )
         except Exception as error:
@@ -264,16 +263,35 @@ class SolverFileHandler:
             )
             return
 
-        if is_base:
-            self.tab.on_base_cdb_loaded(cdb_reader, filename)
-        else:
-            self.tab.on_combine_cdb_loaded(cdb_reader, filename)
+        self.tab.on_cdb_loaded(cdb_reader, filename)
+
+    def _clear_shared_cdb_named_selections(self) -> None:
+        """Remove the currently attached shared CDB source from loaded readers."""
+        if self.cdb_reader is None:
+            return
+
+        self.cdb_reader = None
+        loaded_pairs = (
+            (self.base_reader, self.tab.analysis1_data),
+            (self.combine_reader, self.tab.analysis2_data),
+        )
+        for reader, analysis_data in loaded_pairs:
+            if reader is None:
+                continue
+            reader.attach_cdb_named_selection_reader(None)
+            if analysis_data is not None:
+                self._sync_analysis_named_selection_metadata(
+                    analysis_data=analysis_data,
+                    reader=reader,
+                    cdb_path=None,
+                )
+        self.tab._update_named_selections()
 
     @staticmethod
     def _sync_analysis_named_selection_metadata(
         analysis_data: AnalysisData,
         reader: DPFAnalysisReader,
-        cdb_path: str,
+        cdb_path: Optional[str],
     ) -> None:
         """Refresh mutable AnalysisData named-selection metadata from the reader."""
         analysis_data.named_selections = reader.get_named_selections()
