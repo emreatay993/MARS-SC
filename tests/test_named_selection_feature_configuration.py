@@ -16,6 +16,8 @@ ANALYSIS_EXECUTOR_FILE = REPO_ROOT / "src" / "ui" / "handlers" / "solver_analysi
 NAMED_SELECTION_HANDLER_FILE = REPO_ROOT / "src" / "ui" / "handlers" / "solver_named_selection_handler.py"
 DPF_READER_FILE = REPO_ROOT / "src" / "file_io" / "dpf_reader.py"
 DATA_MODELS_FILE = REPO_ROOT / "src" / "core" / "data_models.py"
+FILE_HANDLER_FILE = REPO_ROOT / "src" / "ui" / "handlers" / "file_handler.py"
+APP_CONTROLLER_FILE = REPO_ROOT / "src" / "ui" / "application_controller.py"
 
 
 def _read(path: Path) -> str:
@@ -67,13 +69,16 @@ def test_named_selection_locations_are_carried_from_reader_to_analysis_data():
     assert "def get_named_selection_locations" in reader_src
     assert "named_selection_locations=self.get_named_selection_locations()" in reader_src
     assert "named_selection_locations: Dict[str, str]" in data_src
+    assert "named_selection_sources=self.get_named_selection_sources()" in reader_src
+    assert "named_selection_sources: Dict[str, str]" in data_src
 
 
 def test_elemental_named_selection_entries_keep_raw_names():
     """UI labels may mark elemental selections, but item data keeps raw names."""
     src = _read(NAMED_SELECTION_HANDLER_FILE)
 
-    assert "(Elemental)" in src
+    assert 'suffix_parts.append("Elemental")' in src
+    assert "CDB" in src
     assert "addItem(" in src
     assert "currentData()" in src
 
@@ -89,6 +94,21 @@ def test_named_selection_combo_is_searchable():
     assert "setCompletionMode(QCompleter.PopupCompletion)" in src
     assert "setFilterMode(Qt.MatchContains)" in src
     assert "setCaseSensitivity(Qt.CaseInsensitive)" in src
+
+
+def test_cdb_named_selection_import_controls_are_wired():
+    """Solver UI should allow optional per-analysis CDB named-selection import."""
+    ui_src = _read(SOLVER_UI_FILE)
+    tab_src = _read(SOLVER_TAB_FILE)
+    handler_src = _read(FILE_HANDLER_FILE)
+    app_src = _read(APP_CONTROLLER_FILE)
+
+    assert "Import Base CDB Named Selections" in ui_src
+    assert "Import Combine CDB Named Selections" in ui_src
+    assert "select_base_cdb_file" in tab_src
+    assert "select_combine_cdb_file" in tab_src
+    assert "CDBNamedSelectionReader.from_file" in handler_src
+    assert "*.cdb" in app_src
 
 
 class _FakeCombo:

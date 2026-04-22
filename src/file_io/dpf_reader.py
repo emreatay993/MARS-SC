@@ -150,6 +150,7 @@ class DPFAnalysisReader:
         self._stress_conversion_factor = None
         self._nodal_forces_available = None
         self._force_unit = None
+        self.cdb_named_selection_reader = None
     
     @property
     def mesh(self):
@@ -219,9 +220,13 @@ class DPFAnalysisReader:
             self._stress_conversion_factor = get_stress_unit_conversion_factor(self.stress_unit)
         return self._stress_conversion_factor
     
-    def get_named_selections(self) -> List[str]:
+    def attach_cdb_named_selection_reader(self, cdb_reader) -> None:
+        """Attach a supplemental CDB named-selection source to this RST reader."""
+        self.cdb_named_selection_reader = cdb_reader
+
+    def get_rst_named_selections(self) -> List[str]:
         """
-        Return list of named selection names in RST.
+        Return list of named selection names from RST metadata.
         
         Returns:
             List of named selection names available in the model.
@@ -231,6 +236,24 @@ class DPFAnalysisReader:
             return list(available_ns) if available_ns else []
         except Exception:
             return []
+
+    def get_named_selections(self) -> List[str]:
+        """
+        Return list of named selection names from RST plus any attached CDB.
+
+        CDB components are appended after RST metadata names and do not duplicate
+        names already exposed by the RST file.
+        """
+        names = list(self.get_rst_named_selections())
+        seen = set(names)
+
+        if self.cdb_named_selection_reader is not None:
+            for ns_name in self.cdb_named_selection_reader.get_named_selections():
+                if ns_name not in seen:
+                    names.append(ns_name)
+                    seen.add(ns_name)
+
+        return names
 
     @staticmethod
     def _normalize_scoping_location(location) -> str:
@@ -261,6 +284,19 @@ class DPFAnalysisReader:
         try:
             return self.model.metadata.named_selection(ns_name)
         except Exception as e:
+            if (
+                self.cdb_named_selection_reader is not None
+                and self.cdb_named_selection_reader.has_named_selection(ns_name)
+            ):
+                selection = self.cdb_named_selection_reader.selections[ns_name]
+                location = (
+                    dpf.locations.nodal
+                    if selection.location == "nodal"
+                    else dpf.locations.elemental
+                )
+                scoping = dpf.Scoping(location=location)
+                scoping.ids = selection.ids
+                return scoping
             raise ValueError(f"Failed to get named selection '{ns_name}': {e}")
 
     def get_named_selection_location(self, ns_name: str) -> str:
@@ -279,9 +315,28 @@ class DPFAnalysisReader:
     def get_named_selection_locations(self) -> Dict[str, str]:
         """Return a map of named-selection names to source locations."""
         locations = {}
-        for ns_name in self.get_named_selections():
+        for ns_name in self.get_rst_named_selections():
             locations[ns_name] = self.get_named_selection_location(ns_name)
+        if self.cdb_named_selection_reader is not None:
+            for ns_name, location in self.cdb_named_selection_reader.get_named_selection_locations().items():
+                locations.setdefault(ns_name, location)
         return locations
+
+    def get_named_selection_sources(self) -> Dict[str, str]:
+        """Return a map of named-selection names to metadata sources."""
+        sources = {
+            ns_name: "rst"
+            for ns_name in self.get_rst_named_selections()
+        }
+
+        if self.cdb_named_selection_reader is not None:
+            for ns_name in self.cdb_named_selection_reader.get_named_selections():
+                if ns_name in sources:
+                    sources[ns_name] = "rst+cdb"
+                else:
+                    sources[ns_name] = "cdb"
+
+        return sources
     
     def get_load_step_count(self) -> int:
         """
@@ -548,6 +603,12 @@ class DPFAnalysisReader:
             time_values=time_values,
             named_selections=self.get_named_selections(),
             named_selection_locations=self.get_named_selection_locations(),
+            named_selection_sources=self.get_named_selection_sources(),
+            cdb_file_path=(
+                self.cdb_named_selection_reader.cdb_path
+                if self.cdb_named_selection_reader is not None
+                else None
+            ),
             unit_system=self.unit_system,
             stress_unit=self.stress_unit,
             stress_conversion_factor=self.stress_conversion_factor,
@@ -578,6 +639,18 @@ class DPFAnalysisReader:
             return result
 
         raise AttributeError("Could not get scoping from transpose operator")
+
+    @staticmethod
+    def _unique_ids_preserving_order(ids) -> List[int]:
+        """Return integer IDs without duplicates while preserving input order."""
+        unique_ids = []
+        seen = set()
+        for item_id in ids:
+            item_id = int(item_id)
+            if item_id not in seen:
+                seen.add(item_id)
+                unique_ids.append(item_id)
+        return unique_ids
 
     @staticmethod
     def _is_beam_element(element, include_pipe: bool = False) -> bool:
@@ -668,6 +741,16 @@ class DPFAnalysisReader:
             ValueError: If the named selection is not found.
         """
         try:
+            if (
+                self.cdb_named_selection_reader is not None
+                and ns_name not in self.get_rst_named_selections()
+                and self.cdb_named_selection_reader.has_named_selection(ns_name)
+            ):
+                return self.cdb_named_selection_reader.get_nodal_scoping_from_named_selection(
+                    ns_name,
+                    self,
+                )
+
             # Get the named selection scoping
             ns_scoping = self.get_named_selection_scoping(ns_name)
             ns_location = self._normalize_scoping_location(ns_scoping.location)
@@ -676,40 +759,13 @@ class DPFAnalysisReader:
             if ns_location == "nodal":
                 return ns_scoping
             
-            # If it's elemental, we need to convert to nodal
-            # Use the mesh to get nodes from elements
-            mesh = self.mesh
-            
-            # Try using transpose operator (works for elemental -> nodal)
-            try:
-                transpose_op = dpf.operators.scoping.transpose()
-                transpose_op.inputs.mesh_scoping.connect(ns_scoping)
-                transpose_op.inputs.meshed_region.connect(mesh)
-                transpose_op.inputs.inclusive.connect(1)  # Include all nodes of elements
+            if ns_location == "elemental":
+                return self.create_nodal_scoping_from_element_ids(ns_scoping.ids)
 
-                return self._resolve_transpose_output_scoping(transpose_op)
-            except Exception:
-                # Fallback: manually get nodes from elements
-                if ns_location == "elemental":
-                    element_ids = ns_scoping.ids
-                    node_ids = []
-                    seen_node_ids = set()
-                    for elem_id in element_ids:
-                        try:
-                            elem_idx = mesh.elements.scoping.index(elem_id)
-                            connectivity = mesh.elements.element_by_index(elem_idx).connectivity
-                            for node_id in connectivity:
-                                if node_id not in seen_node_ids:
-                                    seen_node_ids.add(node_id)
-                                    node_ids.append(node_id)
-                        except Exception:
-                            continue
-                    
-                    nodal_scoping = dpf.Scoping(location=dpf.locations.nodal)
-                    nodal_scoping.ids = node_ids
-                    return nodal_scoping
-                else:
-                    raise
+            raise ValueError(
+                f"Named selection '{ns_name}' has unsupported location "
+                f"'{ns_scoping.location}'."
+            )
             
         except Exception as e:
             raise ValueError(f"Failed to get nodal scoping from named selection '{ns_name}': {e}")
@@ -852,6 +908,45 @@ class DPFAnalysisReader:
         scoping = dpf.Scoping(location=dpf.locations.nodal)
         scoping.ids = node_ids
         return scoping
+
+    def create_nodal_scoping_from_node_ids(self, node_ids) -> 'dpf.Scoping':
+        """Create nodal DPF scoping from node IDs."""
+        nodal_scoping = dpf.Scoping(location=dpf.locations.nodal)
+        nodal_scoping.ids = self._unique_ids_preserving_order(node_ids)
+        return nodal_scoping
+
+    def create_elemental_scoping_from_element_ids(self, element_ids) -> 'dpf.Scoping':
+        """Create elemental DPF scoping from element IDs."""
+        elemental_scoping = dpf.Scoping(location=dpf.locations.elemental)
+        elemental_scoping.ids = self._unique_ids_preserving_order(element_ids)
+        return elemental_scoping
+
+    def create_nodal_scoping_from_element_ids(self, element_ids) -> 'dpf.Scoping':
+        """Convert element IDs to nodal scoping using the current RST mesh."""
+        elemental_scoping = self.create_elemental_scoping_from_element_ids(element_ids)
+        mesh = self.mesh
+
+        try:
+            transpose_op = dpf.operators.scoping.transpose()
+            transpose_op.inputs.mesh_scoping.connect(elemental_scoping)
+            transpose_op.inputs.meshed_region.connect(mesh)
+            transpose_op.inputs.inclusive.connect(1)
+            return self._resolve_transpose_output_scoping(transpose_op)
+        except Exception:
+            node_ids = []
+            seen_node_ids = set()
+            for elem_id in elemental_scoping.ids:
+                try:
+                    elem_idx = mesh.elements.scoping.index(elem_id)
+                    connectivity = mesh.elements.element_by_index(elem_idx).connectivity
+                    for node_id in connectivity:
+                        if node_id not in seen_node_ids:
+                            seen_node_ids.add(node_id)
+                            node_ids.append(node_id)
+                except Exception:
+                    continue
+
+            return self.create_nodal_scoping_from_node_ids(node_ids)
     
     def read_stress_tensor_for_loadstep(
         self, 

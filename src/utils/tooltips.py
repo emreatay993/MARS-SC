@@ -266,10 +266,24 @@ TOOLTIP_COMBINE_RST = (
     "using the coefficients defined in the combination table."
 )
 
+TOOLTIP_BASE_CDB = (
+    "Optional: import a Base Analysis CDB file to read Mechanical/APDL "
+    "CMBLOCK components as named selections.\n\n"
+    "Use this when the RST file, especially from 2023 R2 workflows, does "
+    "not expose named selections through DPF metadata."
+)
+
+TOOLTIP_COMBINE_CDB = (
+    "Optional: import an Analysis to Combine CDB file to read Mechanical/APDL "
+    "CMBLOCK components as named selections.\n\n"
+    "The CDB supplies scoping only; result values still come from the RST file."
+)
+
 TOOLTIP_NAMED_SELECTION = (
     "Select the Named Selection used to scope the analysis.\n\n"
     "Nodal and elemental Named Selections are supported.\n"
     "Elemental selections are converted to their attached nodes for the current outputs.\n"
+    "CDB CMBLOCK components can be imported as supplemental named selections.\n"
     "The available list depends on 'Named Selection Source'.\n\n"
     "If a name exists in both analyses, node content is always taken\n"
     "from Analysis 1 (Base) to avoid mismatched node sets."
@@ -298,7 +312,7 @@ TOOLTIP_NAVIGATOR = (
     "Browse project files used in MARS-SC workflows.<br><br>"
     "<b>Capabilities</b><br>"
     "&#8226; Shows files under the selected project directory<br>"
-    "&#8226; Focuses on common result/data files (<code>.rst</code>, <code>.csv</code>, <code>.txt</code>)<br>"
+    "&#8226; Focuses on common result/data files (<code>.rst</code>, <code>.cdb</code>, <code>.csv</code>, <code>.txt</code>)<br>"
     "&#8226; Double-click a file to open it with your default application<br><br>"
     "<b>Tip</b><br>"
     "Use <i>File &gt; Select Project Directory</i> to point the navigator to your working folder."

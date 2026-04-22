@@ -31,25 +31,41 @@ class SolverNamedSelectionHandler:
 
     def _get_display_location(self, ns_name: str) -> str:
         """Return the location that matches the active scoping source precedence."""
-        source_mode = self.get_named_selection_source_mode()
-        data = None
-
-        if source_mode == "analysis2":
-            data = self.tab.analysis2_data or self.tab.analysis1_data
-        else:
-            data = self.tab.analysis1_data or self.tab.analysis2_data
-
+        data = self._get_display_analysis_data()
         if data is None:
             return "unknown"
 
         locations = getattr(data, "named_selection_locations", {}) or {}
         return locations.get(ns_name, "unknown")
 
+    def _get_display_source(self, ns_name: str) -> str:
+        """Return the metadata source that matches active scoping precedence."""
+        data = self._get_display_analysis_data()
+        if data is None:
+            return "unknown"
+
+        sources = getattr(data, "named_selection_sources", {}) or {}
+        return sources.get(ns_name, "rst")
+
+    def _get_display_analysis_data(self):
+        """Return analysis data used for labels under the current source mode."""
+        source_mode = self.get_named_selection_source_mode()
+
+        if source_mode == "analysis2":
+            return self.tab.analysis2_data or self.tab.analysis1_data
+        return self.tab.analysis1_data or self.tab.analysis2_data
+
     def _format_named_selection_label(self, ns_name: str) -> str:
         """Build the dropdown label while keeping raw name in item data."""
         location = self._get_display_location(ns_name)
+        source = self._get_display_source(ns_name)
+        suffix_parts = []
+        if source == "cdb":
+            suffix_parts.append("CDB")
         if location == "elemental":
-            return f"{ns_name} (Elemental)"
+            suffix_parts.append("Elemental")
+        if suffix_parts:
+            return f"{ns_name} ({' '.join(suffix_parts)})"
         return ns_name
 
     def _add_named_selection_items(self, selections) -> None:

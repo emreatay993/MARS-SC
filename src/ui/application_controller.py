@@ -154,7 +154,7 @@ class ApplicationController(QMainWindow):
         # File system model
         self.file_model = QFileSystemModel()
         self.file_model.setFilter(QDir.AllEntries | QDir.NoDotAndDotDot)
-        self.file_model.setNameFilters(["*.csv", "*.rst", "*.txt"])
+        self.file_model.setNameFilters(["*.csv", "*.rst", "*.cdb", "*.txt"])
         self.file_model.setNameFilterDisables(False)
         
         # Tree view

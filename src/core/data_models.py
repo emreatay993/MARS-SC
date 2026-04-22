@@ -27,6 +27,9 @@ class AnalysisData:
         named_selections: List of named selection names in the RST.
         named_selection_locations: Map of named selection name to source location
             ("nodal", "elemental", or "unknown").
+        named_selection_sources: Map of named selection name to metadata source
+            ("rst", "cdb", or "rst+cdb").
+        cdb_file_path: Optional CDB file used as a supplemental scoping source.
         unit_system: Unit system string from the RST file (e.g., "MKS: m, kg, N, s...").
         stress_unit: Original stress unit from the RST file (e.g., "Pa").
         stress_conversion_factor: Factor to convert stress to MPa.
@@ -48,6 +51,8 @@ class AnalysisData:
     displacement_available: bool = False
     displacement_unit: str = "mm"
     named_selection_locations: Dict[str, str] = field(default_factory=dict)
+    named_selection_sources: Dict[str, str] = field(default_factory=dict)
+    cdb_file_path: Optional[str] = None
     
     def get_time_for_step(self, step_id: int) -> Optional[float]:
         """

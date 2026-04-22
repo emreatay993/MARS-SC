@@ -41,6 +41,9 @@ class TestAnalysisData:
         assert data.num_load_steps == 3
         assert data.load_step_ids == [1, 2, 3]
         assert data.named_selections == ["NS1", "NS2"]
+        assert data.named_selection_locations == {}
+        assert data.named_selection_sources == {}
+        assert data.cdb_file_path is None
     
     def test_empty_named_selections(self):
         """Test AnalysisData with no named selections."""

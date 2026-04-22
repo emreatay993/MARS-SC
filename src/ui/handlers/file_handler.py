@@ -10,6 +10,7 @@ from PyQt5.QtWidgets import QFileDialog, QMessageBox
 from PyQt5.QtCore import QThread, pyqtSignal
 
 from file_io.dpf_reader import DPFAnalysisReader, DPFNotAvailableError
+from file_io.cdb_reader import CDBNamedSelectionReader
 from file_io.combination_parser import CombinationTableParser, CombinationTableParseError
 from file_io.loaders import load_temperature_field
 from core.data_models import AnalysisData, CombinationResult
@@ -72,6 +73,8 @@ class SolverFileHandler:
         # DPF readers (kept for later use in analysis)
         self.base_reader = None
         self.combine_reader = None
+        self.base_cdb_reader = None
+        self.combine_cdb_reader = None
 
     # ========== RST File Loading ==========
 
@@ -104,6 +107,10 @@ class SolverFileHandler:
         # Disable UI during load
         self.tab.setEnabled(False)
         analysis_name = "Base Analysis" if is_base else "Analysis to Combine"
+        if is_base:
+            self.base_cdb_reader = None
+        else:
+            self.combine_cdb_reader = None
         
         # Check if skip substeps is enabled
         skip_substeps = self.tab.skip_substeps_checkbox.isChecked()
@@ -187,6 +194,92 @@ class SolverFileHandler:
         # Update named selections through the tab
         self.tab._update_named_selections()
         self.tab.console_textbox.append("Named selections refreshed.\n")
+
+    # ========== Optional CDB Named Selection Loading ==========
+
+    def select_base_cdb_file(self, checked=False):
+        """Open file dialog for base-analysis CDB named selections."""
+        self._select_cdb_file(is_base=True)
+
+    def select_combine_cdb_file(self, checked=False):
+        """Open file dialog for combine-analysis CDB named selections."""
+        self._select_cdb_file(is_base=False)
+
+    def _select_cdb_file(self, is_base: bool):
+        analysis_name = "Base Analysis" if is_base else "Analysis to Combine"
+        file_name, _ = QFileDialog.getOpenFileName(
+            self.tab,
+            f"Select {analysis_name} CDB File",
+            "",
+            "ANSYS CDB Files (*.cdb *.CDB);;All Files (*)",
+        )
+        if file_name:
+            self._load_cdb_named_selections(file_name, is_base=is_base)
+
+    def _load_cdb_named_selections(self, filename: str, is_base: bool):
+        """
+        Load CDB component blocks as supplemental named selections.
+
+        CDB components are used only for scoping. The RST file remains the
+        source for results, mesh, load steps, and units.
+        """
+        reader = self.base_reader if is_base else self.combine_reader
+        analysis_data = self.tab.analysis1_data if is_base else self.tab.analysis2_data
+        analysis_name = "Base Analysis" if is_base else "Analysis to Combine"
+
+        if reader is None or analysis_data is None:
+            QMessageBox.information(
+                self.tab,
+                "Load RST First",
+                f"Please load the {analysis_name} RST file before importing its CDB named selections.",
+            )
+            return
+
+        try:
+            cdb_reader = CDBNamedSelectionReader.from_file(filename)
+            if not cdb_reader.get_named_selections():
+                QMessageBox.warning(
+                    self.tab,
+                    "No Named Selections Found",
+                    "No supported node or element CMBLOCK components were found in the selected CDB file.",
+                )
+                return
+
+            reader.attach_cdb_named_selection_reader(cdb_reader)
+            if is_base:
+                self.base_cdb_reader = cdb_reader
+            else:
+                self.combine_cdb_reader = cdb_reader
+
+            self._sync_analysis_named_selection_metadata(
+                analysis_data=analysis_data,
+                reader=reader,
+                cdb_path=filename,
+            )
+        except Exception as error:
+            QMessageBox.warning(
+                self.tab,
+                "CDB Import Error",
+                f"Failed to import CDB named selections:\n\n{error}",
+            )
+            return
+
+        if is_base:
+            self.tab.on_base_cdb_loaded(cdb_reader, filename)
+        else:
+            self.tab.on_combine_cdb_loaded(cdb_reader, filename)
+
+    @staticmethod
+    def _sync_analysis_named_selection_metadata(
+        analysis_data: AnalysisData,
+        reader: DPFAnalysisReader,
+        cdb_path: str,
+    ) -> None:
+        """Refresh mutable AnalysisData named-selection metadata from the reader."""
+        analysis_data.named_selections = reader.get_named_selections()
+        analysis_data.named_selection_locations = reader.get_named_selection_locations()
+        analysis_data.named_selection_sources = reader.get_named_selection_sources()
+        analysis_data.cdb_file_path = cdb_path
 
     # ========== Combination Table Import/Export ==========
 
