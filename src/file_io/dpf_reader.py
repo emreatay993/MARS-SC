@@ -1045,19 +1045,6 @@ class DPFAnalysisReader:
             )
 
         if nodal_scoping is None:
-            supported_node_ids, beam_node_ids = self._get_stress_supported_node_sets()
-            if not supported_node_ids:
-                if beam_node_ids:
-                    raise BeamElementNotSupportedError(
-                        f"Cannot read 6-component nodal stress for load step {step_id}: "
-                        "the result mesh only appears to contain beam/line elements. "
-                        "Please use a result file or named selection with solid/shell elements."
-                    )
-
-                raise DPFStressReadInputError(
-                    f"Cannot read stress for load step {step_id}: the mesh has no nodes "
-                    "attached to elements with supported tensor stress results."
-                )
             return
 
         location = getattr(nodal_scoping, 'location', None)
@@ -1093,55 +1080,127 @@ class DPFAnalysisReader:
                 f"Missing node sample: {sample}."
             )
 
-        supported_node_ids, beam_node_ids = self._get_stress_supported_node_sets()
-        requested_node_ids = set(node_ids)
-        if not requested_node_ids.intersection(supported_node_ids):
-            beam_count = len(requested_node_ids.intersection(beam_node_ids))
-            if beam_count:
-                raise BeamElementNotSupportedError(
-                    f"Cannot read 6-component nodal stress for load step {step_id}: "
-                    f"the selected scoping only covers beam/line nodes "
-                    f"({beam_count} selected node(s)). Please use a named selection "
-                    f"that contains solid/shell elements."
-                )
+    def _format_stress_load_steps(self, load_steps):
+        """Format stress load step input for error messages."""
+        if isinstance(load_steps, (list, tuple, set)):
+            return ', '.join(str(step_id) for step_id in load_steps)
+        return str(load_steps)
 
-            raise DPFStressReadInputError(
-                f"Cannot read stress for load step {step_id}: none of the selected "
-                f"nodes are attached to elements with supported tensor stress results."
+    def _format_stress_scope(self, nodal_scoping):
+        """Format stress scoping input for error messages."""
+        if nodal_scoping is None:
+            return "all mesh nodes"
+
+        try:
+            node_ids = [int(node_id) for node_id in nodal_scoping.ids]
+            sample = ', '.join(str(node_id) for node_id in node_ids[:10])
+            return f"{len(node_ids)} scoped node(s); sample: {sample}"
+        except Exception:
+            return "provided scoping with unreadable node IDs"
+
+    def _build_stress_operator(self, load_steps, nodal_scoping):
+        """Build a nodal stress operator for diagnostic probes."""
+        if isinstance(load_steps, (list, tuple, set)):
+            requested_steps = [int(step_id) for step_id in load_steps]
+        else:
+            requested_steps = [int(load_steps)]
+
+        stress_op = self.model.results.stress()
+        time_scoping = dpf.Scoping()
+        time_scoping.ids = requested_steps
+        stress_op.inputs.time_scoping.connect(time_scoping)
+        stress_op.inputs.requested_location.connect(dpf.locations.nodal)
+
+        if nodal_scoping is not None:
+            stress_op.inputs.mesh_scoping.connect(nodal_scoping)
+
+        return stress_op
+
+    def _probe_stress_fields_container(self, load_steps, nodal_scoping):
+        """Try a bounded stress read probe and return a compact diagnostic."""
+        try:
+            fields_container = self._build_stress_operator(
+                load_steps,
+                nodal_scoping,
+            ).outputs.fields_container()
+        except Exception as exc:
+            return False, f"{type(exc).__name__}: {exc}"
+
+        try:
+            field_count = len(fields_container)
+        except Exception:
+            return True, "DPF returned stress fields, but field count was unavailable."
+
+        if field_count == 0:
+            return False, "DPF returned zero stress fields."
+
+        return True, f"DPF returned {field_count} stress field(s)."
+
+    def _diagnose_stress_read_failure(self, load_steps, nodal_scoping):
+        """Run small failure-path probes to classify a PyDPF stress read failure."""
+        if nodal_scoping is None:
+            return (
+                "The unscoped nodal stress read failed. The result set may not "
+                "contain readable nodal tensor stress, or PyDPF may not support "
+                "the element/result combination in this RST."
             )
+
+        try:
+            node_ids = [int(node_id) for node_id in nodal_scoping.ids]
+        except Exception:
+            return (
+                "The provided scoping could not be inspected after PyDPF failed. "
+                "Check that the selected scoping is a valid nodal DPF scoping."
+            )
+
+        if not node_ids:
+            return "The selected scoping is empty."
+
+        sample_node_ids = node_ids[:min(10, len(node_ids))]
+        sample_scoping = self.create_nodal_scoping_from_node_ids(sample_node_ids)
+        sample_ok, sample_message = self._probe_stress_fields_container(
+            load_steps,
+            sample_scoping,
+        )
+        sample_text = ', '.join(str(node_id) for node_id in sample_node_ids)
+
+        if sample_ok:
+            return (
+                "A small probe using the first selected node(s) succeeded, but the "
+                "full selected scoping failed. This usually means another node in "
+                "the selection/chunk has no nodal tensor stress, belongs only to "
+                "unsupported element types, or the mixed scoped request exposes a "
+                "PyDPF scoping bug. Probe node sample: "
+                f"{sample_text}. Probe result: {sample_message}"
+            )
+
+        return (
+            "A small probe using the first selected node(s) also failed, so those "
+            "nodes likely do not have readable nodal tensor stress for the requested "
+            "result set. This can happen with beam/line/contact/remote/mass-style "
+            "entities or unsupported element/result combinations. Probe node sample: "
+            f"{sample_text}. Probe failure: {sample_message}"
+        )
 
     def _get_stress_fields_container(self, stress_op, load_steps, nodal_scoping):
         """Evaluate stress fields_container with context for native DPF failures."""
         try:
             fields_container = stress_op.outputs.fields_container()
         except OSError as exc:
-            if isinstance(load_steps, (list, tuple, set)):
-                step_text = ', '.join(str(step_id) for step_id in load_steps)
-            else:
-                step_text = str(load_steps)
-
-            if nodal_scoping is None:
-                scope_text = "all mesh nodes"
-            else:
-                try:
-                    node_ids = [int(node_id) for node_id in nodal_scoping.ids]
-                    sample = ', '.join(str(node_id) for node_id in node_ids[:10])
-                    scope_text = f"{len(node_ids)} scoped node(s); sample: {sample}"
-                except Exception:
-                    scope_text = "provided scoping with unreadable node IDs"
+            step_text = self._format_stress_load_steps(load_steps)
+            scope_text = self._format_stress_scope(nodal_scoping)
+            diagnosis = self._diagnose_stress_read_failure(load_steps, nodal_scoping)
 
             raise DPFStressReadInputError(
                 "PyDPF failed while evaluating nodal stress fields after Python-side "
                 f"input validation. Load step(s): {step_text}. Scope: {scope_text}. "
+                f"Diagnostic: {diagnosis}. "
                 f"Original native error: {exc}"
             ) from exc
 
         try:
             if len(fields_container) == 0:
-                if isinstance(load_steps, (list, tuple, set)):
-                    step_text = ', '.join(str(step_id) for step_id in load_steps)
-                else:
-                    step_text = str(load_steps)
+                step_text = self._format_stress_load_steps(load_steps)
 
                 raise DPFStressReadInputError(
                     "DPF returned no nodal stress fields for the requested input. "
