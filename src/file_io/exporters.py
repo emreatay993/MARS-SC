@@ -492,60 +492,56 @@ def export_nodal_forces_envelope(
 
     # Add shear envelope columns if requested and data available
     if include_shear_variants and has_component_data:
-        shear_xy_all = np.sqrt(all_combo_fx**2 + all_combo_fy**2)
-        shear_xz_all = np.sqrt(all_combo_fx**2 + all_combo_fz**2)
-        shear_yz_all = np.sqrt(all_combo_fy**2 + all_combo_fz**2)
-        
+        shear_stats = {}
+        for plane, first, second in (
+            ("XY", all_combo_fx, all_combo_fy),
+            ("XZ", all_combo_fx, all_combo_fz),
+            ("YZ", all_combo_fy, all_combo_fz),
+        ):
+            values = np.sqrt(first**2 + second**2)
+            stats = {}
+            if max_magnitude is not None:
+                stats["max"] = np.max(values, axis=0)
+                if include_component_combo_indices:
+                    stats["argmax"] = np.argmax(values, axis=0)
+            if min_magnitude is not None:
+                stats["min"] = np.min(values, axis=0)
+                if include_component_combo_indices:
+                    stats["argmin"] = np.argmin(values, axis=0)
+            shear_stats[plane] = stats
+
         if max_magnitude is not None:
-            df[f'Max Shear XY [{force_unit}]'] = np.max(shear_xy_all, axis=0)
-            df[f'Max Shear XZ [{force_unit}]'] = np.max(shear_xz_all, axis=0)
-            df[f'Max Shear YZ [{force_unit}]'] = np.max(shear_yz_all, axis=0)
+            for plane in ("XY", "XZ", "YZ"):
+                df[f'Max Shear {plane} [{force_unit}]'] = shear_stats[plane]["max"]
         if min_magnitude is not None:
-            df[f'Min Shear XY [{force_unit}]'] = np.min(shear_xy_all, axis=0)
-            df[f'Min Shear XZ [{force_unit}]'] = np.min(shear_xz_all, axis=0)
-            df[f'Min Shear YZ [{force_unit}]'] = np.min(shear_yz_all, axis=0)
+            for plane in ("XY", "XZ", "YZ"):
+                df[f'Min Shear {plane} [{force_unit}]'] = shear_stats[plane]["min"]
 
         if include_component_combo_indices:
             if max_magnitude is not None:
-                shear_xy_max_idx = np.argmax(shear_xy_all, axis=0)
-                shear_xz_max_idx = np.argmax(shear_xz_all, axis=0)
-                shear_yz_max_idx = np.argmax(shear_yz_all, axis=0)
-                df['Combo of Max Shear XY (#)'] = shear_xy_max_idx.astype(int) + 1
-                df['Combo of Max Shear XZ (#)'] = shear_xz_max_idx.astype(int) + 1
-                df['Combo of Max Shear YZ (#)'] = shear_yz_max_idx.astype(int) + 1
+                for plane in ("XY", "XZ", "YZ"):
+                    indices = shear_stats[plane]["argmax"]
+                    df[f'Combo of Max Shear {plane} (#)'] = indices.astype(int) + 1
                 if combination_names is not None:
-                    df['Combo of Max Shear XY (Name)'] = [
-                        combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
-                        for idx in shear_xy_max_idx
-                    ]
-                    df['Combo of Max Shear XZ (Name)'] = [
-                        combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
-                        for idx in shear_xz_max_idx
-                    ]
-                    df['Combo of Max Shear YZ (Name)'] = [
-                        combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
-                        for idx in shear_yz_max_idx
-                    ]
+                    for plane in ("XY", "XZ", "YZ"):
+                        df[f'Combo of Max Shear {plane} (Name)'] = [
+                            combination_names[int(index)]
+                            if 0 <= int(index) < len(combination_names)
+                            else f"Combo {int(index) + 1}"
+                            for index in shear_stats[plane]["argmax"]
+                        ]
             if min_magnitude is not None:
-                shear_xy_min_idx = np.argmin(shear_xy_all, axis=0)
-                shear_xz_min_idx = np.argmin(shear_xz_all, axis=0)
-                shear_yz_min_idx = np.argmin(shear_yz_all, axis=0)
-                df['Combo of Min Shear XY (#)'] = shear_xy_min_idx.astype(int) + 1
-                df['Combo of Min Shear XZ (#)'] = shear_xz_min_idx.astype(int) + 1
-                df['Combo of Min Shear YZ (#)'] = shear_yz_min_idx.astype(int) + 1
+                for plane in ("XY", "XZ", "YZ"):
+                    indices = shear_stats[plane]["argmin"]
+                    df[f'Combo of Min Shear {plane} (#)'] = indices.astype(int) + 1
                 if combination_names is not None:
-                    df['Combo of Min Shear XY (Name)'] = [
-                        combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
-                        for idx in shear_xy_min_idx
-                    ]
-                    df['Combo of Min Shear XZ (Name)'] = [
-                        combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
-                        for idx in shear_xz_min_idx
-                    ]
-                    df['Combo of Min Shear YZ (Name)'] = [
-                        combination_names[int(idx)] if 0 <= int(idx) < len(combination_names) else f"Combo {int(idx) + 1}"
-                        for idx in shear_yz_min_idx
-                    ]
+                    for plane in ("XY", "XZ", "YZ"):
+                        df[f'Combo of Min Shear {plane} (Name)'] = [
+                            combination_names[int(index)]
+                            if 0 <= int(index) < len(combination_names)
+                            else f"Combo {int(index) + 1}"
+                            for index in shear_stats[plane]["argmin"]
+                        ]
     
     df.to_csv(filename, index=False)
 

@@ -23,7 +23,53 @@ from file_io.exporters import (
     export_single_combination,
     export_combination_history,
     export_all_combinations_batch,
+    export_nodal_forces_envelope,
 )
+
+
+def test_force_shear_export_preserves_values_indices_and_column_order(tmp_path):
+    path = tmp_path / "force_shear.csv"
+    fx = np.array([[3.0, 0.0], [0.0, 5.0]])
+    fy = np.array([[4.0, 0.0], [0.0, 12.0]])
+    fz = np.array([[0.0, 8.0], [0.0, 0.0]])
+    export_nodal_forces_envelope(
+        str(path),
+        np.array([1, 2]),
+        np.zeros((2, 3)),
+        max_magnitude=np.array([5.0, 13.0]),
+        min_magnitude=np.array([0.0, 0.0]),
+        combo_of_max=np.array([0, 1]),
+        combo_of_min=np.array([1, 0]),
+        combination_names=["first", "second"],
+        all_combo_fx=fx,
+        all_combo_fy=fy,
+        all_combo_fz=fz,
+        include_shear_variants=True,
+        include_component_combo_indices=True,
+    )
+
+    frame = pd.read_csv(path)
+    expected_tail = [
+        *[f"Max Shear {plane} [N]" for plane in ("XY", "XZ", "YZ")],
+        *[f"Min Shear {plane} [N]" for plane in ("XY", "XZ", "YZ")],
+        *[f"Combo of Max Shear {plane} (#)" for plane in ("XY", "XZ", "YZ")],
+        *[f"Combo of Max Shear {plane} (Name)" for plane in ("XY", "XZ", "YZ")],
+        *[f"Combo of Min Shear {plane} (#)" for plane in ("XY", "XZ", "YZ")],
+        *[f"Combo of Min Shear {plane} (Name)" for plane in ("XY", "XZ", "YZ")],
+    ]
+    assert frame.columns[-len(expected_tail):].tolist() == expected_tail
+    for plane, first, second in (("XY", fx, fy), ("XZ", fx, fz), ("YZ", fy, fz)):
+        values = np.sqrt(first**2 + second**2)
+        np.testing.assert_array_equal(frame[f"Max Shear {plane} [N]"], np.max(values, axis=0))
+        np.testing.assert_array_equal(frame[f"Min Shear {plane} [N]"], np.min(values, axis=0))
+        np.testing.assert_array_equal(
+            frame[f"Combo of Max Shear {plane} (#)"],
+            np.argmax(values, axis=0) + 1,
+        )
+        np.testing.assert_array_equal(
+            frame[f"Combo of Min Shear {plane} (#)"],
+            np.argmin(values, axis=0) + 1,
+        )
 
 
 class TestExportEnvelopeResults:

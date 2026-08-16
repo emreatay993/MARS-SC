@@ -1,0 +1,39 @@
+{
+  "mode": "plasticity",
+  "seed": 20260816,
+  "trial_order": [],
+  "trials": {
+    "source": [
+      {
+        "source_root": "C:\\Users\\emre_\\PycharmProjects\\Solution_Combination_ANSYS",
+        "mode": "plasticity",
+        "entries": 2105600,
+        "numba": "0.66.0",
+        "numba_active": true,
+        "numba_cache_dir": "C:\\Users\\emre_\\AppData\\Local\\Temp\\mars_sc_numba_source_57qlu_dp",
+        "methods": {
+          "neuber": {
+            "first_call_s": 3.5457795999827795,
+            "warm_trials_s": [
+              0.11551150004379451,
+              0.14096260000951588,
+              0.12386990000959486
+            ],
+            "warm_median_s": 0.12386990000959486,
+            "output_sha256": "529453f93e26d43f2038bf565cf4fef494a782e382e8f4e082786ff41091a3bc"
+          },
+          "glinka": {
+            "first_call_s": 3.008605799986981,
+            "warm_trials_s": [
+              0.13628979999339208,
+              0.13954770000418648,
+              0.12396850000368431
+            ],
+            "warm_median_s": 0.13628979999339208,
+            "output_sha256": "8b10b5eadf4eb2dc78b8cd4adc1820100750cff2f4bcd338edd98f87a3e52535"
+          }
+        }
+      }
+    ]
+  }
+}

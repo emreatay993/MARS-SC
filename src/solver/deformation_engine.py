@@ -20,7 +20,8 @@ Optional cylindrical coordinate transformation:
 
 from typing import Dict, Tuple, Optional, Callable, List
 import numpy as np
-import gc
+
+MATRIX_TEMP_TARGET_BYTES = 64 * 1024 * 1024
 
 from file_io.dpf_reader import (
     DPFAnalysisReader,
@@ -82,9 +83,8 @@ class DeformationCombinationEngine:
         self.table = combination_table
         self.cylindrical_cs_id = cylindrical_cs_id
         
-        # Displacement cache: maps (analysis_idx, step_id) -> displacement components tuple
-        # Each tuple is (node_ids, ux, uy, uz)
-        self._displacement_cache: Dict[Tuple[int, int], Tuple] = {}
+        self._active_step_keys, self._active_coefficients = self.table.get_active_step_matrix()
+        self._displacement_data: Optional[np.ndarray] = None  # (active steps, 3, nodes)
         
         # Node information (populated during preload)
         self._node_ids: Optional[np.ndarray] = None
@@ -189,40 +189,21 @@ class DeformationCombinationEngine:
             Tuple of (is_valid, error_message). If valid, error_message is empty.
         """
         errors = []
-        target_scoping = nodal_scoping if nodal_scoping is not None else self.scoping
-        
-        # Get only active steps (those with non-zero coefficients)
         active_a1_steps, active_a2_steps = self.table.get_active_step_ids()
-        
-        # Check Analysis 1 (only if it has active steps)
+
         if active_a1_steps:
             if not self.reader1.check_displacement_available():
                 errors.append(
                     "Analysis 1 RST file does not contain displacement results.\n"
                     "Ensure displacement output is enabled in ANSYS Output Controls."
                 )
-            else:
-                # Check only active load steps
-                for step_id in active_a1_steps:
-                    try:
-                        self.reader1.read_displacement_for_loadstep(step_id, target_scoping)
-                    except DisplacementNotAvailableError as e:
-                        errors.append(f"Analysis 1, Load Step {step_id}: {str(e)}")
-        
-        # Check Analysis 2 (only if it has active steps)
+
         if active_a2_steps:
             if not self.reader2.check_displacement_available():
                 errors.append(
                     "Analysis 2 RST file does not contain displacement results.\n"
                     "Ensure displacement output is enabled in ANSYS Output Controls."
                 )
-            else:
-                # Check only active load steps
-                for step_id in active_a2_steps:
-                    try:
-                        self.reader2.read_displacement_for_loadstep(step_id, target_scoping)
-                    except DisplacementNotAvailableError as e:
-                        errors.append(f"Analysis 2, Load Step {step_id}: {str(e)}")
         
         if errors:
             return False, "\n\n".join(errors)
@@ -253,34 +234,34 @@ class DeformationCombinationEngine:
         # Get displacement unit from first file
         self._displacement_unit = self.reader1.get_displacement_unit()
         
-        # Load Analysis 1 displacement data (only active steps)
-        for step_id in a1_steps:
-            result = self.reader1.read_displacement_for_loadstep(step_id, self.scoping)
-            self._displacement_cache[(1, step_id)] = result
-            current += 1
-            if progress_callback:
-                progress_callback(current, total_steps, f"Loading A1 Displacement Step {step_id}...")
-        
-        # Load Analysis 2 displacement data (only active steps)
-        for step_id in a2_steps:
-            result = self.reader2.read_displacement_for_loadstep(step_id, self.scoping)
-            self._displacement_cache[(2, step_id)] = result
-            current += 1
-            if progress_callback:
-                progress_callback(current, total_steps, f"Loading A2 Displacement Step {step_id}...")
+        packed_data = None
+        packed_index = 0
+        for analysis_idx, reader, step_ids in (
+            (1, self.reader1, a1_steps),
+            (2, self.reader2, a2_steps),
+        ):
+            for step_id in step_ids:
+                result = reader.read_displacement_for_loadstep(step_id, self.scoping)
+                if packed_data is None:
+                    packed_data = np.empty(
+                        (total_steps, 3, len(result[0])),
+                        dtype=np.asarray(result[1]).dtype,
+                    )
+                for component_index, values in enumerate(result[1:4]):
+                    packed_data[packed_index, component_index] = values
+                packed_index += 1
+                current += 1
+                if progress_callback:
+                    progress_callback(
+                        current,
+                        total_steps,
+                        f"Loading A{analysis_idx} Displacement Step {step_id}...",
+                    )
         
         if progress_callback:
             progress_callback(total_steps, total_steps, "Displacement data loading complete.")
         
-        # Store node information from first loaded step
-        if a1_steps:
-            first_result = self._displacement_cache[(1, a1_steps[0])]
-        elif a2_steps:
-            first_result = self._displacement_cache[(2, a2_steps[0])]
-        else:
-            raise ValueError("No load steps defined in combination table.")
-        
-        self._node_ids = first_result[0]
+        self._displacement_data = packed_data
         
         # Get node coordinates
         self._node_ids, self._node_coords = self.reader1.get_node_coordinates(self.scoping)
@@ -295,33 +276,75 @@ class DeformationCombinationEngine:
         Returns:
             Tuple of (ux, uy, uz) combined arrays, each shape (num_nodes,).
         """
-        a1_coeffs, a2_coeffs = self.table.get_coeffs_for_combination(combo_index)
-        
-        # Initialize combined displacement components
-        num_nodes = self.num_nodes
-        ux = np.zeros(num_nodes)
-        uy = np.zeros(num_nodes)
-        uz = np.zeros(num_nodes)
-        
-        # Add contributions from Analysis 1 (check cache membership for active-only loading)
-        for i, step_id in enumerate(self.table.analysis1_step_ids):
-            coeff = a1_coeffs[i]
-            if coeff != 0.0 and (1, step_id) in self._displacement_cache:
-                _, s_ux, s_uy, s_uz = self._displacement_cache[(1, step_id)]
-                ux += coeff * s_ux
-                uy += coeff * s_uy
-                uz += coeff * s_uz
-        
-        # Add contributions from Analysis 2 (check cache membership for active-only loading)
-        for i, step_id in enumerate(self.table.analysis2_step_ids):
-            coeff = a2_coeffs[i]
-            if coeff != 0.0 and (2, step_id) in self._displacement_cache:
-                _, s_ux, s_uy, s_uz = self._displacement_cache[(2, step_id)]
-                ux += coeff * s_ux
-                uy += coeff * s_uy
-                uz += coeff * s_uz
-        
-        return (ux, uy, uz)
+        displacement_data, coefficients = self._get_packed_displacement_data()
+        combined = np.matmul(
+            coefficients[combo_index],
+            displacement_data.reshape(displacement_data.shape[0], -1),
+        ).reshape(3, self.num_nodes)
+        return tuple(combined)
+
+    def _get_packed_displacement_data(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Return production packed data, packing legacy test caches only when present."""
+        displacement_data = getattr(self, "_displacement_data", None)
+        keys, coefficients = self.table.get_active_step_matrix()
+        if not isinstance(displacement_data, np.ndarray):
+            cache = getattr(self, "_displacement_cache", None)
+            if not cache:
+                raise RuntimeError(
+                    "Displacement data not preloaded. Call preload_displacement_data() first."
+                )
+            displacement_data = np.ascontiguousarray(
+                np.stack([np.stack(cache[key][1:4], axis=0) for key in keys], axis=0)
+            )
+            self._displacement_data = displacement_data
+        self._active_step_keys = keys
+        self._active_coefficients = coefficients
+        return displacement_data, coefficients
+
+    def _compute_component_matrices(self, progress_callback=None):
+        displacement_data, coefficients = self._get_packed_displacement_data()
+        ux_all, uy_all, uz_all = (
+            np.matmul(coefficients, displacement_data[:, component, :])
+            for component in range(3)
+        )
+        if self.uses_cylindrical_cs:
+            for combo_index in range(self.table.num_combinations):
+                ux_all[combo_index], uy_all[combo_index], uz_all[combo_index] = (
+                    self._rotate_to_cylindrical(
+                        ux_all[combo_index],
+                        uy_all[combo_index],
+                        uz_all[combo_index],
+                    )
+                )
+        if progress_callback:
+            message = "Displacement computation complete."
+            if self.uses_cylindrical_cs:
+                message = f"Cylindrical displacement computation complete (CS {self.cylindrical_cs_id})."
+            progress_callback(self.table.num_combinations, self.table.num_combinations, message)
+        return ux_all, uy_all, uz_all
+
+    @staticmethod
+    def _magnitude_envelopes(x, y, z):
+        num_combos, num_nodes = x.shape
+        block_size = max(
+            1,
+            min(num_nodes, MATRIX_TEMP_TARGET_BYTES // max(1, num_combos * 8)),
+        )
+        maximum = np.empty(num_nodes)
+        minimum = np.empty(num_nodes)
+        argmax = np.empty(num_nodes, dtype=np.intp)
+        argmin = np.empty(num_nodes, dtype=np.intp)
+        for start in range(0, num_nodes, block_size):
+            end = min(start + block_size, num_nodes)
+            magnitude = np.square(x[:, start:end])
+            magnitude += np.square(y[:, start:end])
+            magnitude += np.square(z[:, start:end])
+            np.sqrt(magnitude, out=magnitude)
+            maximum[start:end] = np.max(magnitude, axis=0)
+            minimum[start:end] = np.min(magnitude, axis=0)
+            argmax[start:end] = np.argmax(magnitude, axis=0)
+            argmin[start:end] = np.argmin(magnitude, axis=0)
+        return maximum, minimum, argmax, argmin
     
     @staticmethod
     def compute_magnitude(ux: np.ndarray, uy: np.ndarray, uz: np.ndarray) -> np.ndarray:
@@ -418,38 +441,8 @@ class DeformationCombinationEngine:
         num_combos = self.table.num_combinations
         if num_combos <= 0:
             raise ValueError("No combinations defined.")
-        num_nodes = self.num_nodes
-        
-        ux_all = np.zeros((num_combos, num_nodes))
-        uy_all = np.zeros((num_combos, num_nodes))
-        uz_all = np.zeros((num_combos, num_nodes))
-        magnitude_all = np.zeros((num_combos, num_nodes))
-        
-        cs_info = f" (CS {self.cylindrical_cs_id})" if self.uses_cylindrical_cs else ""
-        
-        for combo_idx in range(num_combos):
-            # Compute combination in global Cartesian
-            ux, uy, uz = self.compute_combination_numpy(combo_idx)
-            
-            # Apply cylindrical rotation if specified
-            if self.uses_cylindrical_cs:
-                ux, uy, uz = self._rotate_to_cylindrical(ux, uy, uz)
-            
-            ux_all[combo_idx, :] = ux
-            uy_all[combo_idx, :] = uy
-            uz_all[combo_idx, :] = uz
-            magnitude_all[combo_idx, :] = self.compute_magnitude(ux, uy, uz)
-
-            if progress_callback:
-                combo_name = self.table.combination_names[combo_idx]
-                progress_callback(combo_idx + 1, num_combos, f"Computing displacement{cs_info}: {combo_name}...")
-        
-        if progress_callback:
-            msg = "Displacement computation complete."
-            if self.uses_cylindrical_cs:
-                msg = f"Cylindrical displacement computation complete (CS {self.cylindrical_cs_id})."
-            progress_callback(num_combos, num_combos, msg)
-        
+        ux_all, uy_all, uz_all = self._compute_component_matrices(progress_callback)
+        magnitude_all = self.compute_magnitude(ux_all, uy_all, uz_all)
         return (ux_all, uy_all, uz_all, magnitude_all)
     
     def compute_envelope(
@@ -494,14 +487,12 @@ class DeformationCombinationEngine:
         Returns:
             DeformationResult with all envelope data.
         """
-        # Compute all combinations
-        ux_all, uy_all, uz_all, magnitude_all = self.compute_all_combinations(
-            progress_callback=progress_callback
+        ux_all, uy_all, uz_all = self._compute_component_matrices(progress_callback)
+        max_values, min_values, combo_of_max, combo_of_min = self._magnitude_envelopes(
+            ux_all,
+            uy_all,
+            uz_all,
         )
-        
-        # Compute envelopes based on magnitude
-        max_values, combo_of_max = self.compute_envelope(magnitude_all, "max")
-        min_values, combo_of_min = self.compute_envelope(magnitude_all, "min")
         
         result = DeformationResult(
             node_ids=self.node_ids.copy(),
@@ -519,7 +510,6 @@ class DeformationCombinationEngine:
         # Auto-cleanup cached data to free memory
         if auto_cleanup:
             self.clear_cache()
-            gc.collect()
         
         return result
     
@@ -542,13 +532,18 @@ class DeformationCombinationEngine:
             raise ValueError(f"Node ID {node_id} not found in scoping.")
         node_idx = node_idx[0]
         
-        # Compute all combinations and extract single node
-        ux_all, uy_all, uz_all, magnitude_all = self.compute_all_combinations()
-        
-        ux = ux_all[:, node_idx]
-        uy = uy_all[:, node_idx]
-        uz = uz_all[:, node_idx]
-        magnitude = magnitude_all[:, node_idx]
+        if self.uses_cylindrical_cs:
+            ux_all, uy_all, uz_all, _ = self.compute_all_combinations()
+            ux = ux_all[:, node_idx]
+            uy = uy_all[:, node_idx]
+            uz = uz_all[:, node_idx]
+        else:
+            displacement_data, coefficients = self._get_packed_displacement_data()
+            ux, uy, uz = (
+                np.matmul(coefficients, displacement_data[:, component, node_idx])
+                for component in range(3)
+            )
+        magnitude = self.compute_magnitude(ux, uy, uz)
         
         combination_indices = np.arange(self.table.num_combinations)
         
@@ -658,4 +653,6 @@ class DeformationCombinationEngine:
     
     def clear_cache(self):
         """Clear cached displacement data to free memory."""
-        self._displacement_cache.clear()
+        self._displacement_data = None
+        if hasattr(self, "_displacement_cache"):
+            self._displacement_cache.clear()

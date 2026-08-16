@@ -232,6 +232,21 @@ class CombinationTableData:
         
         return (active_a1, active_a2)
 
+    def get_active_step_matrix(self) -> Tuple[List[Tuple[int, int]], np.ndarray]:
+        """Return ordered active step keys and their contiguous coefficient matrix."""
+        a1_mask = np.any(self.analysis1_coeffs != 0.0, axis=0)
+        a2_mask = np.any(self.analysis2_coeffs != 0.0, axis=0)
+        keys = [
+            (1, step_id) for step_id, active in zip(self.analysis1_step_ids, a1_mask) if active
+        ] + [
+            (2, step_id) for step_id, active in zip(self.analysis2_step_ids, a2_mask) if active
+        ]
+        coefficients = np.concatenate(
+            (self.analysis1_coeffs[:, a1_mask], self.analysis2_coeffs[:, a2_mask]),
+            axis=1,
+        )
+        return keys, np.ascontiguousarray(coefficients, dtype=np.float64)
+
 
 @dataclass
 class CombinationResult:

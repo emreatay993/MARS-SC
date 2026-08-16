@@ -218,14 +218,14 @@ class TestChunkedProcessing:
     def test_compute_chunk_combinations(self):
         """Test computing combinations for a chunk."""
         engine = Mock(spec=StressCombinationEngine)
-        engine.table = Mock()
-        engine.table.num_combinations = 2
-        engine.table.analysis1_step_ids = [1, 2]
-        engine.table.analysis2_step_ids = []
-        engine.table.get_coeffs_for_combination = Mock(side_effect=[
-            (np.array([1.0, 0.0]), np.array([])),  # Combo 0: only step 1
-            (np.array([0.0, 1.0]), np.array([])),  # Combo 1: only step 2
-        ])
+        engine.table = CombinationTableData(
+            combination_names=["step 1", "step 2"],
+            combination_types=["Linear", "Linear"],
+            analysis1_coeffs=np.eye(2),
+            analysis2_coeffs=np.zeros((2, 0)),
+            analysis1_step_ids=[1, 2],
+            analysis2_step_ids=[],
+        )
         
         # Mock stress cache for chunk
         chunk_cache = {

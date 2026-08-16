@@ -154,7 +154,10 @@ class DPFAnalysisReader:
         self._stress_unit = None
         self._stress_conversion_factor = None
         self._nodal_forces_available = None
+        self._displacement_available = None
         self._force_unit = None
+        self._mesh_node_ids = None
+        self._mesh_coordinates_mm = None
         self.cdb_named_selection_reader = None
         self.txt_named_selection_readers = []
     
@@ -198,10 +201,9 @@ class DPFAnalysisReader:
         """
         if self._stress_unit is None:
             try:
-                # Read a sample stress field to get the unit
                 stress_op = self.model.results.stress()
                 time_scoping = dpf.Scoping()
-                time_scoping.ids = [1]  # First load step
+                time_scoping.ids = [1]
                 stress_op.inputs.time_scoping.connect(time_scoping)
                 stress_op.inputs.requested_location.connect(dpf.locations.nodal)
                 
@@ -714,20 +716,15 @@ class DPFAnalysisReader:
         return False
 
     @staticmethod
-    def _available_result_has_entry(
+    def _find_available_result(
         available_results,
         string_token: str,
         name_token: str,
         name_exact: bool = False,
-    ) -> bool:
-        """
-        Check available result descriptors using both string and name matching.
-
-        DPF may expose ``available_results`` entries as rich objects or plain-ish
-        string descriptors depending on runtime/version.
-        """
+    ):
+        """Return the first matching available-result descriptor, if any."""
         if available_results is None:
-            return False
+            return None
 
         string_token = string_token.lower()
         name_token = name_token.lower()
@@ -735,7 +732,7 @@ class DPFAnalysisReader:
         for res in available_results:
             try:
                 if string_token in str(res).lower():
-                    return True
+                    return res
             except Exception:
                 pass
 
@@ -749,12 +746,68 @@ class DPFAnalysisReader:
 
             if name_exact:
                 if res_name == name_token:
-                    return True
+                    return res
             else:
                 if name_token in res_name:
-                    return True
+                    return res
 
-        return False
+        return None
+
+    @classmethod
+    def _available_result_has_entry(
+        cls,
+        available_results,
+        string_token: str,
+        name_token: str,
+        name_exact: bool = False,
+    ) -> bool:
+        """Check available result descriptors across DPF runtime variants."""
+        return cls._find_available_result(
+            available_results,
+            string_token,
+            name_token,
+            name_exact,
+        ) is not None
+
+    @staticmethod
+    def _align_nodal_data(
+        returned_ids: np.ndarray,
+        values: np.ndarray,
+        requested_ids: Optional[np.ndarray],
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Align nodal values to requested IDs without a dictionary on normal paths."""
+        returned_ids = np.asarray(returned_ids)
+        values = np.asarray(values)
+        if requested_ids is None:
+            return returned_ids, values
+
+        requested_ids = np.asarray(requested_ids)
+        if np.array_equal(returned_ids, requested_ids):
+            return requested_ids, values
+
+        aligned = np.zeros((requested_ids.size, *values.shape[1:]), dtype=values.dtype)
+        if returned_ids.size == 0:
+            return requested_ids, aligned
+
+        if returned_ids.size == 1 or np.all(returned_ids[:-1] <= returned_ids[1:]):
+            # Match the legacy dictionary behavior when DPF returns duplicate IDs:
+            # the final value for an ID wins.
+            indices = np.searchsorted(returned_ids, requested_ids, side="right") - 1
+            valid = indices >= 0
+            valid_positions = np.flatnonzero(valid)
+            if valid_positions.size:
+                valid[valid_positions] = (
+                    returned_ids[indices[valid_positions]] == requested_ids[valid_positions]
+                )
+            aligned[valid] = values[indices[valid]]
+            return requested_ids, aligned
+
+        lookup = {node_id: index for index, node_id in enumerate(returned_ids)}
+        for requested_index, node_id in enumerate(requested_ids):
+            returned_index = lookup.get(node_id)
+            if returned_index is not None:
+                aligned[requested_index] = values[returned_index]
+        return requested_ids, aligned
     
     def get_nodal_scoping_from_named_selection(self, ns_name: str) -> 'dpf.Scoping':
         """
@@ -1307,63 +1360,13 @@ class DPFAnalysisReader:
                 f"This may occur with element types that don't support full stress tensors."
             )
         
-        # Extract individual components (in DPF returned order)
-        # DPF stress tensor component order: XX, YY, ZZ, XY, YZ, XZ
-        sx = stress_data[:, 0].copy()
-        sy = stress_data[:, 1].copy()
-        sz = stress_data[:, 2].copy()
-        sxy = stress_data[:, 3].copy()
-        syz = stress_data[:, 4].copy()
-        sxz = stress_data[:, 5].copy()
-        
-        # Reorder/align arrays to match input scoping order.
-        # DPF may return results in a different order than the input scoping,
-        # and may also return fewer nodes (if some nodes have no stress data).
-        # This ensures scalar values are correctly mapped to node positions.
-        if input_node_ids_order is not None:
-            # Build a lookup: node_id -> index in DPF results
-            dpf_id_to_idx = {nid: idx for idx, nid in enumerate(dpf_node_ids)}
-            
-            # Check if DPF returned exactly the nodes we requested in the same order
-            if len(input_node_ids_order) == len(dpf_node_ids) and np.array_equal(dpf_node_ids, input_node_ids_order):
-                # Perfect match - no reordering needed
-                pass
-            elif len(input_node_ids_order) == len(dpf_node_ids):
-                # Same count but different order - reorder to match input
-                reorder_indices = np.array([dpf_id_to_idx[nid] for nid in input_node_ids_order])
-                sx = sx[reorder_indices]
-                sy = sy[reorder_indices]
-                sz = sz[reorder_indices]
-                sxy = sxy[reorder_indices]
-                syz = syz[reorder_indices]
-                sxz = sxz[reorder_indices]
-                dpf_node_ids = input_node_ids_order
-            else:
-                # DPF returned different node count than requested (some nodes may lack data)
-                # Create full-size arrays aligned to input scoping, with zeros for missing nodes
-                # (zeros represent no stress contribution, which is safe for combination)
-                num_requested = len(input_node_ids_order)
-                sx_full = np.zeros(num_requested)
-                sy_full = np.zeros(num_requested)
-                sz_full = np.zeros(num_requested)
-                sxy_full = np.zeros(num_requested)
-                syz_full = np.zeros(num_requested)
-                sxz_full = np.zeros(num_requested)
-                
-                # Fill in values for nodes that have data
-                for req_idx, nid in enumerate(input_node_ids_order):
-                    if nid in dpf_id_to_idx:
-                        dpf_idx = dpf_id_to_idx[nid]
-                        sx_full[req_idx] = sx[dpf_idx]
-                        sy_full[req_idx] = sy[dpf_idx]
-                        sz_full[req_idx] = sz[dpf_idx]
-                        sxy_full[req_idx] = sxy[dpf_idx]
-                        syz_full[req_idx] = syz[dpf_idx]
-                        sxz_full[req_idx] = sxz[dpf_idx]
-                
-                sx, sy, sz = sx_full, sy_full, sz_full
-                sxy, syz, sxz = sxy_full, syz_full, sxz_full
-                dpf_node_ids = input_node_ids_order
+        dpf_node_ids, stress_data = self._align_nodal_data(
+            dpf_node_ids,
+            stress_data[:, :6],
+            input_node_ids_order,
+        )
+        # DPF tensor order: XX, YY, ZZ, XY, YZ, XZ.
+        sx, sy, sz, sxy, syz, sxz = (stress_data[:, index].copy() for index in range(6))
         
         # Convert to MPa if requested
         if convert_to_mpa:
@@ -1467,49 +1470,14 @@ class DPFAnalysisReader:
                     f"This may occur with element types that don't support full stress tensors."
                 )
 
-            sx = stress_data[:, 0].copy()
-            sy = stress_data[:, 1].copy()
-            sz = stress_data[:, 2].copy()
-            sxy = stress_data[:, 3].copy()
-            syz = stress_data[:, 4].copy()
-            sxz = stress_data[:, 5].copy()
-
-            if input_node_ids_order is not None:
-                dpf_id_to_idx = {nid: idx for idx, nid in enumerate(dpf_node_ids)}
-
-                if len(input_node_ids_order) == len(dpf_node_ids) and np.array_equal(dpf_node_ids, input_node_ids_order):
-                    pass
-                elif len(input_node_ids_order) == len(dpf_node_ids):
-                    reorder_indices = np.array([dpf_id_to_idx[nid] for nid in input_node_ids_order])
-                    sx = sx[reorder_indices]
-                    sy = sy[reorder_indices]
-                    sz = sz[reorder_indices]
-                    sxy = sxy[reorder_indices]
-                    syz = syz[reorder_indices]
-                    sxz = sxz[reorder_indices]
-                    dpf_node_ids = input_node_ids_order
-                else:
-                    num_requested = len(input_node_ids_order)
-                    sx_full = np.zeros(num_requested)
-                    sy_full = np.zeros(num_requested)
-                    sz_full = np.zeros(num_requested)
-                    sxy_full = np.zeros(num_requested)
-                    syz_full = np.zeros(num_requested)
-                    sxz_full = np.zeros(num_requested)
-
-                    for req_idx, nid in enumerate(input_node_ids_order):
-                        if nid in dpf_id_to_idx:
-                            dpf_idx = dpf_id_to_idx[nid]
-                            sx_full[req_idx] = sx[dpf_idx]
-                            sy_full[req_idx] = sy[dpf_idx]
-                            sz_full[req_idx] = sz[dpf_idx]
-                            sxy_full[req_idx] = sxy[dpf_idx]
-                            syz_full[req_idx] = syz[dpf_idx]
-                            sxz_full[req_idx] = sxz[dpf_idx]
-
-                    sx, sy, sz = sx_full, sy_full, sz_full
-                    sxy, syz, sxz = sxy_full, syz_full, sxz_full
-                    dpf_node_ids = input_node_ids_order
+            dpf_node_ids, stress_data = self._align_nodal_data(
+                dpf_node_ids,
+                stress_data[:, :6],
+                input_node_ids_order,
+            )
+            sx, sy, sz, sxy, syz, sxz = (
+                stress_data[:, index].copy() for index in range(6)
+            )
 
             if convert_to_mpa:
                 factor = self.stress_conversion_factor
@@ -1576,37 +1544,24 @@ class DPFAnalysisReader:
     
     def get_node_coordinates(self, nodal_scoping: Optional['dpf.Scoping'] = None) -> Tuple[np.ndarray, np.ndarray]:
         """(node_ids, coords) for scoped nodes; coords in mm (DPF native is usually m)."""
-        mesh = self.mesh
-        
-        if nodal_scoping is not None:
-            node_ids = np.array(nodal_scoping.ids)
-        else:
-            node_ids = np.array(mesh.nodes.scoping.ids)
-        
-        # Get the coordinate unit from the mesh and compute conversion factor to mm
-        try:
-            coord_unit = mesh.nodes.coordinates_field.unit or "m"
-        except Exception:
-            coord_unit = "m"  # Default assumption
-        
-        conversion_factor, _ = get_displacement_unit_conversion_factor(coord_unit)
-        
-        # Get coordinates for each node
-        coords = []
-        for node_id in node_ids:
+        if self._mesh_node_ids is None or self._mesh_coordinates_mm is None:
+            mesh = self.mesh
+            coordinates_field = mesh.nodes.coordinates_field
             try:
-                # DPF node indexing is 0-based internally, but IDs are 1-based
-                node_idx = mesh.nodes.scoping.index(node_id)
-                coord = mesh.nodes.coordinates_field.data[node_idx]
-                coords.append(coord)
+                coord_unit = coordinates_field.unit or "m"
             except Exception:
-                # If node not found, use zeros
-                coords.append([0.0, 0.0, 0.0])
-        
-        # Convert coordinates to mm
-        coords_array = np.array(coords) * conversion_factor
-        
-        return (node_ids, coords_array)
+                coord_unit = "m"
+            conversion_factor, _ = get_displacement_unit_conversion_factor(coord_unit)
+            self._mesh_node_ids = np.asarray(mesh.nodes.scoping.ids)
+            self._mesh_coordinates_mm = np.asarray(coordinates_field.data) * conversion_factor
+
+        requested_ids = np.asarray(nodal_scoping.ids) if nodal_scoping is not None else None
+        node_ids, coordinates = self._align_nodal_data(
+            self._mesh_node_ids,
+            self._mesh_coordinates_mm,
+            requested_ids,
+        )
+        return node_ids.copy(), coordinates.copy()
     
     def get_model_info(self) -> Dict:
         """
@@ -1645,71 +1600,47 @@ class DPFAnalysisReader:
     def check_nodal_forces_available(self) -> bool:
         """
         Check if nodal forces (element nodal forces) are available in the RST file.
-        
-        Uses a two-step approach:
-        1. Check if element_nodal_forces is listed in available_results
-        2. Try to actually read data to confirm availability (tries both with and 
-           without global rotation as some element types fail with rotation)
-        
+
         Returns:
             True if nodal forces are available, False otherwise.
         """
         if self._nodal_forces_available is not None:
             return self._nodal_forces_available
-        
+
         try:
-            # Step 1: Check available_results first (faster, more reliable)
             result_info = self.model.metadata.result_info
             available = result_info.available_results
-            
-            # Check if element_nodal_forces is in available results
-            has_enf = self._available_result_has_entry(
+            if not self._available_result_has_entry(
                 available_results=available,
                 string_token="element_nodal_forces",
                 name_token="enf",
                 name_exact=False,
-            )
-            
-            if not has_enf:
+            ):
                 self._nodal_forces_available = False
                 return False
-            
-            # Step 2: Try to actually read data to confirm
-            # Use first available load step (don't hardcode to 1)
+
             load_step_ids = self.get_load_step_ids()
             if not load_step_ids:
                 self._nodal_forces_available = False
                 return False
-            
-            # Try with default rotation first, then without rotation
-            # Some element types (e.g., elements with more integration points than nodes)
-            # fail when rotating to global coordinate system
-            for rotate_to_global in [True, False]:
+
+            for rotate_to_global in (True, False):
                 try:
                     nforce_op = self.model.results.element_nodal_forces()
-                    
                     time_scoping = dpf.Scoping()
                     time_scoping.ids = [load_step_ids[0]]
                     nforce_op.inputs.time_scoping.connect(time_scoping)
                     nforce_op.inputs.bool_rotate_to_global.connect(rotate_to_global)
-                    # NOTE: Do NOT connect requested_location - let DPF use defaults
-                    
-                    # Try to get the fields container
                     fields_container = nforce_op.outputs.fields_container()
-                    
-                    # Check if we got valid data
                     if fields_container and len(fields_container) > 0:
                         field = fields_container[0]
                         if field.data is not None and len(field.data) > 0:
                             self._nodal_forces_available = True
                             return True
                 except Exception:
-                    # Try the next rotation setting
                     continue
-            
             self._nodal_forces_available = False
             return False
-            
         except Exception:
             self._nodal_forces_available = False
             return False
@@ -1723,7 +1654,7 @@ class DPFAnalysisReader:
         """
         if self._force_unit is not None:
             return self._force_unit
-        
+
         try:
             nforce_op = self.model.results.element_nodal_forces()
             
@@ -1840,49 +1771,22 @@ class DPFAnalysisReader:
                     f"Force data shape: {force_data.shape}."
                 )
             
-            # Extract individual components (in DPF returned order)
-            fx = force_data[:, 0].copy()
-            fy = force_data[:, 1].copy()
-            fz = force_data[:, 2].copy()
-            
-            # Reorder/align arrays to match input scoping order.
-            # DPF may return results in a different order than the input scoping,
-            # and may also return fewer nodes (if some nodes have no force data).
-            # This ensures scalar values are correctly mapped to node positions.
+            fx, fy, fz = (force_data[:, index].copy() for index in range(3))
+
             if input_node_ids_order is not None:
-                # Build a lookup: node_id -> index in DPF results
-                dpf_id_to_idx = {nid: idx for idx, nid in enumerate(dpf_node_ids)}
-                
-                # Check if DPF returned exactly the nodes we requested in the same order
-                if len(input_node_ids_order) == len(dpf_node_ids) and np.array_equal(dpf_node_ids, input_node_ids_order):
-                    # Perfect match - no reordering needed
-                    pass
-                elif len(input_node_ids_order) == len(dpf_node_ids):
-                    # Same count but different order - reorder to match input
-                    reorder_indices = np.array([dpf_id_to_idx[nid] for nid in input_node_ids_order])
-                    fx = fx[reorder_indices]
-                    fy = fy[reorder_indices]
-                    fz = fz[reorder_indices]
-                    dpf_node_ids = input_node_ids_order
-                else:
-                    # DPF returned different node count than requested (some nodes may lack data)
-                    # Create full-size arrays aligned to input scoping, with zeros for missing nodes
-                    # (zeros represent no force contribution, which is safe for combination)
-                    num_requested = len(input_node_ids_order)
-                    fx_full = np.zeros(num_requested)
-                    fy_full = np.zeros(num_requested)
-                    fz_full = np.zeros(num_requested)
-                    
-                    # Fill in values for nodes that have data
-                    for req_idx, nid in enumerate(input_node_ids_order):
-                        if nid in dpf_id_to_idx:
-                            dpf_idx = dpf_id_to_idx[nid]
-                            fx_full[req_idx] = fx[dpf_idx]
-                            fy_full[req_idx] = fy[dpf_idx]
-                            fz_full[req_idx] = fz[dpf_idx]
-                    
-                    fx, fy, fz = fx_full, fy_full, fz_full
-                    dpf_node_ids = input_node_ids_order
+                lookup = {node_id: index for index, node_id in enumerate(dpf_node_ids)}
+                if not np.array_equal(dpf_node_ids, input_node_ids_order):
+                    if len(input_node_ids_order) == len(dpf_node_ids):
+                        indices = np.array([lookup[node_id] for node_id in input_node_ids_order])
+                        fx, fy, fz = (component[indices] for component in (fx, fy, fz))
+                    else:
+                        aligned = np.zeros((len(input_node_ids_order), 3), dtype=force_data.dtype)
+                        for requested_index, node_id in enumerate(input_node_ids_order):
+                            returned_index = lookup.get(node_id)
+                            if returned_index is not None:
+                                aligned[requested_index] = force_data[returned_index, :3]
+                        fx, fy, fz = (aligned[:, index] for index in range(3))
+                dpf_node_ids = input_node_ids_order
             
             return (dpf_node_ids, fx, fy, fz)
             
@@ -2042,43 +1946,42 @@ class DPFAnalysisReader:
         Returns:
             True if displacement results are available, False otherwise.
         """
+        if self._displacement_available is not None:
+            return self._displacement_available
+
         try:
-            # Check if displacement is in available_results
             result_info = self.model.metadata.result_info
             available = result_info.available_results
-            
-            # Check for displacement result
             has_displacement = self._available_result_has_entry(
                 available_results=available,
                 string_token="displacement",
                 name_token="u",
                 name_exact=True,
             )
-            
             if not has_displacement:
+                self._displacement_available = False
                 return False
-            
-            # Try to actually read data to confirm
+
             load_step_ids = self.get_load_step_ids()
             if not load_step_ids:
+                self._displacement_available = False
                 return False
-            
+
             disp_op = self.model.results.displacement()
             time_scoping = dpf.Scoping()
             time_scoping.ids = [load_step_ids[0]]
             disp_op.inputs.time_scoping.connect(time_scoping)
-            
             fields_container = disp_op.outputs.fields_container()
-            
-            if fields_container and len(fields_container) > 0:
-                field = fields_container[0]
-                if field.data is not None and len(field.data) > 0:
-                    return True
-            
-            return False
-            
+            self._displacement_available = bool(
+                fields_container
+                and len(fields_container) > 0
+                and fields_container[0].data is not None
+                and len(fields_container[0].data) > 0
+            )
+            return self._displacement_available
         except Exception:
-            return False
+            self._displacement_available = False
+            return self._displacement_available
     
     def get_displacement_unit(self) -> str:
         """
@@ -2175,45 +2078,14 @@ class DPFAnalysisReader:
                     f"Displacement data shape: {disp_data.shape}."
                 )
             
-            # Extract individual components (in DPF returned order) and convert to mm
-            ux = disp_data[:, 0].copy() * conversion_factor
-            uy = disp_data[:, 1].copy() * conversion_factor
-            uz = disp_data[:, 2].copy() * conversion_factor
-            
-            # Reorder/align arrays to match input scoping order.
-            if input_node_ids_order is not None:
-                # Build a lookup: node_id -> index in DPF results
-                dpf_id_to_idx = {nid: idx for idx, nid in enumerate(dpf_node_ids)}
-                
-                # Check if DPF returned exactly the nodes we requested in the same order
-                if len(input_node_ids_order) == len(dpf_node_ids) and np.array_equal(dpf_node_ids, input_node_ids_order):
-                    # Perfect match - no reordering needed
-                    pass
-                elif len(input_node_ids_order) == len(dpf_node_ids):
-                    # Same count but different order - reorder to match input
-                    reorder_indices = np.array([dpf_id_to_idx[nid] for nid in input_node_ids_order])
-                    ux = ux[reorder_indices]
-                    uy = uy[reorder_indices]
-                    uz = uz[reorder_indices]
-                    dpf_node_ids = input_node_ids_order
-                else:
-                    # DPF returned different node count than requested
-                    # Create full-size arrays aligned to input scoping, with zeros for missing nodes
-                    num_requested = len(input_node_ids_order)
-                    ux_full = np.zeros(num_requested)
-                    uy_full = np.zeros(num_requested)
-                    uz_full = np.zeros(num_requested)
-                    
-                    # Fill in values for nodes that have data
-                    for req_idx, nid in enumerate(input_node_ids_order):
-                        if nid in dpf_id_to_idx:
-                            dpf_idx = dpf_id_to_idx[nid]
-                            ux_full[req_idx] = ux[dpf_idx]
-                            uy_full[req_idx] = uy[dpf_idx]
-                            uz_full[req_idx] = uz[dpf_idx]
-                    
-                    ux, uy, uz = ux_full, uy_full, uz_full
-                    dpf_node_ids = input_node_ids_order
+            dpf_node_ids, disp_data = self._align_nodal_data(
+                dpf_node_ids,
+                disp_data[:, :3],
+                input_node_ids_order,
+            )
+            ux, uy, uz = (
+                disp_data[:, index].copy() * conversion_factor for index in range(3)
+            )
             
             return (dpf_node_ids, ux, uy, uz)
             

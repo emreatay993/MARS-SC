@@ -18,6 +18,8 @@ plotly==5.24.1
 
 # Data processing
 numpy==2.4.0
+numba==0.66.0
+llvmlite==0.48.0
 pandas==2.3.3
 scipy==1.15.2
 h5py==3.14.0

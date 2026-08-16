@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "generated_date": "2026-08-16",
+  "baseline_commit": "9f2ca01a44c9226cadf1d4085212198c2bca8295",
+  "measurement_scope": "source runtime, fresh subprocesses, warm filesystem cache",
+  "workload": {
+    "seed": 20260816,
+    "combinations": 1000,
+    "nodes": 10528,
+    "analysis_1_sets": 200,
+    "analysis_2_sets": 201,
+    "fixture_1": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-1\\MECH\\file.rst",
+    "fixture_2": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-29\\MECH\\file.rst"
+  },
+  "runtime": {
+    "python": "3.11.6",
+    "numpy": "2.4.1",
+    "pandas": "2.2.3",
+    "dpf": "0.10.1",
+    "psutil": "7.2.1",
+    "numba": "0.66.0",
+    "requirements_pin_difference": {
+      "numpy": "measured 2.4.1; requirements.txt pins 2.4.0",
+      "pandas": "measured 2.2.3; requirements.txt pins 2.3.3"
+    }
+  },
+  "acceptance": {
+    "headline_speedup_required": 1.5,
+    "headline_speedup_passed": true,
+    "candidate_rss_must_be_lower": true,
+    "candidate_rss_passed": true,
+    "noticeable_rss_threshold": "15 percent or 50 MiB",
+    "noticeable_rss_passed": true,
+    "maximum_stage_regression_percent": 5.0,
+    "stage_regression_passed": true,
+    "float_rtol": 1e-12,
+    "float_atol": 1e-12,
+    "correctness_passed": true
+  },
+  "timing": {
+    "protocol": "one unmeasured warm-up per root, then three ABBA blocks; six measured trials per root",
+    "trial_order": [
+      "baseline", "candidate", "candidate", "baseline",
+      "baseline", "candidate", "candidate", "baseline",
+      "baseline", "candidate", "candidate", "baseline"
+    ],
+    "baseline_total_trials_s": [123.03747219999786, 120.76912519999314, 117.16109680000227, 124.99432759999763, 137.87693199998466, 157.88814599998295],
+    "candidate_total_trials_s": [57.697274500038475, 55.19859670003643, 60.2599205999868, 55.7544069000287, 61.04862050001975, 67.5456656999886],
+    "baseline_median_total_s": 124.01589989999775,
+    "candidate_median_total_s": 58.97859755001264,
+    "speedup": 2.10272717649542,
+    "time_reduction_percent": 52.44271291215804,
+    "stage_medians_s": {
+      "metadata_load": {"baseline": 1.8323211499955505, "candidate": 1.8435015000286512, "change_percent": 0.6101741516833847},
+      "stress_read": {"baseline": 18.422622300015064, "candidate": 18.475062949990388, "change_percent": 0.28465355865914255},
+      "stress_calculate": {"baseline": 31.636177100008354, "candidate": 1.4425649000040721, "change_percent": -95.44014153339756},
+      "force_read": {"baseline": 30.200120549998246, "candidate": 31.06279195001116, "change_percent": 2.856516412193466},
+      "force_calculate": {"baseline": 15.105676049977774, "candidate": 0.7141567000071518, "change_percent": -95.27226257438373},
+      "deformation_read": {"baseline": 6.6294008499826305, "candidate": 2.6315493500151206, "change_percent": -60.30486902866923},
+      "deformation_calculate": {"baseline": 16.751201950013638, "candidate": 0.4510314000362996, "change_percent": -97.30746843490874},
+      "export": {"baseline": 1.7659200000052806, "candidate": 1.7593744499899913, "change_percent": -0.37065948713813635}
+    }
+  },
+  "memory": {
+    "protocol": "three alternating trials per root; worker plus all DPF descendants sampled every 50 ms",
+    "baseline_peak_trials_bytes": [1420664832, 1400586240, 1401552896],
+    "candidate_peak_trials_bytes": [1332027392, 1343684608, 1293459456],
+    "baseline_median_peak_bytes": 1401552896,
+    "candidate_median_peak_bytes": 1332027392,
+    "reduction_bytes": 69525504,
+    "reduction_mib": 66.3046875,
+    "reduction_percent": 4.960605068736557
+  },
+  "correctness": {
+    "arrays_compared": 25,
+    "all_passed": true,
+    "exact_node_ids_and_governing_indices": true,
+    "combination_names_types_units_and_csv_contract_passed": true,
+    "candidate_force_legacy_reference_passed": true,
+    "candidate_force_reference_max_abs_differences": {
+      "fx": 2.000888343900442e-11,
+      "fy": 2.7284841053187847e-12,
+      "fz": 1.1823431123048067e-11
+    },
+    "dpf_force_note": "Cross-process DPF 0.10.1 ENF results can vary at cancellation-sensitive node 1. The raw comparison is retained; the force gate additionally replays legacy step-order accumulation against the candidate run's own extracted inputs.",
+    "maximum_absolute_float_difference": 3.2741809263825417e-11,
+    "note": "Absolute differences can exceed 1e-12 for large values while still passing the locked combined rtol=1e-12 and atol=1e-12 criterion."
+  },
+  "tests": {
+    "command": "venv\\Scripts\\python.exe -m pytest -q",
+    "passed": 215,
+    "skipped": 11,
+    "failed": 0,
+    "collection_errors": 0,
+    "skips": "existing optional real-RST tests without their repository-local fixture names"
+  },
+  "plasticity": {
+    "entries": 2105600,
+    "numba_active": true,
+    "neuber_first_call_s": 3.5457795999827795,
+    "neuber_warm_median_s": 0.12386990000959486,
+    "glinka_first_call_s": 3.008605799986981,
+    "glinka_warm_median_s": 0.13628979999339208
+  },
+  "raw_evidence": {
+    "mars_sc_timing.json": "sha256:23f7cbe8281b8f6f1d881cb4c2387eb33e9837765a0edbf99faa2e5ef4e11b8d",
+    "mars_sc_memory.json": "sha256:937701280436c0b13c457f4ee9781dde00c8d401c9f344d4e2d2ca00fab844bd",
+    "mars_sc_correctness.json": "sha256:1f821fe89c9ab21a7abdd5368e4be360b8558cb868133f1c25e55c8f64e66ead",
+    "mars_sc_plasticity.json": "sha256:4190b811266035b8d09ef59890851933fcfa030351bf1afab0ca31274b039505"
+  }
+}

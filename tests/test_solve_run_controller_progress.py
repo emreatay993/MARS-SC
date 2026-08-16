@@ -2,61 +2,9 @@
 
 import os
 import sys
-import types
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
-def _ensure_pyqt5_stubs() -> None:
-    pyqt5 = sys.modules.get("PyQt5")
-    if pyqt5 is None:
-        pyqt5 = types.ModuleType("PyQt5")
-        pyqt5.__path__ = []
-        sys.modules["PyQt5"] = pyqt5
-    elif not hasattr(pyqt5, "__path__"):
-        pyqt5.__path__ = []
-
-    qtcore = sys.modules.get("PyQt5.QtCore")
-    if qtcore is None:
-        qtcore = types.ModuleType("PyQt5.QtCore")
-        sys.modules["PyQt5.QtCore"] = qtcore
-
-    qtwidgets = sys.modules.get("PyQt5.QtWidgets")
-    if qtwidgets is None:
-        qtwidgets = types.ModuleType("PyQt5.QtWidgets")
-        sys.modules["PyQt5.QtWidgets"] = qtwidgets
-
-    class _FakeQApplication:
-        @staticmethod
-        def processEvents(*_args, **_kwargs):
-            return None
-
-    class _FakeQMessageBox:
-        @staticmethod
-        def critical(*_args, **_kwargs):
-            return None
-
-        @staticmethod
-        def warning(*_args, **_kwargs):
-            return None
-
-    class _FakeQEventLoop:
-        ExcludeUserInputEvents = 0
-
-    class _FakeQTimer:
-        @staticmethod
-        def singleShot(_ms, callback):
-            callback()
-
-    qtcore.QEventLoop = _FakeQEventLoop
-    qtcore.QTimer = _FakeQTimer
-    qtwidgets.QApplication = _FakeQApplication
-    qtwidgets.QMessageBox = _FakeQMessageBox
-    pyqt5.QtCore = qtcore
-    pyqt5.QtWidgets = qtwidgets
-
-
-_ensure_pyqt5_stubs()
 
 from core.data_models import SolverConfig
 from ui.handlers.solve_run_controller import SolveRunController

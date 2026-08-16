@@ -15,7 +15,8 @@ Where:
 
 from typing import Dict, Tuple, Optional, Callable, List
 import numpy as np
-import gc
+
+MATRIX_TEMP_TARGET_BYTES = 64 * 1024 * 1024
 
 from file_io.dpf_reader import (
     DPFAnalysisReader,
@@ -72,9 +73,8 @@ class NodalForcesCombinationEngine:
         self.table = combination_table
         self.rotate_to_global = rotate_to_global
         
-        # Force cache: maps (analysis_idx, step_id) -> force components tuple
-        # Each tuple is (node_ids, fx, fy, fz)
-        self._force_cache: Dict[Tuple[int, int], Tuple] = {}
+        self._active_step_keys, self._active_coefficients = self.table.get_active_step_matrix()
+        self._force_data: Optional[np.ndarray] = None  # (active steps, 3, nodes)
         
         # DPF field cache for native DPF operations (not populated by default to save memory)
         self._field_cache: Dict[Tuple[int, int], 'dpf.Field'] = {}
@@ -146,11 +146,8 @@ class NodalForcesCombinationEngine:
         """
         errors = []
         target_scoping = nodal_scoping if nodal_scoping is not None else self.scoping
-        
-        # Get only active steps (those with non-zero coefficients)
         active_a1_steps, active_a2_steps = self.table.get_active_step_ids()
-        
-        # Check Analysis 1 (only if it has active steps)
+
         if active_a1_steps:
             if not self.reader1.check_nodal_forces_available():
                 errors.append(
@@ -158,16 +155,16 @@ class NodalForcesCombinationEngine:
                     + MSG_NODAL_FORCES_ANSYS
                 )
             else:
-                # Check only active load steps
                 for step_id in active_a1_steps:
                     try:
                         self.reader1.read_nodal_forces_for_loadstep(
-                            step_id, target_scoping, rotate_to_global=self.rotate_to_global
+                            step_id,
+                            target_scoping,
+                            rotate_to_global=self.rotate_to_global,
                         )
-                    except NodalForcesNotAvailableError as e:
-                        errors.append(f"Analysis 1, Load Step {step_id}: {str(e)}")
-        
-        # Check Analysis 2 (only if it has active steps)
+                    except NodalForcesNotAvailableError as error:
+                        errors.append(f"Analysis 1, Load Step {step_id}: {error}")
+
         if active_a2_steps:
             if not self.reader2.check_nodal_forces_available():
                 errors.append(
@@ -175,14 +172,15 @@ class NodalForcesCombinationEngine:
                     + MSG_NODAL_FORCES_ANSYS
                 )
             else:
-                # Check only active load steps
                 for step_id in active_a2_steps:
                     try:
                         self.reader2.read_nodal_forces_for_loadstep(
-                            step_id, target_scoping, rotate_to_global=self.rotate_to_global
+                            step_id,
+                            target_scoping,
+                            rotate_to_global=self.rotate_to_global,
                         )
-                    except NodalForcesNotAvailableError as e:
-                        errors.append(f"Analysis 2, Load Step {step_id}: {str(e)}")
+                    except NodalForcesNotAvailableError as error:
+                        errors.append(f"Analysis 2, Load Step {step_id}: {error}")
         
         if errors:
             return False, "\n\n".join(errors)
@@ -201,38 +199,35 @@ class NodalForcesCombinationEngine:
         # Get force unit from first file
         self._force_unit = self.reader1.get_force_unit()
         
-        # Load Analysis 1 force data (only active steps, numpy arrays only)
-        for step_id in a1_steps:
-            result = self.reader1.read_nodal_forces_for_loadstep(
-                step_id, self.scoping, rotate_to_global=self.rotate_to_global
-            )
-            self._force_cache[(1, step_id)] = result
-            current += 1
-            if progress_callback:
-                progress_callback(current, total_steps, f"Loading A1 Forces Step {step_id}...")
-        
-        # Load Analysis 2 force data (only active steps, numpy arrays only)
-        for step_id in a2_steps:
-            result = self.reader2.read_nodal_forces_for_loadstep(
-                step_id, self.scoping, rotate_to_global=self.rotate_to_global
-            )
-            self._force_cache[(2, step_id)] = result
-            current += 1
-            if progress_callback:
-                progress_callback(current, total_steps, f"Loading A2 Forces Step {step_id}...")
+        force_cache = {}
+        for analysis_idx, reader, step_ids in (
+            (1, self.reader1, a1_steps),
+            (2, self.reader2, a2_steps),
+        ):
+            for step_id in step_ids:
+                result = reader.read_nodal_forces_for_loadstep(
+                    step_id,
+                    self.scoping,
+                    rotate_to_global=self.rotate_to_global,
+                )
+                force_cache[(analysis_idx, step_id)] = result
+                current += 1
+                if progress_callback:
+                    progress_callback(
+                        current,
+                        total_steps,
+                        f"Loading A{analysis_idx} Forces Step {step_id}...",
+                    )
         
         if progress_callback:
             progress_callback(total_steps, total_steps, "Force data loading complete.")
         
-        # Store node information from first loaded step
-        if a1_steps:
-            first_result = self._force_cache[(1, a1_steps[0])]
-        elif a2_steps:
-            first_result = self._force_cache[(2, a2_steps[0])]
-        else:
-            raise ValueError("No load steps defined in combination table.")
-        
-        self._node_ids = first_result[0]
+        self._force_data = np.ascontiguousarray(
+            np.stack(
+                [np.stack(force_cache[key][1:4], axis=0) for key in self._active_step_keys],
+                axis=0,
+            )
+        )
         
         # Get node coordinates
         self._node_ids, self._node_coords = self.reader1.get_node_coordinates(self.scoping)
@@ -252,33 +247,90 @@ class NodalForcesCombinationEngine:
         Returns:
             Tuple of (fx, fy, fz) combined arrays, each shape (num_nodes,).
         """
-        a1_coeffs, a2_coeffs = self.table.get_coeffs_for_combination(combo_index)
-        
-        # Initialize combined force components
-        num_nodes = self.num_nodes
-        fx = np.zeros(num_nodes)
-        fy = np.zeros(num_nodes)
-        fz = np.zeros(num_nodes)
-        
-        # Add contributions from Analysis 1 (check cache membership for active-only loading)
-        for i, step_id in enumerate(self.table.analysis1_step_ids):
-            coeff = a1_coeffs[i]
-            if coeff != 0.0 and (1, step_id) in self._force_cache:
-                _, s_fx, s_fy, s_fz = self._force_cache[(1, step_id)]
-                fx += coeff * s_fx
-                fy += coeff * s_fy
-                fz += coeff * s_fz
-        
-        # Add contributions from Analysis 2 (check cache membership for active-only loading)
-        for i, step_id in enumerate(self.table.analysis2_step_ids):
-            coeff = a2_coeffs[i]
-            if coeff != 0.0 and (2, step_id) in self._force_cache:
-                _, s_fx, s_fy, s_fz = self._force_cache[(2, step_id)]
-                fx += coeff * s_fx
-                fy += coeff * s_fy
-                fz += coeff * s_fz
-        
-        return (fx, fy, fz)
+        force_data, coefficients = self._get_packed_force_data()
+        combined = np.matmul(
+            coefficients[combo_index],
+            force_data.reshape(force_data.shape[0], -1),
+        ).reshape(3, self.num_nodes)
+        return tuple(combined)
+
+    def _get_packed_force_data(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Return production packed data, packing legacy test caches only when present."""
+        force_data = getattr(self, "_force_data", None)
+        keys, coefficients = self.table.get_active_step_matrix()
+        if not isinstance(force_data, np.ndarray):
+            cache = getattr(self, "_force_cache", None)
+            if not cache:
+                raise RuntimeError("Force data not preloaded. Call preload_force_data() first.")
+            force_data = np.ascontiguousarray(
+                np.stack([np.stack(cache[key][1:4], axis=0) for key in keys], axis=0)
+            )
+            self._force_data = force_data
+        self._active_step_keys = keys
+        self._active_coefficients = coefficients
+        return force_data, coefficients
+
+    def _compute_component_matrices(self, progress_callback=None):
+        force_data, coefficients = self._get_packed_force_data()
+        components = []
+        for component in range(3):
+            combined = np.matmul(coefficients, force_data[:, component, :])
+            self._restore_cancellation_order(combined, coefficients, force_data[:, component, :])
+            components.append(combined)
+        if progress_callback:
+            progress_callback(
+                self.table.num_combinations,
+                self.table.num_combinations,
+                "Force computation complete.",
+            )
+        return tuple(components)
+
+    @staticmethod
+    def _restore_cancellation_order(combined, coefficients, step_values):
+        """Recompute only ill-conditioned entries in the legacy step order."""
+        num_combos, num_nodes = combined.shape
+        coefficient_norm = np.sum(np.abs(coefficients), axis=1)
+        value_scale = np.max(np.abs(step_values), axis=0)
+        tolerance = 8 * np.finfo(np.float64).eps * coefficients.shape[1]
+        block_size = max(
+            1,
+            min(num_nodes, MATRIX_TEMP_TARGET_BYTES // max(1, num_combos * 16)),
+        )
+        for start in range(0, num_nodes, block_size):
+            end = min(start + block_size, num_nodes)
+            unstable = np.abs(combined[:, start:end]) <= (
+                tolerance * coefficient_norm[:, None] * value_scale[None, start:end]
+            )
+            for local_node in np.flatnonzero(np.any(unstable, axis=0)):
+                corrected = np.zeros(num_combos)
+                node_index = start + local_node
+                for step_index in range(coefficients.shape[1]):
+                    corrected += coefficients[:, step_index] * step_values[step_index, node_index]
+                mask = unstable[:, local_node]
+                combined[mask, node_index] = corrected[mask]
+
+    @staticmethod
+    def _magnitude_envelopes(x, y, z):
+        num_combos, num_nodes = x.shape
+        block_size = max(
+            1,
+            min(num_nodes, MATRIX_TEMP_TARGET_BYTES // max(1, num_combos * 8)),
+        )
+        maximum = np.empty(num_nodes)
+        minimum = np.empty(num_nodes)
+        argmax = np.empty(num_nodes, dtype=np.intp)
+        argmin = np.empty(num_nodes, dtype=np.intp)
+        for start in range(0, num_nodes, block_size):
+            end = min(start + block_size, num_nodes)
+            magnitude = np.square(x[:, start:end])
+            magnitude += np.square(y[:, start:end])
+            magnitude += np.square(z[:, start:end])
+            np.sqrt(magnitude, out=magnitude)
+            maximum[start:end] = np.max(magnitude, axis=0)
+            minimum[start:end] = np.min(magnitude, axis=0)
+            argmax[start:end] = np.argmax(magnitude, axis=0)
+            argmin[start:end] = np.argmin(magnitude, axis=0)
+        return maximum, minimum, argmax, argmin
     
     def compute_combination_dpf(self, combo_index: int) -> 'dpf.Field':
         """
@@ -356,27 +408,8 @@ class NodalForcesCombinationEngine:
         num_combos = self.table.num_combinations
         if num_combos <= 0:
             raise ValueError("No combinations defined.")
-        num_nodes = self.num_nodes
-        
-        fx_all = np.zeros((num_combos, num_nodes))
-        fy_all = np.zeros((num_combos, num_nodes))
-        fz_all = np.zeros((num_combos, num_nodes))
-        magnitude_all = np.zeros((num_combos, num_nodes))
-        
-        for combo_idx in range(num_combos):
-            fx, fy, fz = self.compute_combination_numpy(combo_idx)
-            fx_all[combo_idx, :] = fx
-            fy_all[combo_idx, :] = fy
-            fz_all[combo_idx, :] = fz
-            magnitude_all[combo_idx, :] = self.compute_magnitude(fx, fy, fz)
-
-            if progress_callback:
-                combo_name = self.table.combination_names[combo_idx]
-                progress_callback(combo_idx + 1, num_combos, f"Computing forces: {combo_name}...")
-        
-        if progress_callback:
-            progress_callback(num_combos, num_combos, "Force computation complete.")
-        
+        fx_all, fy_all, fz_all = self._compute_component_matrices(progress_callback)
+        magnitude_all = self.compute_magnitude(fx_all, fy_all, fz_all)
         return (fx_all, fy_all, fz_all, magnitude_all)
     
     def compute_envelope(
@@ -421,14 +454,12 @@ class NodalForcesCombinationEngine:
         Returns:
             NodalForcesResult with all envelope data.
         """
-        # Compute all combinations
-        fx_all, fy_all, fz_all, magnitude_all = self.compute_all_combinations(
-            progress_callback=progress_callback
+        fx_all, fy_all, fz_all = self._compute_component_matrices(progress_callback)
+        max_values, min_values, combo_of_max, combo_of_min = self._magnitude_envelopes(
+            fx_all,
+            fy_all,
+            fz_all,
         )
-        
-        # Compute envelopes based on magnitude
-        max_values, combo_of_max = self.compute_envelope(magnitude_all, "max")
-        min_values, combo_of_min = self.compute_envelope(magnitude_all, "min")
         
         result = NodalForcesResult(
             node_ids=self.node_ids.copy(),
@@ -449,7 +480,6 @@ class NodalForcesCombinationEngine:
         # Auto-cleanup cached data to free memory
         if auto_cleanup:
             self.clear_cache()
-            gc.collect()
         
         return result
     
@@ -558,5 +588,7 @@ class NodalForcesCombinationEngine:
     
     def clear_cache(self):
         """Clear cached force data to free memory."""
-        self._force_cache.clear()
+        self._force_data = None
+        if hasattr(self, "_force_cache"):
+            self._force_cache.clear()
         self._field_cache.clear()

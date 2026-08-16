@@ -51,6 +51,7 @@ class SolverAnalysisExecutor:
     """Run stress, force, and deformation analyses for the current solver configuration."""
 
     _PROGRESS_UNITS = 1000
+    _PLASTICITY_BLOCK_TARGET_BYTES = 64 * 1024 * 1024
 
     def __init__(
         self,
@@ -655,6 +656,61 @@ class SolverAnalysisExecutor:
             return apply_neuber_correction(stress_values, temperature_values, material_db, **kwargs)
         return apply_glinka_correction(stress_values, temperature_values, material_db, **kwargs)
 
+    def _correct_scalar_plasticity_matrix_in_place(
+        self,
+        values: np.ndarray,
+        temperatures: np.ndarray,
+        plasticity_ctx: dict,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Correct a combo-by-node matrix in bounded blocks and stream its envelopes."""
+        num_combos, num_nodes = values.shape
+        combos_per_block = max(
+            1,
+            self._PLASTICITY_BLOCK_TARGET_BYTES // max(1, num_nodes * 8 * 3),
+        )
+        maximum = np.empty(num_nodes)
+        minimum = np.empty(num_nodes)
+        argmax = np.zeros(num_nodes, dtype=np.intp)
+        argmin = np.zeros(num_nodes, dtype=np.intp)
+        strain_at_max = np.zeros(num_nodes)
+        node_indices = np.arange(num_nodes)
+
+        for start in range(0, num_combos, combos_per_block):
+            end = min(start + combos_per_block, num_combos)
+            temperature_block = np.broadcast_to(
+                temperatures,
+                (end - start, num_nodes),
+            ).reshape(-1)
+            corrected_flat, strain_flat = self._apply_scalar_plasticity(
+                values[start:end].reshape(-1),
+                temperature_block,
+                plasticity_ctx,
+            )
+            corrected = corrected_flat.reshape(end - start, num_nodes)
+            strain = strain_flat.reshape(end - start, num_nodes)
+            block_argmax = np.argmax(corrected, axis=0)
+            block_argmin = np.argmin(corrected, axis=0)
+            block_max = corrected[block_argmax, node_indices]
+            block_min = corrected[block_argmin, node_indices]
+            if start == 0:
+                update_max = np.ones(num_nodes, dtype=bool)
+                update_min = np.ones(num_nodes, dtype=bool)
+            else:
+                update_max = (block_max > maximum) | (
+                    np.isnan(block_max) & ~np.isnan(maximum)
+                )
+                update_min = (block_min < minimum) | (
+                    np.isnan(block_min) & ~np.isnan(minimum)
+                )
+            maximum[update_max] = block_max[update_max]
+            minimum[update_min] = block_min[update_min]
+            argmax[update_max] = start + block_argmax[update_max]
+            argmin[update_min] = start + block_argmin[update_min]
+            strain_at_max[update_max] = strain[block_argmax[update_max], node_indices[update_max]]
+            values[start:end] = corrected
+
+        return maximum, minimum, argmax, argmin, strain_at_max
+
     def _build_chunked_scalar_plasticity_transform(
         self,
         engine: StressCombinationEngine,
@@ -691,30 +747,26 @@ class SolverAnalysisExecutor:
         ) -> np.ndarray:
             chunk_slice = slice(chunk_start, chunk_end)
             elastic_chunk = np.asarray(chunk_results, dtype=np.float64)
-            chunk_size = elastic_chunk.shape[1]
-            num_combos = elastic_chunk.shape[0]
 
             state["elastic_max_over_combo"][chunk_slice] = np.max(elastic_chunk, axis=0)
             state["elastic_min_over_combo"][chunk_slice] = np.min(elastic_chunk, axis=0)
             state["elastic_combo_of_max"][chunk_slice] = np.argmax(elastic_chunk, axis=0)
             state["elastic_combo_of_min"][chunk_slice] = np.argmin(elastic_chunk, axis=0)
 
-            temp_chunk = temperatures[chunk_slice]
-            flat_stress = elastic_chunk.reshape(-1)
-            flat_temp = np.tile(temp_chunk, num_combos)
-            corrected_flat, strain_flat = self._apply_scalar_plasticity(
-                flat_stress,
-                flat_temp,
+            (
+                _corrected_max,
+                _corrected_min,
+                _corrected_argmax,
+                _corrected_argmin,
+                peak_strain,
+            ) = self._correct_scalar_plasticity_matrix_in_place(
+                elastic_chunk,
+                temperatures[chunk_slice],
                 plasticity_ctx,
             )
-            corrected_chunk = corrected_flat.reshape(elastic_chunk.shape)
-            strain_chunk = strain_flat.reshape(elastic_chunk.shape)
-
-            corrected_argmax = np.argmax(corrected_chunk, axis=0)
-            node_idx = np.arange(chunk_size)
-            state["plastic_strain_at_max"][chunk_slice] = strain_chunk[corrected_argmax, node_idx]
+            state["plastic_strain_at_max"][chunk_slice] = peak_strain
             state["chunks_processed"] += 1
-            return corrected_chunk
+            return elastic_chunk
 
         return _transform_chunk, state
 
@@ -781,27 +833,23 @@ class SolverAnalysisExecutor:
 
         if result.all_combo_results is not None:
             elastic_all = np.asarray(result.all_combo_results, dtype=np.float64)
-            num_combos, num_nodes = elastic_all.shape
             elastic_max = np.max(elastic_all, axis=0)
             elastic_min = np.min(elastic_all, axis=0)
             elastic_combo_of_max = np.argmax(elastic_all, axis=0)
             elastic_combo_of_min = np.argmin(elastic_all, axis=0)
 
-            flat_stress = elastic_all.reshape(-1)
-            flat_temp = np.tile(np.asarray(temperatures, dtype=np.float64), num_combos)
-            corrected_flat, strain_flat = self._apply_scalar_plasticity(flat_stress, flat_temp, plasticity_ctx)
-
-            corrected_all = corrected_flat.reshape(num_combos, num_nodes)
-            strain_all = strain_flat.reshape(num_combos, num_nodes)
-
-            result.all_combo_results = corrected_all
-            result.max_over_combo = np.max(corrected_all, axis=0)
-            result.min_over_combo = np.min(corrected_all, axis=0)
-            result.combo_of_max = np.argmax(corrected_all, axis=0)
-            result.combo_of_min = np.argmin(corrected_all, axis=0)
-
-            node_idx = np.arange(num_nodes)
-            peak_strain = strain_all[result.combo_of_max, node_idx]
+            (
+                result.max_over_combo,
+                result.min_over_combo,
+                result.combo_of_max,
+                result.combo_of_min,
+                peak_strain,
+            ) = self._correct_scalar_plasticity_matrix_in_place(
+                elastic_all,
+                np.asarray(temperatures, dtype=np.float64),
+                plasticity_ctx,
+            )
+            result.all_combo_results = elastic_all
 
             metadata["plasticity"] = {
                 "method": plasticity_ctx["method"],

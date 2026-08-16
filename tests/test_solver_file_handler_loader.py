@@ -1,6 +1,7 @@
 import pytest
 
-pytest.importorskip("PyQt5")
+pytest.importorskip("PyQt5.QtCore")
+pytest.importorskip("PyQt5.QtWidgets")
 
 from ui.handlers import file_handler
 from ui.handlers.file_handler import SolverFileHandler

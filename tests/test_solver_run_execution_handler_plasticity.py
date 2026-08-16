@@ -320,6 +320,67 @@ def test_run_stress_envelope_applies_plasticity_to_full_combination_matrix(monke
     np.testing.assert_array_equal(result.combo_of_max, np.argmax(result.all_combo_results, axis=0))
 
 
+def test_scalar_plasticity_matrix_blocks_and_preserves_first_ties(monkeypatch):
+    handler = SolverAnalysisExecutor(_FakeTab(), SolverEngineFactory())
+    handler._PLASTICITY_BLOCK_TARGET_BYTES = 3 * 8 * 3
+    values = np.array(
+        [[1.0, 4.0, 2.0], [1.0, 3.0, 5.0], [0.0, 4.0, 5.0]],
+        dtype=np.float64,
+    )
+    temperatures = np.array([10.0, 20.0, 30.0])
+    call_sizes = []
+
+    def fake_correction(stress, temperature, _context):
+        call_sizes.append(stress.size)
+        return stress.copy(), stress + temperature
+
+    monkeypatch.setattr(handler, "_apply_scalar_plasticity", fake_correction)
+    maximum, minimum, argmax, argmin, strain = (
+        handler._correct_scalar_plasticity_matrix_in_place(values, temperatures, {})
+    )
+
+    assert call_sizes == [3, 3, 3]
+    np.testing.assert_array_equal(maximum, [1.0, 4.0, 5.0])
+    np.testing.assert_array_equal(minimum, [0.0, 3.0, 2.0])
+    np.testing.assert_array_equal(argmax, [0, 0, 1])
+    np.testing.assert_array_equal(argmin, [2, 1, 0])
+    np.testing.assert_array_equal(strain, [11.0, 24.0, 35.0])
+
+
+def test_scalar_plasticity_matrix_preserves_first_nan_and_infinite_extrema(monkeypatch):
+    handler = SolverAnalysisExecutor(_FakeTab(), SolverEngineFactory())
+    handler._PLASTICITY_BLOCK_TARGET_BYTES = 4 * 8 * 3
+    values = np.array(
+        [
+            [1.0, -np.inf, np.inf, np.inf],
+            [np.nan, -np.inf, np.inf, 2.0],
+            [3.0, -np.inf, 2.0, np.nan],
+        ]
+    )
+    call_index = 0
+
+    def fake_correction(stress, _temperature, _context):
+        nonlocal call_index
+        strain = np.full(stress.size, 10.0 + call_index)
+        call_index += 1
+        return stress.copy(), strain
+
+    monkeypatch.setattr(handler, "_apply_scalar_plasticity", fake_correction)
+    maximum, minimum, argmax, argmin, strain = (
+        handler._correct_scalar_plasticity_matrix_in_place(
+            values,
+            np.zeros(values.shape[1]),
+            {},
+        )
+    )
+
+    np.testing.assert_equal(maximum, [np.nan, -np.inf, np.inf, np.nan])
+    np.testing.assert_equal(minimum, [np.nan, -np.inf, 2.0, np.nan])
+    np.testing.assert_array_equal(argmax, [1, 0, 0, 2])
+    np.testing.assert_array_equal(argmin, [1, 0, 2, 2])
+    np.testing.assert_array_equal(strain, [11.0, 10.0, 10.0, 12.0])
+
+
 def test_run_stress_non_von_mises_skips_plasticity(monkeypatch):
     tab = _FakeTab()
     handler = SolverAnalysisExecutor(tab, SolverEngineFactory())
