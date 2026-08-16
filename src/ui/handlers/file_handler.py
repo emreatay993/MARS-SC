@@ -22,7 +22,7 @@ from core.data_models import AnalysisData, CombinationResult
 class RSTLoaderThread(QThread):
     """Background thread for loading RST files without freezing the GUI."""
     
-    finished = pyqtSignal(object, str)  # Emits (AnalysisData, filename)
+    finished = pyqtSignal(object, str, object)  # Emits (AnalysisData, filename, reader)
     error = pyqtSignal(str)  # Emits error message
     
     def __init__(self, rst_path: str, skip_substeps: bool = False):
@@ -42,7 +42,7 @@ class RSTLoaderThread(QThread):
         try:
             reader = DPFAnalysisReader(self.rst_path)
             analysis_data = reader.get_analysis_data(skip_substeps=self.skip_substeps)
-            self.finished.emit(analysis_data, self.rst_path)
+            self.finished.emit(analysis_data, self.rst_path, reader)
         except DPFNotAvailableError as e:
             self.error.emit(f"DPF not available: {e}")
         except Exception as e:
@@ -124,7 +124,7 @@ class SolverFileHandler:
         
         if is_base:
             loader_thread.finished.connect(
-                lambda data, fname: self._on_base_rst_loaded(data, fname)
+                lambda data, fname, reader: self._on_base_rst_loaded(data, fname, reader)
             )
             loader_thread.error.connect(
                 lambda error: self._on_rst_load_error(error, "Base Analysis")
@@ -132,7 +132,7 @@ class SolverFileHandler:
             self._base_loader_thread = loader_thread
         else:
             loader_thread.finished.connect(
-                lambda data, fname: self._on_combine_rst_loaded(data, fname)
+                lambda data, fname, reader: self._on_combine_rst_loaded(data, fname, reader)
             )
             loader_thread.error.connect(
                 lambda error: self._on_rst_load_error(error, "Analysis to Combine")
@@ -141,36 +141,32 @@ class SolverFileHandler:
         
         loader_thread.start()
     
-    def _on_base_rst_loaded(self, analysis_data: AnalysisData, filename: str):
+    def _on_base_rst_loaded(
+        self,
+        analysis_data: AnalysisData,
+        filename: str,
+        reader: DPFAnalysisReader,
+    ):
         """Handle successful base RST file load."""
         self.tab.setEnabled(True)
         
-        # Store the DPF reader for later use
-        try:
-            self.base_reader = DPFAnalysisReader(filename)
-        except Exception as e:
-            QMessageBox.warning(
-                self.tab, "Reader Error",
-                f"Failed to create DPF reader: {e}"
-            )
-            return
+        # Reuse the loader's reader to avoid opening large RST files twice.
+        self.base_reader = reader
         
         # Notify the tab
         self.tab.on_base_rst_loaded(analysis_data, filename)
     
-    def _on_combine_rst_loaded(self, analysis_data: AnalysisData, filename: str):
+    def _on_combine_rst_loaded(
+        self,
+        analysis_data: AnalysisData,
+        filename: str,
+        reader: DPFAnalysisReader,
+    ):
         """Handle successful combine RST file load."""
         self.tab.setEnabled(True)
         
-        # Store the DPF reader for later use
-        try:
-            self.combine_reader = DPFAnalysisReader(filename)
-        except Exception as e:
-            QMessageBox.warning(
-                self.tab, "Reader Error",
-                f"Failed to create DPF reader: {e}"
-            )
-            return
+        # Reuse the loader's reader to avoid opening large RST files twice.
+        self.combine_reader = reader
         
         # Notify the tab
         self.tab.on_combine_rst_loaded(analysis_data, filename)
