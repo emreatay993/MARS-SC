@@ -36,7 +36,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--fixture-b", type=Path, default=DEFAULT_FIXTURE_B)
     parser.add_argument(
         "--mode",
-        choices=("timing", "memory", "correctness", "plasticity"),
+        choices=("timing", "memory", "correctness", "plasticity", "startup"),
         default="timing",
     )
     parser.add_argument("--combinations", type=int, default=1000)
@@ -184,6 +184,52 @@ def _plasticity_worker(args: argparse.Namespace, source_root: Path) -> int:
     return 0
 
 
+def _startup_worker(args: argparse.Namespace, source_root: Path) -> int:
+    import psutil
+    from ansys.dpf import core as dpf
+    from file_io.dpf_reader import DPFAnalysisReader
+
+    fixtures = (args.fixture_a.resolve(), args.fixture_b.resolve())
+    for fixture in fixtures:
+        if not fixture.is_file():
+            raise FileNotFoundError(fixture)
+
+    rss_before = _process_tree_rss(psutil.Process())
+    started = time.perf_counter()
+    analyses = [
+        DPFAnalysisReader(str(fixture)).get_analysis_data(skip_substeps=False)
+        for fixture in fixtures
+    ]
+    elapsed = time.perf_counter() - started
+    rss_after = _process_tree_rss(psutil.Process())
+    payload = {
+        "source_root": str(source_root),
+        "mode": args.mode,
+        "timings": {"metadata_load_s": elapsed, "total_s": elapsed},
+        "process_tree_rss_delta_bytes": max(0, rss_after - rss_before),
+        "sets": [analysis.num_load_steps for analysis in analyses],
+        "units": [
+            {
+                "stress": analysis.stress_unit,
+                "force": analysis.force_unit,
+                "deformation": analysis.displacement_unit,
+            }
+            for analysis in analyses
+        ],
+        "environment": {
+            "python": platform.python_version(),
+            "dpf": dpf.__version__,
+            "psutil": psutil.__version__,
+        },
+        "fixtures": [
+            {"path": str(path), "size": path.stat().st_size, "mtime_ns": path.stat().st_mtime_ns}
+            for path in fixtures
+        ],
+    }
+    print(json.dumps(payload, separators=(",", ":")))
+    return 0
+
+
 def _force_reference_inputs(engine, table):
     import numpy as np
 
@@ -220,6 +266,8 @@ def _worker(args: argparse.Namespace) -> int:
 
     if args.mode == "plasticity":
         return _plasticity_worker(args, source_root)
+    if args.mode == "startup":
+        return _startup_worker(args, source_root)
 
     import numpy as np
     import pandas as pd
@@ -255,6 +303,13 @@ def _worker(args: argparse.Namespace) -> int:
         args.max_sets,
     )
     timings = {"metadata_load_s": time.perf_counter() - stage_started}
+
+    stage_started = time.perf_counter()
+    for reader in (reader_a, reader_b):
+        prepare_forces = getattr(reader, "prepare_nodal_forces_for_solve", None)
+        if prepare_forces is not None:
+            prepare_forces()
+    timings["force_prepare_s"] = time.perf_counter() - stage_started
 
     stress_engine = StressCombinationEngine(reader_a, reader_b, scoping, table)
     stage_started = time.perf_counter()
@@ -608,7 +663,7 @@ def _compare_contracts(left: dict, right: dict):
 
 def _summary(trials):
     totals = [trial["timings"]["total_s"] for trial in trials]
-    return {
+    summary = {
         "trials": len(trials),
         "median_total_s": statistics.median(totals),
         "min_total_s": min(totals),
@@ -618,6 +673,11 @@ def _summary(trials):
             for key in trials[0]["timings"]
         },
     }
+    if all("process_tree_rss_delta_bytes" in trial for trial in trials):
+        summary["median_process_tree_rss_delta_bytes"] = statistics.median(
+            trial["process_tree_rss_delta_bytes"] for trial in trials
+        )
+    return summary
 
 
 def _controller(args: argparse.Namespace) -> int:
@@ -669,7 +729,7 @@ def _controller(args: argparse.Namespace) -> int:
                 and evidence["result_contract"]["passed"]
                 and evidence["force_reference"]["passed"]
             )
-    elif args.mode == "timing":
+    elif args.mode in ("timing", "startup"):
         _run_timing(args, args.baseline_root)
         _run_timing(args, args.candidate_root)
         baseline_trials = []

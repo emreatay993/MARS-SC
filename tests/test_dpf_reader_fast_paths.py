@@ -38,6 +38,7 @@ def _reader_with_results(*results):
     reader._nodal_forces_available = None
     reader._displacement_available = None
     reader._force_unit = None
+    reader._nodal_force_read_sequence_prepared = False
     return reader
 
 
@@ -90,6 +91,7 @@ def test_units_and_availability_are_cached():
         reader.model.results.element_nodal_forces.call_count,
         reader.model.results.displacement.call_count,
     )
+    assert call_counts == (0, 0, 0)
 
     reader.model.metadata.result_info.available_results = []
     assert reader.stress_unit == "MPa"
@@ -101,6 +103,33 @@ def test_units_and_availability_are_cached():
         reader.model.results.element_nodal_forces.call_count,
         reader.model.results.displacement.call_count,
     )
+
+
+def test_force_prepare_replays_legacy_probe_order_once():
+    stress = SimpleNamespace(name="stress", unit="MPa")
+    force = SimpleNamespace(name="element_nodal_forces", unit="N")
+    displacement = SimpleNamespace(name="displacement", unit="mm")
+    reader = _reader_with_results(stress, force, displacement)
+
+    events = []
+    stress_factory = reader.model.results.stress.side_effect
+    force_factory = reader.model.results.element_nodal_forces.side_effect
+    displacement_factory = reader.model.results.displacement.side_effect
+    reader.model.results.stress.side_effect = lambda: (
+        events.append("stress"), stress_factory()
+    )[1]
+    reader.model.results.element_nodal_forces.side_effect = lambda: (
+        events.append("force"), force_factory()
+    )[1]
+    reader.model.results.displacement.side_effect = lambda: (
+        events.append("displacement"), displacement_factory()
+    )[1]
+
+    reader.prepare_nodal_forces_for_solve()
+    reader.prepare_nodal_forces_for_solve()
+
+    assert events == ["force", "displacement", "stress", "force"]
+    assert reader._nodal_force_read_sequence_prepared is True
 
 
 def test_force_validation_preserves_dpf_read_sequence_but_displacement_preflight_is_cached():

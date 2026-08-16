@@ -13,7 +13,30 @@ All acceptance gates passed:
 - Stage guard: no median phase regressed by more than 5%.
 - Correctness: all 25 raw baseline/candidate arrays passed in the final run; node IDs and governing indices were exact, floats passed `rtol=1e-12`, `atol=1e-12`, `equal_nan=True`, and the independent same-input legacy force reference passed.
 - Result contract: combination names/types, units, expected CSV row counts, and exact CSV column order matched.
-- Regression suite: 215 passed, 11 existing optional real-RST tests skipped, zero failures or collection errors.
+- Regression suite: 216 passed, 11 existing optional real-RST tests skipped, zero failures or collection errors.
+
+## Follow-up: metadata-only RST startup
+
+Initial file discovery now uses `result_info.available_results` for result availability
+and units instead of evaluating unscoped first-set stress, ENF, and displacement fields.
+One warm-up per root followed by three ABBA blocks produced six fresh-process trials
+per root while loading both locked RST files:
+
+| Startup metric | Baseline | Candidate | Change |
+|---|---:|---:|---:|
+| Median two-RST load | 1.869 s | 0.167 s | **11.21x faster** |
+| Median post-load process-tree RSS increment | 113,625,088 B | 79,067,136 B | **33.0 MiB lower** |
+
+Set counts and stress/force/displacement units remained exact on SYS-1 and SYS-29.
+When nodal forces are selected, MARS-SC replays the historical DPF probe order once
+at solve preparation because DPF 0.10.1 ENF reduction is cancellation-sensitive.
+The full 401-set, 1,000-combination correctness rerun passed all 25 arrays, result/CSV
+contracts, the raw force diagnostic, and the same-input legacy force reference.
+
+Further cost checks did not justify more code. DPF's scoped-mesh coordinate operator
+took about 1.67 s on SYS-1 versus less than 1 ms for the existing cached/vectorized
+coordinate path, so it was rejected. The duplicated ENF validation/preload sequence
+also remains unchanged because altering it previously changed the sensitive node-1 result.
 
 ## Locked workload
 
@@ -100,4 +123,6 @@ Numba was confirmed active. The first call includes compilation; warm medians us
 - `evidence/mars_sc_memory.json`: all RSS trials and sample counts.
 - `evidence/mars_sc_correctness.json`: per-array comparison results.
 - `evidence/mars_sc_plasticity.json`: first-call and warmed Numba trials.
+- `evidence/mars_sc_startup.json`: six-trial-per-root ABBA startup timing/RSS evidence.
+- `evidence/mars_sc_startup_correctness.json`: full post-change correctness rerun.
 - `scripts/benchmark_mars_sc.py`: reproducible controller/worker benchmark.

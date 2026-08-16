@@ -60,6 +60,11 @@ Because exact force values are locked above, those paths retain their legacy ord
 vectorized coordinates, cached displacement preflight, final packed numerical caches,
 and the calculation/export optimizations remain enabled.
 
+Post-acceptance follow-up: initial file discovery is metadata-only. If nodal forces are
+selected, the legacy unscoped probe order is replayed once immediately before analysis
+execution, preserving the force contract while avoiding those reads for users who do
+not request forces.
+
 ### T04 Packed Numerical Engines
 
 - Add `CombinationTableData.get_active_step_matrix()` returning ordered `(analysis, set)` keys and a contiguous `float64` coefficient matrix.

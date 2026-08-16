@@ -156,6 +156,7 @@ class DPFAnalysisReader:
         self._nodal_forces_available = None
         self._displacement_available = None
         self._force_unit = None
+        self._nodal_force_read_sequence_prepared = False
         self._mesh_node_ids = None
         self._mesh_coordinates_mm = None
         self.cdb_named_selection_reader = None
@@ -194,27 +195,38 @@ class DPFAnalysisReader:
     @property
     def stress_unit(self) -> str:
         """
-        Get the stress unit from the RST file by reading a sample stress field.
+        Get the stress unit from RST metadata, with a field-read fallback.
         
         Returns:
             String describing the stress unit (e.g., "Pa", "psi").
         """
         if self._stress_unit is None:
             try:
-                stress_op = self.model.results.stress()
-                time_scoping = dpf.Scoping()
-                time_scoping.ids = [1]
-                stress_op.inputs.time_scoping.connect(time_scoping)
-                stress_op.inputs.requested_location.connect(dpf.locations.nodal)
-                
-                fields_container = stress_op.outputs.fields_container()
-                if fields_container and len(fields_container) > 0:
-                    self._stress_unit = fields_container[0].unit or "Pa"
-                else:
-                    self._stress_unit = "Pa"
+                result = self._find_available_result(
+                    self.model.metadata.result_info.available_results,
+                    string_token="stress",
+                    name_token="stress",
+                    name_exact=True,
+                )
             except Exception:
-                self._stress_unit = "Pa"  # Default to Pa
+                result = None
+            self._stress_unit = getattr(result, "unit", None) or self._read_stress_unit_field()
         return self._stress_unit
+
+    def _read_stress_unit_field(self) -> str:
+        """Read one unscoped stress field when result metadata lacks a unit."""
+        try:
+            stress_op = self.model.results.stress()
+            time_scoping = dpf.Scoping()
+            time_scoping.ids = [1]
+            stress_op.inputs.time_scoping.connect(time_scoping)
+            stress_op.inputs.requested_location.connect(dpf.locations.nodal)
+            fields_container = stress_op.outputs.fields_container()
+            if fields_container and len(fields_container) > 0:
+                return fields_container[0].unit or "Pa"
+        except Exception:
+            pass
+        return "Pa"
     
     @property
     def stress_conversion_factor(self) -> float:
@@ -1599,7 +1611,7 @@ class DPFAnalysisReader:
     
     def check_nodal_forces_available(self) -> bool:
         """
-        Check if nodal forces (element nodal forces) are available in the RST file.
+        Check RST metadata for nodal forces (element nodal forces).
 
         Returns:
             True if nodal forces are available, False otherwise.
@@ -1608,46 +1620,44 @@ class DPFAnalysisReader:
             return self._nodal_forces_available
 
         try:
-            result_info = self.model.metadata.result_info
-            available = result_info.available_results
-            if not self._available_result_has_entry(
-                available_results=available,
+            self._nodal_forces_available = self._available_result_has_entry(
+                available_results=self.model.metadata.result_info.available_results,
                 string_token="element_nodal_forces",
                 name_token="enf",
                 name_exact=False,
-            ):
-                self._nodal_forces_available = False
-                return False
-
-            load_step_ids = self.get_load_step_ids()
-            if not load_step_ids:
-                self._nodal_forces_available = False
-                return False
-
-            for rotate_to_global in (True, False):
-                try:
-                    nforce_op = self.model.results.element_nodal_forces()
-                    time_scoping = dpf.Scoping()
-                    time_scoping.ids = [load_step_ids[0]]
-                    nforce_op.inputs.time_scoping.connect(time_scoping)
-                    nforce_op.inputs.bool_rotate_to_global.connect(rotate_to_global)
-                    fields_container = nforce_op.outputs.fields_container()
-                    if fields_container and len(fields_container) > 0:
-                        field = fields_container[0]
-                        if field.data is not None and len(field.data) > 0:
-                            self._nodal_forces_available = True
-                            return True
-                except Exception:
-                    continue
-            self._nodal_forces_available = False
-            return False
+            )
         except Exception:
             self._nodal_forces_available = False
+        return self._nodal_forces_available
+
+    def _read_nodal_forces_availability_field(self) -> bool:
+        """Validate ENF by evaluating the first result set in legacy order."""
+        if not self.check_nodal_forces_available():
             return False
+
+        load_step_ids = self.get_load_step_ids()
+        if not load_step_ids:
+            return False
+
+        for rotate_to_global in (True, False):
+            try:
+                nforce_op = self.model.results.element_nodal_forces()
+                time_scoping = dpf.Scoping()
+                time_scoping.ids = [load_step_ids[0]]
+                nforce_op.inputs.time_scoping.connect(time_scoping)
+                nforce_op.inputs.bool_rotate_to_global.connect(rotate_to_global)
+                fields_container = nforce_op.outputs.fields_container()
+                if fields_container and len(fields_container) > 0:
+                    field = fields_container[0]
+                    if field.data is not None and len(field.data) > 0:
+                        return True
+            except Exception:
+                continue
+        return False
     
     def get_force_unit(self) -> str:
         """
-        Get the force unit from the RST file by reading a sample force field.
+        Get the force unit from RST metadata, with a field-read fallback.
         
         Returns:
             String describing the force unit (e.g., "N").
@@ -1656,28 +1666,50 @@ class DPFAnalysisReader:
             return self._force_unit
 
         try:
+            result = self._find_available_result(
+                self.model.metadata.result_info.available_results,
+                string_token="element_nodal_forces",
+                name_token="enf",
+                name_exact=False,
+            )
+        except Exception:
+            result = None
+        self._force_unit = getattr(result, "unit", None) or self._read_force_unit_field()
+        return self._force_unit
+
+    def _read_force_unit_field(self) -> str:
+        """Read one unscoped ENF field when result metadata lacks a unit."""
+        try:
             nforce_op = self.model.results.element_nodal_forces()
-            
-            # Use first available load step
             load_step_ids = self.get_load_step_ids()
             if not load_step_ids:
-                self._force_unit = "N"
                 return "N"
-            
+
             time_scoping = dpf.Scoping()
             time_scoping.ids = [load_step_ids[0]]
             nforce_op.inputs.time_scoping.connect(time_scoping)
-            # NOTE: Do NOT connect requested_location - let DPF use defaults
-            
             fields_container = nforce_op.outputs.fields_container()
             if fields_container and len(fields_container) > 0:
-                self._force_unit = fields_container[0].unit or "N"
-                return self._force_unit
-            self._force_unit = "N"
-            return "N"
+                return fields_container[0].unit or "N"
         except Exception:
-            self._force_unit = "N"
-            return "N"
+            pass
+        return "N"
+
+    def prepare_nodal_forces_for_solve(self) -> None:
+        """Replay legacy DPF probes only when a solve requests nodal forces."""
+        if getattr(self, "_nodal_force_read_sequence_prepared", False):
+            return
+
+        # DPF 0.10.1 ENF averaging is reduction-order sensitive at near-zero
+        # residuals. Preserve the historical probe order before force solves.
+        self._nodal_forces_available = self._read_nodal_forces_availability_field()
+        if self.check_displacement_available():
+            self._displacement_available = self._read_displacement_availability_field()
+        self._stress_unit = self._read_stress_unit_field()
+        self._stress_conversion_factor = get_stress_unit_conversion_factor(self._stress_unit)
+        if self._nodal_forces_available:
+            self._force_unit = self._read_force_unit_field()
+        self._nodal_force_read_sequence_prepared = True
     
     def read_nodal_forces_for_loadstep(
         self, 
@@ -1941,7 +1973,7 @@ class DPFAnalysisReader:
     
     def check_displacement_available(self) -> bool:
         """
-        Check if displacement results are available in the RST file.
+        Check RST metadata for displacement results.
         
         Returns:
             True if displacement results are available, False otherwise.
@@ -1950,38 +1982,36 @@ class DPFAnalysisReader:
             return self._displacement_available
 
         try:
-            result_info = self.model.metadata.result_info
-            available = result_info.available_results
-            has_displacement = self._available_result_has_entry(
-                available_results=available,
+            self._displacement_available = self._available_result_has_entry(
+                available_results=self.model.metadata.result_info.available_results,
                 string_token="displacement",
                 name_token="u",
                 name_exact=True,
             )
-            if not has_displacement:
-                self._displacement_available = False
-                return False
+        except Exception:
+            self._displacement_available = False
+        return self._displacement_available
 
-            load_step_ids = self.get_load_step_ids()
-            if not load_step_ids:
-                self._displacement_available = False
-                return False
+    def _read_displacement_availability_field(self) -> bool:
+        """Validate displacement by evaluating the first result set."""
+        load_step_ids = self.get_load_step_ids()
+        if not load_step_ids:
+            return False
 
+        try:
             disp_op = self.model.results.displacement()
             time_scoping = dpf.Scoping()
             time_scoping.ids = [load_step_ids[0]]
             disp_op.inputs.time_scoping.connect(time_scoping)
             fields_container = disp_op.outputs.fields_container()
-            self._displacement_available = bool(
+            return bool(
                 fields_container
                 and len(fields_container) > 0
                 and fields_container[0].data is not None
                 and len(fields_container[0].data) > 0
             )
-            return self._displacement_available
         except Exception:
-            self._displacement_available = False
-            return self._displacement_available
+            return False
     
     def get_displacement_unit(self) -> str:
         """

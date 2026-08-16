@@ -88,7 +88,7 @@
   },
   "tests": {
     "command": "venv\\Scripts\\python.exe -m pytest -q",
-    "passed": 215,
+    "passed": 216,
     "skipped": 11,
     "failed": 0,
     "collection_errors": 0,
@@ -106,6 +106,8 @@
     "mars_sc_timing.json": "sha256:23f7cbe8281b8f6f1d881cb4c2387eb33e9837765a0edbf99faa2e5ef4e11b8d",
     "mars_sc_memory.json": "sha256:937701280436c0b13c457f4ee9781dde00c8d401c9f344d4e2d2ca00fab844bd",
     "mars_sc_correctness.json": "sha256:1f821fe89c9ab21a7abdd5368e4be360b8558cb868133f1c25e55c8f64e66ead",
-    "mars_sc_plasticity.json": "sha256:4190b811266035b8d09ef59890851933fcfa030351bf1afab0ca31274b039505"
+    "mars_sc_plasticity.json": "sha256:4190b811266035b8d09ef59890851933fcfa030351bf1afab0ca31274b039505",
+    "mars_sc_startup.json": "sha256:3f2089ec53e1762bca7ed1eecc3048029d966934e85697d5aa096eec8ef86d6f",
+    "mars_sc_startup_correctness.json": "sha256:fa0a92cd4953658a809b61740c096b1b914760e3ef993d128447b98a9efde80a"
   }
 }

@@ -66,20 +66,29 @@ class _FakeLifecycle:
 
 
 class _FakeExecutor:
+    def __init__(self):
+        self.calls = []
+
+    def prepare_nodal_forces_for_solve(self):
+        self.calls.append("prepare_forces")
+
     def run_stress_analysis(self, config, stress_type, progress_callback):
         _ = (config, stress_type)
+        self.calls.append("stress")
         progress_callback(0, 100, "starting")
         progress_callback(100, 100, "done")
         return {"stress": True}
 
     def run_nodal_forces_analysis(self, config, progress_callback):
         _ = config
+        self.calls.append("forces")
         progress_callback(0, 100, "starting")
         progress_callback(100, 100, "done")
         return {"forces": True}
 
     def run_deformation_analysis(self, config, progress_callback):
         _ = config
+        self.calls.append("deformation")
         progress_callback(0, 100, "starting")
         progress_callback(100, 100, "done")
         return {"deformation": True}
@@ -93,7 +102,8 @@ def test_solve_run_controller_uses_global_monotonic_stage_progress():
     controller.input_validator = _FakeValidator()
     lifecycle = _FakeLifecycle()
     controller.lifecycle_handler = lifecycle
-    controller.execution_handler = _FakeExecutor()
+    executor = _FakeExecutor()
+    controller.execution_handler = executor
 
     config = SolverConfig(
         calculate_von_mises=True,
@@ -105,6 +115,7 @@ def test_solve_run_controller_uses_global_monotonic_stage_progress():
     assert lifecycle.begin_calls == 1
     assert lifecycle.completed is True
     assert lifecycle.finished_without_results is False
+    assert executor.calls == ["prepare_forces", "stress", "forces", "deformation"]
 
     percents = [
         int((current / total) * 100)

@@ -66,6 +66,10 @@ class SolveRunController:
         deformation_result = None
 
         try:
+            if config.calculate_nodal_forces:
+                self.lifecycle_handler.announce_stage("\nPreparing nodal force readers...\n")
+                self.execution_handler.prepare_nodal_forces_for_solve()
+
             if stress_type is not None:
                 try:
                     stress_progress = (

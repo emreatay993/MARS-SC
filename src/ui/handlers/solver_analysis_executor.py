@@ -67,6 +67,16 @@ class SolverAnalysisExecutor:
         self._nodal_forces_engine: Optional[NodalForcesCombinationEngine] = None
         self._deformation_engine: Optional[DeformationCombinationEngine] = None
 
+    def prepare_nodal_forces_for_solve(self) -> None:
+        """Preserve the DPF force-reader sequence before any selected analysis runs."""
+        for reader in (
+            self.tab.file_handler.base_reader,
+            self.tab.file_handler.combine_reader,
+        ):
+            prepare = getattr(reader, "prepare_nodal_forces_for_solve", None)
+            if prepare is not None:
+                prepare()
+
     def run_stress_analysis(
         self,
         config: SolverConfig,
@@ -261,6 +271,7 @@ class SolverAnalysisExecutor:
         progress_callback: Callable[[int, int, str], None],
     ) -> NodalForcesResult:
         """Run nodal-forces combination analysis with envelope or single-node history mode."""
+        self.prepare_nodal_forces_for_solve()
         engine = self._create_nodal_forces_engine(config)
         self._nodal_forces_engine = engine
 

@@ -14,6 +14,7 @@ Unrelated preserved path: `docs/cdb_import_ui_mockups.html`
 | T06 Plasticity | root | T04 | complete | `requirements.txt`, plasticity/executor code and tests | compiled/fallback equivalence; first/warm timing | Numba 0.66.0/llvmlite 0.48.0 pinned and installed; executor corrects in 64 MiB combo blocks without full temperature/strain matrices and preserves first NaN/Inf governing behavior; 40 focused tests pass; 2,105,600-entry first/warm timings: Neuber 3.546/0.124 s, Glinka 3.009/0.136 s |
 | T07 Acceptance evidence | root | T02-T06 | complete | performance evidence/report; measured contingency only | full tests, real-RST comparison, >=1.50x gate, lower RSS | 215 passed/11 skipped; all 25 raw arrays, result/CSV contracts, and same-input legacy force reference pass; 124.016 s to 58.979 s median (2.103x); median peak RSS 1,401,552,896 to 1,332,027,392 bytes (66.3 MiB saved) |
 | T08 Independent review | read-only reviewer | T07 | complete | none | no unresolved correctness/evidence/claim findings | independent recheck confirmed 215 passed/11 skipped, raw hashes and arithmetic, NaN/Inf semantics, result contracts, DPF exception, and acceptance claims; no blocking findings remain |
+| T09 Metadata-only RST startup | root | T08 | complete | DPF reader, solve orchestration, benchmark/tests, performance evidence | metadata-only load speed/RSS; locked real-RST equivalence | two-RST median 1.869 s to 0.167 s (11.21x), 33.0 MiB lower post-load RSS increment; all 25 arrays, contracts, force references, and 216-test suite pass |
 
 ## Re-entry Checklist
 
