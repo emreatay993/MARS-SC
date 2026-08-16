@@ -1,0 +1,381 @@
+{
+  "mode": "startup",
+  "seed": 20260816,
+  "trial_order": [
+    "baseline",
+    "candidate",
+    "candidate",
+    "baseline",
+    "baseline",
+    "candidate",
+    "candidate",
+    "baseline"
+  ],
+  "trials": {
+    "baseline": [
+      {
+        "source_root": "C:\\Users\\emre_\\AppData\\Local\\Temp\\mars_sc_baseline_9f2ca01",
+        "mode": "startup",
+        "timings": {
+          "metadata_load_s": 2.0229472999926656,
+          "total_s": 2.0229472999926656
+        },
+        "process_tree_rss_delta_bytes": 114397184,
+        "sets": [
+          200,
+          2001
+        ],
+        "units": [
+          {
+            "stress": "MPa",
+            "force": "N",
+            "deformation": "mm"
+          },
+          {
+            "stress": "MPa",
+            "force": "N",
+            "deformation": "mm"
+          }
+        ],
+        "environment": {
+          "python": "3.11.6",
+          "dpf": "0.10.1",
+          "psutil": "7.2.1"
+        },
+        "fixtures": [
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-1\\MECH\\file.rst",
+            "size": 449249280,
+            "mtime_ns": 1761611087645773000
+          },
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-30\\MECH\\file.rst",
+            "size": 5104992256,
+            "mtime_ns": 1761657863793754500
+          }
+        ]
+      },
+      {
+        "source_root": "C:\\Users\\emre_\\AppData\\Local\\Temp\\mars_sc_baseline_9f2ca01",
+        "mode": "startup",
+        "timings": {
+          "metadata_load_s": 1.9983012999873608,
+          "total_s": 1.9983012999873608
+        },
+        "process_tree_rss_delta_bytes": 113238016,
+        "sets": [
+          200,
+          2001
+        ],
+        "units": [
+          {
+            "stress": "MPa",
+            "force": "N",
+            "deformation": "mm"
+          },
+          {
+            "stress": "MPa",
+            "force": "N",
+            "deformation": "mm"
+          }
+        ],
+        "environment": {
+          "python": "3.11.6",
+          "dpf": "0.10.1",
+          "psutil": "7.2.1"
+        },
+        "fixtures": [
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-1\\MECH\\file.rst",
+            "size": 449249280,
+            "mtime_ns": 1761611087645773000
+          },
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-30\\MECH\\file.rst",
+            "size": 5104992256,
+            "mtime_ns": 1761657863793754500
+          }
+        ]
+      },
+      {
+        "source_root": "C:\\Users\\emre_\\AppData\\Local\\Temp\\mars_sc_baseline_9f2ca01",
+        "mode": "startup",
+        "timings": {
+          "metadata_load_s": 2.0289975999621674,
+          "total_s": 2.0289975999621674
+        },
+        "process_tree_rss_delta_bytes": 114491392,
+        "sets": [
+          200,
+          2001
+        ],
+        "units": [
+          {
+            "stress": "MPa",
+            "force": "N",
+            "deformation": "mm"
+          },
+          {
+            "stress": "MPa",
+            "force": "N",
+            "deformation": "mm"
+          }
+        ],
+        "environment": {
+          "python": "3.11.6",
+          "dpf": "0.10.1",
+          "psutil": "7.2.1"
+        },
+        "fixtures": [
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-1\\MECH\\file.rst",
+            "size": 449249280,
+            "mtime_ns": 1761611087645773000
+          },
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-30\\MECH\\file.rst",
+            "size": 5104992256,
+            "mtime_ns": 1761657863793754500
+          }
+        ]
+      },
+      {
+        "source_root": "C:\\Users\\emre_\\AppData\\Local\\Temp\\mars_sc_baseline_9f2ca01",
+        "mode": "startup",
+        "timings": {
+          "metadata_load_s": 2.0310767000191845,
+          "total_s": 2.0310767000191845
+        },
+        "process_tree_rss_delta_bytes": 114003968,
+        "sets": [
+          200,
+          2001
+        ],
+        "units": [
+          {
+            "stress": "MPa",
+            "force": "N",
+            "deformation": "mm"
+          },
+          {
+            "stress": "MPa",
+            "force": "N",
+            "deformation": "mm"
+          }
+        ],
+        "environment": {
+          "python": "3.11.6",
+          "dpf": "0.10.1",
+          "psutil": "7.2.1"
+        },
+        "fixtures": [
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-1\\MECH\\file.rst",
+            "size": 449249280,
+            "mtime_ns": 1761611087645773000
+          },
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-30\\MECH\\file.rst",
+            "size": 5104992256,
+            "mtime_ns": 1761657863793754500
+          }
+        ]
+      }
+    ],
+    "candidate": [
+      {
+        "source_root": "C:\\Users\\emre_\\PycharmProjects\\Solution_Combination_ANSYS",
+        "mode": "startup",
+        "timings": {
+          "metadata_load_s": 0.3798293999861926,
+          "total_s": 0.3798293999861926
+        },
+        "process_tree_rss_delta_bytes": 97873920,
+        "sets": [
+          200,
+          2001
+        ],
+        "units": [
+          {
+            "stress": "MPa",
+            "force": "N",
+            "deformation": "mm"
+          },
+          {
+            "stress": "MPa",
+            "force": "N",
+            "deformation": "mm"
+          }
+        ],
+        "environment": {
+          "python": "3.11.6",
+          "dpf": "0.10.1",
+          "psutil": "7.2.1"
+        },
+        "fixtures": [
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-1\\MECH\\file.rst",
+            "size": 449249280,
+            "mtime_ns": 1761611087645773000
+          },
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-30\\MECH\\file.rst",
+            "size": 5104992256,
+            "mtime_ns": 1761657863793754500
+          }
+        ]
+      },
+      {
+        "source_root": "C:\\Users\\emre_\\PycharmProjects\\Solution_Combination_ANSYS",
+        "mode": "startup",
+        "timings": {
+          "metadata_load_s": 0.38261480000801384,
+          "total_s": 0.38261480000801384
+        },
+        "process_tree_rss_delta_bytes": 96792576,
+        "sets": [
+          200,
+          2001
+        ],
+        "units": [
+          {
+            "stress": "MPa",
+            "force": "N",
+            "deformation": "mm"
+          },
+          {
+            "stress": "MPa",
+            "force": "N",
+            "deformation": "mm"
+          }
+        ],
+        "environment": {
+          "python": "3.11.6",
+          "dpf": "0.10.1",
+          "psutil": "7.2.1"
+        },
+        "fixtures": [
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-1\\MECH\\file.rst",
+            "size": 449249280,
+            "mtime_ns": 1761611087645773000
+          },
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-30\\MECH\\file.rst",
+            "size": 5104992256,
+            "mtime_ns": 1761657863793754500
+          }
+        ]
+      },
+      {
+        "source_root": "C:\\Users\\emre_\\PycharmProjects\\Solution_Combination_ANSYS",
+        "mode": "startup",
+        "timings": {
+          "metadata_load_s": 0.410909200028982,
+          "total_s": 0.410909200028982
+        },
+        "process_tree_rss_delta_bytes": 101822464,
+        "sets": [
+          200,
+          2001
+        ],
+        "units": [
+          {
+            "stress": "MPa",
+            "force": "N",
+            "deformation": "mm"
+          },
+          {
+            "stress": "MPa",
+            "force": "N",
+            "deformation": "mm"
+          }
+        ],
+        "environment": {
+          "python": "3.11.6",
+          "dpf": "0.10.1",
+          "psutil": "7.2.1"
+        },
+        "fixtures": [
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-1\\MECH\\file.rst",
+            "size": 449249280,
+            "mtime_ns": 1761611087645773000
+          },
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-30\\MECH\\file.rst",
+            "size": 5104992256,
+            "mtime_ns": 1761657863793754500
+          }
+        ]
+      },
+      {
+        "source_root": "C:\\Users\\emre_\\PycharmProjects\\Solution_Combination_ANSYS",
+        "mode": "startup",
+        "timings": {
+          "metadata_load_s": 0.3838027000310831,
+          "total_s": 0.3838027000310831
+        },
+        "process_tree_rss_delta_bytes": 96432128,
+        "sets": [
+          200,
+          2001
+        ],
+        "units": [
+          {
+            "stress": "MPa",
+            "force": "N",
+            "deformation": "mm"
+          },
+          {
+            "stress": "MPa",
+            "force": "N",
+            "deformation": "mm"
+          }
+        ],
+        "environment": {
+          "python": "3.11.6",
+          "dpf": "0.10.1",
+          "psutil": "7.2.1"
+        },
+        "fixtures": [
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-1\\MECH\\file.rst",
+            "size": 449249280,
+            "mtime_ns": 1761611087645773000
+          },
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-30\\MECH\\file.rst",
+            "size": 5104992256,
+            "mtime_ns": 1761657863793754500
+          }
+        ]
+      }
+    ]
+  },
+  "summary": {
+    "baseline": {
+      "trials": 4,
+      "median_total_s": 2.0259724499774165,
+      "min_total_s": 1.9983012999873608,
+      "max_total_s": 2.0310767000191845,
+      "stage_medians_s": {
+        "metadata_load_s": 2.0259724499774165,
+        "total_s": 2.0259724499774165
+      },
+      "median_process_tree_rss_delta_bytes": 114200576.0
+    },
+    "candidate": {
+      "trials": 4,
+      "median_total_s": 0.38320875001954846,
+      "min_total_s": 0.3798293999861926,
+      "max_total_s": 0.410909200028982,
+      "stage_medians_s": {
+        "metadata_load_s": 0.38320875001954846,
+        "total_s": 0.38320875001954846
+      },
+      "median_process_tree_rss_delta_bytes": 97333248.0
+    },
+    "speedup": 5.28686375213005
+  }
+}

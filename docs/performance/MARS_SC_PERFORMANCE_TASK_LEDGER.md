@@ -15,6 +15,7 @@ Unrelated preserved path: `docs/cdb_import_ui_mockups.html`
 | T07 Acceptance evidence | root | T02-T06 | complete | performance evidence/report; measured contingency only | full tests, real-RST comparison, >=1.50x gate, lower RSS | 215 passed/11 skipped; all 25 raw arrays, result/CSV contracts, and same-input legacy force reference pass; 124.016 s to 58.979 s median (2.103x); median peak RSS 1,401,552,896 to 1,332,027,392 bytes (66.3 MiB saved) |
 | T08 Independent review | read-only reviewer | T07 | complete | none | no unresolved correctness/evidence/claim findings | independent recheck confirmed 215 passed/11 skipped, raw hashes and arithmetic, NaN/Inf semantics, result contracts, DPF exception, and acceptance claims; no blocking findings remain |
 | T09 Metadata-only RST startup | root | T08 | complete | DPF reader, solve orchestration, benchmark/tests, performance evidence | metadata-only load speed/RSS; locked real-RST equivalence | two-RST median 1.869 s to 0.167 s (11.21x), 33.0 MiB lower post-load RSS increment; all 25 arrays, contracts, force references, and 216-test suite pass |
+| T10 Large-RST confirmation | root | T09 | complete | performance evidence/report only | reduced-sampling baseline/candidate timing, RSS, and correctness on static SYS-30 | 5.105 GB/2,001-set SYS-30: startup 5.29x, reduced workflow 1.22x, RSS effectively flat; contracts and same-input force reference pass |
 
 ## Re-entry Checklist
 

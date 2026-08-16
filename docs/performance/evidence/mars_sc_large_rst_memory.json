@@ -1,0 +1,224 @@
+{
+  "mode": "memory",
+  "seed": 20260816,
+  "trial_order": [
+    "baseline",
+    "candidate",
+    "baseline",
+    "candidate"
+  ],
+  "trials": {
+    "baseline": [
+      {
+        "source_root": "C:\\Users\\emre_\\AppData\\Local\\Temp\\mars_sc_baseline_9f2ca01",
+        "mode": "memory",
+        "timings": {
+          "metadata_load_s": 2.0257769000018016,
+          "force_prepare_s": 1.5999539755284786e-06,
+          "stress_read_s": 3.9212672999710776,
+          "stress_calculate_s": 0.5532989000203088,
+          "force_read_s": 6.902982399973553,
+          "force_calculate_s": 0.30764780001481995,
+          "deformation_read_s": 1.646763299999293,
+          "deformation_calculate_s": 0.3092576999915764,
+          "export_s": 0.5362087999819778,
+          "total_s": 16.203261099988595
+        },
+        "coefficient_sha256": "566d952003462fa23a0505db28c5143fb802025a56538cbef1eb04dd8cc6e476",
+        "combinations": 100,
+        "sets_a": 40,
+        "sets_b": 40,
+        "nodes": 10528,
+        "units": {
+          "stress": "MPa",
+          "force": "N",
+          "deformation": "mm"
+        },
+        "artifact": null,
+        "environment": {
+          "python": "3.11.6",
+          "numpy": "2.4.1",
+          "pandas": "2.2.3",
+          "dpf": "0.10.1",
+          "psutil": "7.2.1",
+          "cpu": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",
+          "ram_bytes": 34088108032
+        },
+        "fixtures": [
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-1\\MECH\\file.rst",
+            "size": 449249280,
+            "mtime_ns": 1761611087645773000
+          },
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-30\\MECH\\file.rst",
+            "size": 5104992256,
+            "mtime_ns": 1761657863793754500
+          }
+        ],
+        "peak_process_tree_rss_bytes": 678019072,
+        "rss_sample_count": 288
+      },
+      {
+        "source_root": "C:\\Users\\emre_\\AppData\\Local\\Temp\\mars_sc_baseline_9f2ca01",
+        "mode": "memory",
+        "timings": {
+          "metadata_load_s": 2.0020907999714836,
+          "force_prepare_s": 1.9000144675374031e-06,
+          "stress_read_s": 4.097161400015466,
+          "stress_calculate_s": 0.5647835000418127,
+          "force_read_s": 6.455865000025369,
+          "force_calculate_s": 0.29462090000743046,
+          "deformation_read_s": 1.6416144999675453,
+          "deformation_calculate_s": 0.31680999998934567,
+          "export_s": 0.526187099982053,
+          "total_s": 15.899194199999329
+        },
+        "coefficient_sha256": "566d952003462fa23a0505db28c5143fb802025a56538cbef1eb04dd8cc6e476",
+        "combinations": 100,
+        "sets_a": 40,
+        "sets_b": 40,
+        "nodes": 10528,
+        "units": {
+          "stress": "MPa",
+          "force": "N",
+          "deformation": "mm"
+        },
+        "artifact": null,
+        "environment": {
+          "python": "3.11.6",
+          "numpy": "2.4.1",
+          "pandas": "2.2.3",
+          "dpf": "0.10.1",
+          "psutil": "7.2.1",
+          "cpu": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",
+          "ram_bytes": 34088108032
+        },
+        "fixtures": [
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-1\\MECH\\file.rst",
+            "size": 449249280,
+            "mtime_ns": 1761611087645773000
+          },
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-30\\MECH\\file.rst",
+            "size": 5104992256,
+            "mtime_ns": 1761657863793754500
+          }
+        ],
+        "peak_process_tree_rss_bytes": 679051264,
+        "rss_sample_count": 274
+      }
+    ],
+    "candidate": [
+      {
+        "source_root": "C:\\Users\\emre_\\PycharmProjects\\Solution_Combination_ANSYS",
+        "mode": "memory",
+        "timings": {
+          "metadata_load_s": 0.38402310002129525,
+          "force_prepare_s": 1.440315300016664,
+          "stress_read_s": 3.655771800025832,
+          "stress_calculate_s": 0.12043840001570061,
+          "force_read_s": 6.4165443000383675,
+          "force_calculate_s": 0.06560229999013245,
+          "deformation_read_s": 0.49341890000505373,
+          "deformation_calculate_s": 0.03151860000798479,
+          "export_s": 0.5154998000361957,
+          "total_s": 13.123714599991217
+        },
+        "coefficient_sha256": "566d952003462fa23a0505db28c5143fb802025a56538cbef1eb04dd8cc6e476",
+        "combinations": 100,
+        "sets_a": 40,
+        "sets_b": 40,
+        "nodes": 10528,
+        "units": {
+          "stress": "MPa",
+          "force": "N",
+          "deformation": "mm"
+        },
+        "artifact": null,
+        "environment": {
+          "python": "3.11.6",
+          "numpy": "2.4.1",
+          "pandas": "2.2.3",
+          "dpf": "0.10.1",
+          "psutil": "7.2.1",
+          "cpu": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",
+          "ram_bytes": 34088108032
+        },
+        "fixtures": [
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-1\\MECH\\file.rst",
+            "size": 449249280,
+            "mtime_ns": 1761611087645773000
+          },
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-30\\MECH\\file.rst",
+            "size": 5104992256,
+            "mtime_ns": 1761657863793754500
+          }
+        ],
+        "peak_process_tree_rss_bytes": 686899200,
+        "rss_sample_count": 227
+      },
+      {
+        "source_root": "C:\\Users\\emre_\\PycharmProjects\\Solution_Combination_ANSYS",
+        "mode": "memory",
+        "timings": {
+          "metadata_load_s": 0.3844040999538265,
+          "force_prepare_s": 1.41256930003874,
+          "stress_read_s": 3.9098841000231914,
+          "stress_calculate_s": 0.13236889999825507,
+          "force_read_s": 6.8185649999650195,
+          "force_calculate_s": 0.06170130003010854,
+          "deformation_read_s": 0.4967828000080772,
+          "deformation_calculate_s": 0.03204889997141436,
+          "export_s": 0.5353263000142761,
+          "total_s": 13.784783899958711
+        },
+        "coefficient_sha256": "566d952003462fa23a0505db28c5143fb802025a56538cbef1eb04dd8cc6e476",
+        "combinations": 100,
+        "sets_a": 40,
+        "sets_b": 40,
+        "nodes": 10528,
+        "units": {
+          "stress": "MPa",
+          "force": "N",
+          "deformation": "mm"
+        },
+        "artifact": null,
+        "environment": {
+          "python": "3.11.6",
+          "numpy": "2.4.1",
+          "pandas": "2.2.3",
+          "dpf": "0.10.1",
+          "psutil": "7.2.1",
+          "cpu": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",
+          "ram_bytes": 34088108032
+        },
+        "fixtures": [
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-1\\MECH\\file.rst",
+            "size": 449249280,
+            "mtime_ns": 1761611087645773000
+          },
+          {
+            "path": "C:\\Users\\emre_\\OneDrive\\Desktop\\J\\ANSYS\\Benchmark\\MARS\\Benchmark_v1_files\\dp0\\SYS-30\\MECH\\file.rst",
+            "size": 5104992256,
+            "mtime_ns": 1761657863793754500
+          }
+        ],
+        "peak_process_tree_rss_bytes": 671383552,
+        "rss_sample_count": 235
+      }
+    ]
+  },
+  "summary": {
+    "baseline": {
+      "median_peak_process_tree_rss_bytes": 678535168.0
+    },
+    "candidate": {
+      "median_peak_process_tree_rss_bytes": 679141376.0
+    }
+  }
+}

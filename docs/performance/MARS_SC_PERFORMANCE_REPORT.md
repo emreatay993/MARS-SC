@@ -38,6 +38,30 @@ took about 1.67 s on SYS-1 versus less than 1 ms for the existing cached/vectori
 coordinate path, so it was rejected. The duplicated ENF validation/preload sequence
 also remains unchanged because altering it previously changed the sensitive node-1 result.
 
+## Follow-up: 5.1 GB static RST
+
+The original SYS-1 and SYS-29 fixtures each contain 10,528 nodes and 1,692 elements.
+To test a materially larger result file, the follow-up replaced SYS-29 with static
+SYS-30: 5,104,992,256 bytes, 2,001 result sets, 10,528 nodes, and 1,692 elements.
+This is a file/result-set scaling check, not a larger-mesh check.
+
+The reduced timing workload used 100 combinations, the first 40 sets from each RST,
+one warm-up per root, and two ABBA blocks (four measured fresh processes per root).
+Peak RSS was measured separately with two alternating sampled trials per root:
+
+| Large-RST metric | Baseline | Candidate | Change |
+|---|---:|---:|---:|
+| Metadata-only startup | 2.026 s | 0.383 s | **5.29x faster** |
+| Reduced end-to-end workflow | 16.279 s | 13.295 s | **1.22x faster; 18.3% lower** |
+| Median peak process-tree RSS | 678,535,168 B | 679,141,376 B | **0.58 MiB higher; effectively flat** |
+
+The smaller combination count makes this lane read-dominated, so its end-to-end
+speedup is intentionally lower than the 1,000-combination headline workload. A separate
+20-combination, 10-set correctness run passed the result/CSV contracts and the exact
+same-input legacy force reference. Five raw cross-process ENF arrays differed because
+of the documented DPF 0.10.1 reduction-order sensitivity; they are retained as a
+non-gating diagnostic rather than presented as code differences.
+
 ## Locked workload
 
 - Baseline: commit `9f2ca01a44c9226cadf1d4085212198c2bca8295` in a detached worktree.
@@ -125,4 +149,8 @@ Numba was confirmed active. The first call includes compilation; warm medians us
 - `evidence/mars_sc_plasticity.json`: first-call and warmed Numba trials.
 - `evidence/mars_sc_startup.json`: six-trial-per-root ABBA startup timing/RSS evidence.
 - `evidence/mars_sc_startup_correctness.json`: full post-change correctness rerun.
+- `evidence/mars_sc_large_rst_startup.json`: four-trial-per-root large-RST startup evidence.
+- `evidence/mars_sc_large_rst_timing.json`: reduced large-RST timing trials.
+- `evidence/mars_sc_large_rst_memory.json`: two sampled large-RST RSS trials per root.
+- `evidence/mars_sc_large_rst_correctness.json`: reduced large-RST correctness comparison.
 - `scripts/benchmark_mars_sc.py`: reproducible controller/worker benchmark.

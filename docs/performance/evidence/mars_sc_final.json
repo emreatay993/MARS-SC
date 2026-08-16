@@ -108,6 +108,10 @@
     "mars_sc_correctness.json": "sha256:1f821fe89c9ab21a7abdd5368e4be360b8558cb868133f1c25e55c8f64e66ead",
     "mars_sc_plasticity.json": "sha256:4190b811266035b8d09ef59890851933fcfa030351bf1afab0ca31274b039505",
     "mars_sc_startup.json": "sha256:3f2089ec53e1762bca7ed1eecc3048029d966934e85697d5aa096eec8ef86d6f",
-    "mars_sc_startup_correctness.json": "sha256:fa0a92cd4953658a809b61740c096b1b914760e3ef993d128447b98a9efde80a"
+    "mars_sc_startup_correctness.json": "sha256:fa0a92cd4953658a809b61740c096b1b914760e3ef993d128447b98a9efde80a",
+    "mars_sc_large_rst_startup.json": "sha256:ce215e6dcb5322a670517a7fd7a7c662c215f62355e1597cde50615af645567d",
+    "mars_sc_large_rst_timing.json": "sha256:733b46db22515ddeac16e547961d8e481510e326a8b0252be63abd66b77fd537",
+    "mars_sc_large_rst_memory.json": "sha256:2972c2ea59520ce82f5bef5bb19a19a52653bd78bc66af6c3312b45b7a6ceaea",
+    "mars_sc_large_rst_correctness.json": "sha256:d8d9f5b837a13badfbae697129061d3be22f95c0fa16b7eaf45ef363c9637a49"
   }
 }
