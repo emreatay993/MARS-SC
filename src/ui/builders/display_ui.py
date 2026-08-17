@@ -20,6 +20,7 @@ from utils.constants import (
 from utils.tooltips import (
     TOOLTIP_DISPLAY_LOAD_FILE, TOOLTIP_DISPLAY_FILE_PATH,
     TOOLTIP_DISPLAY_VISUALIZATION_CONTROLS, TOOLTIP_DISPLAY_POINT_SIZE,
+    TOOLTIP_DISPLAY_MESH_VIEW, TOOLTIP_DISPLAY_MESH_SCOPE,
     TOOLTIP_DISPLAY_LEGEND_RANGE, TOOLTIP_DISPLAY_SCALAR,
     TOOLTIP_DISPLAY_CONTOUR_TYPE,
     TOOLTIP_DISPLAY_VIEW_COMBINATION, TOOLTIP_DISPLAY_FORCE_COMPONENT,
@@ -70,6 +71,25 @@ class DisplayTabUIBuilder:
         Returns:
             QGroupBox: Group box containing visualization controls.
         """
+        mesh_view_label = QLabel("View:")
+        mesh_view_combo = QComboBox()
+        mesh_view_combo.addItem("Points", "points")
+        mesh_view_combo.addItem("Contour Mesh", "contour_mesh")
+        mesh_view_combo.addItem("Mesh + Points", "mesh_points")
+        mesh_view_combo.setMinimumWidth(140)
+        mesh_view_label.setToolTip(TOOLTIP_DISPLAY_MESH_VIEW)
+        mesh_view_combo.setToolTip(TOOLTIP_DISPLAY_MESH_VIEW)
+        mesh_view_combo.setEnabled(False)
+
+        mesh_scope_label = QLabel("Scope:")
+        mesh_scope_combo = QComboBox()
+        mesh_scope_combo.addItem("Result Scope", "result")
+        mesh_scope_combo.addItem("Whole Base Model", "whole")
+        mesh_scope_combo.setMinimumWidth(140)
+        mesh_scope_label.setToolTip(TOOLTIP_DISPLAY_MESH_SCOPE)
+        mesh_scope_combo.setToolTip(TOOLTIP_DISPLAY_MESH_SCOPE)
+        mesh_scope_combo.setEnabled(False)
+
         # Point size control
         point_size = QSpinBox()
         point_size.setRange(1, 100)
@@ -179,38 +199,47 @@ class DisplayTabUIBuilder:
         legend_range_label = QLabel("Legend Range:")
         legend_range_label.setToolTip(TOOLTIP_DISPLAY_LEGEND_RANGE)
 
-        # Row 1: base visualization controls
+        # Row 1: geometry controls
         graphics_control_row1 = QHBoxLayout()
-        graphics_control_row1.addWidget(node_point_size_label)
-        graphics_control_row1.addWidget(point_size)
-        graphics_control_row1.addWidget(legend_range_label)
-        graphics_control_row1.addWidget(scalar_min_spin)
-        graphics_control_row1.addWidget(scalar_max_spin)
-        graphics_control_row1.addWidget(deformation_scale_label)
-        graphics_control_row1.addWidget(deformation_scale_edit)
+        graphics_control_row1.addWidget(mesh_view_label)
+        graphics_control_row1.addWidget(mesh_view_combo)
+        graphics_control_row1.addWidget(mesh_scope_label)
+        graphics_control_row1.addWidget(mesh_scope_combo)
         graphics_control_row1.addStretch()
 
-        # Row 2: contour/result controls
+        # Row 2: base visualization controls
         graphics_control_row2 = QHBoxLayout()
-        graphics_control_row2.addWidget(contour_type_label)
-        graphics_control_row2.addWidget(contour_type_combo)
-        graphics_control_row2.addWidget(scalar_display_label)
-        graphics_control_row2.addWidget(scalar_display_combo)
-        graphics_control_row2.addWidget(view_combination_label)
-        graphics_control_row2.addWidget(view_combination_combo)
-        graphics_control_row2.addWidget(recompute_combo_note)
-        graphics_control_row2.addWidget(recompute_combo_button)
-        graphics_control_row2.addWidget(force_component_label)
-        graphics_control_row2.addWidget(force_component_combo)
-        graphics_control_row2.addWidget(displacement_component_label)
-        graphics_control_row2.addWidget(displacement_component_combo)
-        graphics_control_row2.addWidget(export_forces_button)
-        graphics_control_row2.addWidget(export_output_button)
+        graphics_control_row2.addWidget(node_point_size_label)
+        graphics_control_row2.addWidget(point_size)
+        graphics_control_row2.addWidget(legend_range_label)
+        graphics_control_row2.addWidget(scalar_min_spin)
+        graphics_control_row2.addWidget(scalar_max_spin)
+        graphics_control_row2.addWidget(deformation_scale_label)
+        graphics_control_row2.addWidget(deformation_scale_edit)
         graphics_control_row2.addStretch()
+
+        # Row 3: contour/result controls
+        graphics_control_row3 = QHBoxLayout()
+        graphics_control_row3.addWidget(contour_type_label)
+        graphics_control_row3.addWidget(contour_type_combo)
+        graphics_control_row3.addWidget(scalar_display_label)
+        graphics_control_row3.addWidget(scalar_display_combo)
+        graphics_control_row3.addWidget(view_combination_label)
+        graphics_control_row3.addWidget(view_combination_combo)
+        graphics_control_row3.addWidget(recompute_combo_note)
+        graphics_control_row3.addWidget(recompute_combo_button)
+        graphics_control_row3.addWidget(force_component_label)
+        graphics_control_row3.addWidget(force_component_combo)
+        graphics_control_row3.addWidget(displacement_component_label)
+        graphics_control_row3.addWidget(displacement_component_combo)
+        graphics_control_row3.addWidget(export_forces_button)
+        graphics_control_row3.addWidget(export_output_button)
+        graphics_control_row3.addStretch()
 
         graphics_control_layout = QVBoxLayout()
         graphics_control_layout.addLayout(graphics_control_row1)
         graphics_control_layout.addLayout(graphics_control_row2)
+        graphics_control_layout.addLayout(graphics_control_row3)
         
         graphics_control_group = QGroupBox("Visualization Controls")
         graphics_control_group.setStyleSheet(GROUP_BOX_STYLE)
@@ -218,6 +247,10 @@ class DisplayTabUIBuilder:
         graphics_control_group.setToolTip(TOOLTIP_DISPLAY_VISUALIZATION_CONTROLS)
         
         # Store components
+        self.components['mesh_view_label'] = mesh_view_label
+        self.components['mesh_view_combo'] = mesh_view_combo
+        self.components['mesh_scope_label'] = mesh_scope_label
+        self.components['mesh_scope_combo'] = mesh_scope_combo
         self.components['point_size'] = point_size
         self.components['scalar_min_spin'] = scalar_min_spin
         self.components['scalar_max_spin'] = scalar_max_spin

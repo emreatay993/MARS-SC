@@ -7,6 +7,9 @@ stress tensor data for linear combination analysis.
 Reference: https://dpf.docs.pyansys.com/version/stable/examples/06-plotting/02-solution_combination.html
 """
 
+from dataclasses import dataclass
+import hashlib
+import threading
 from typing import List, Tuple, Optional, Dict
 import numpy as np
 
@@ -17,7 +20,7 @@ except ImportError:
     DPF_AVAILABLE = False
     dpf = None
 
-from core.data_models import AnalysisData
+from core.data_models import AnalysisData, MeshTopologyData
 from utils.constants import MSG_NODAL_FORCES_ANSYS
 
 
@@ -2125,6 +2128,216 @@ class DPFAnalysisReader:
             raise DisplacementNotAvailableError(
                 f"Failed to read displacement for load step {load_step}: {e}"
             )
+
+
+@dataclass(frozen=True)
+class _SurfaceTopology:
+    node_ids: np.ndarray
+    points_mm: np.ndarray
+    face_offsets: np.ndarray
+    face_connectivity: np.ndarray
+    line_offsets: np.ndarray
+    line_connectivity: np.ndarray
+
+
+class MeshTopologyProvider:
+    """Lazily derive and cache display topology from one base RST."""
+
+    def __init__(self, rst_path: str):
+        self.rst_path = str(rst_path)
+        self._lock = threading.Lock()
+        self._surface: Optional[_SurfaceTopology] = None
+        self._scope_key = None
+        self._scope_cells = None
+        self._scope_context = None
+        self._whole_cells = None
+
+    def build_visualization_topology(
+        self,
+        node_ids: np.ndarray,
+        include_whole_model: bool = False,
+    ) -> MeshTopologyData:
+        """Return result connectivity and optional whole-model context arrays."""
+        requested_ids = np.asarray(node_ids, dtype=np.int64).reshape(-1)
+        if requested_ids.size == 0:
+            raise ValueError("Cannot build mesh topology for an empty node scope.")
+        if np.unique(requested_ids).size != requested_ids.size:
+            raise ValueError("Result node IDs must be unique for mesh topology mapping.")
+
+        with self._lock:
+            surface = self._surface or self._load_surface()
+            self._surface = surface
+
+            scope_key = (
+                requested_ids.size,
+                hashlib.blake2b(requested_ids.tobytes(), digest_size=16).digest(),
+            )
+            if scope_key != self._scope_key:
+                mapped = self._map_surface_points(surface.node_ids, requested_ids)
+                face_mask = self._complete_cell_mask(
+                    surface.face_offsets,
+                    surface.face_connectivity,
+                    mapped,
+                )
+                line_mask = self._complete_cell_mask(
+                    surface.line_offsets,
+                    surface.line_connectivity,
+                    mapped,
+                )
+                self._scope_cells = (
+                    self._legacy_cells(
+                        surface.face_offsets,
+                        surface.face_connectivity,
+                        face_mask,
+                        mapped,
+                    ),
+                    self._legacy_cells(
+                        surface.line_offsets,
+                        surface.line_connectivity,
+                        line_mask,
+                        mapped,
+                    ),
+                    face_mask,
+                    line_mask,
+                )
+                self._scope_key = scope_key
+                self._scope_context = None
+
+            result_faces, result_lines, face_mask, line_mask = self._scope_cells
+            if not result_faces.size and not result_lines.size:
+                raise ValueError(
+                    "The selected result nodes do not contain any complete exterior mesh cells."
+                )
+
+            whole_faces = whole_lines = context_faces = context_lines = None
+            if include_whole_model:
+                if self._whole_cells is None:
+                    self._whole_cells = (
+                        self._legacy_cells(surface.face_offsets, surface.face_connectivity),
+                        self._legacy_cells(surface.line_offsets, surface.line_connectivity),
+                    )
+                if self._scope_context is None:
+                    self._scope_context = (
+                        self._legacy_cells(
+                            surface.face_offsets,
+                            surface.face_connectivity,
+                            ~face_mask,
+                        ),
+                        self._legacy_cells(
+                            surface.line_offsets,
+                            surface.line_connectivity,
+                            ~line_mask,
+                        ),
+                    )
+                whole_faces, whole_lines = self._whole_cells
+                context_faces, context_lines = self._scope_context
+
+            return MeshTopologyData(
+                result_faces=result_faces,
+                result_lines=result_lines,
+                whole_points_mm=surface.points_mm if include_whole_model else None,
+                whole_faces=whole_faces,
+                whole_lines=whole_lines,
+                context_faces=context_faces,
+                context_lines=context_lines,
+            )
+
+    def _load_surface(self) -> _SurfaceTopology:
+        """Open an independent reader and retain only compact exterior arrays."""
+        reader = DPFAnalysisReader(self.rst_path)
+        mesh = reader.mesh
+        mesh_node_ids = np.asarray(mesh.nodes.scoping.ids, dtype=np.int64)
+        coordinate_field = mesh.nodes.coordinates_field
+        raw_coordinates = np.asarray(coordinate_field.data)
+        grid = mesh.grid
+
+        if grid.n_points != mesh_node_ids.size or grid.points.shape != raw_coordinates.shape:
+            raise ValueError("DPF grid points do not align with the meshed-region nodes.")
+        if not np.allclose(grid.points, raw_coordinates, rtol=1e-10, atol=1e-12):
+            raise ValueError("DPF grid coordinate order does not match the node scoping order.")
+
+        coordinate_ids, coordinates_mm = reader.get_node_coordinates()
+        if not np.array_equal(coordinate_ids, mesh_node_ids):
+            raise ValueError("Converted mesh coordinates do not preserve DPF node order.")
+
+        surface = grid.extract_surface()
+        if "vtkOriginalPointIds" not in surface.point_data:
+            raise ValueError("PyVista surface extraction did not preserve source point IDs.")
+        original_indices = np.asarray(surface["vtkOriginalPointIds"], dtype=np.int64)
+
+        face_offsets, face_connectivity = self._vtk_cells(surface.GetPolys())
+        line_offsets, line_connectivity = self._vtk_cells(surface.GetLines())
+        return _SurfaceTopology(
+            node_ids=mesh_node_ids[original_indices].copy(),
+            points_mm=np.asarray(coordinates_mm[original_indices], dtype=float).copy(),
+            face_offsets=face_offsets,
+            face_connectivity=face_connectivity,
+            line_offsets=line_offsets,
+            line_connectivity=line_connectivity,
+        )
+
+    @staticmethod
+    def _vtk_cells(cell_array) -> Tuple[np.ndarray, np.ndarray]:
+        from vtk.util.numpy_support import vtk_to_numpy
+
+        if cell_array is None or cell_array.GetNumberOfCells() == 0:
+            return np.zeros(1, dtype=np.int64), np.empty(0, dtype=np.int64)
+        return (
+            vtk_to_numpy(cell_array.GetOffsetsArray()).astype(np.int64, copy=True),
+            vtk_to_numpy(cell_array.GetConnectivityArray()).astype(np.int64, copy=True),
+        )
+
+    @staticmethod
+    def _map_surface_points(
+        surface_node_ids: np.ndarray,
+        requested_ids: np.ndarray,
+    ) -> np.ndarray:
+        order = np.argsort(requested_ids, kind="stable")
+        sorted_ids = requested_ids[order]
+        positions = np.searchsorted(sorted_ids, surface_node_ids)
+        valid = positions < sorted_ids.size
+        valid[valid] &= sorted_ids[positions[valid]] == surface_node_ids[valid]
+        mapped = np.full(surface_node_ids.size, -1, dtype=np.int64)
+        mapped[valid] = order[positions[valid]]
+        return mapped
+
+    @staticmethod
+    def _complete_cell_mask(
+        offsets: np.ndarray,
+        connectivity: np.ndarray,
+        mapped_points: np.ndarray,
+    ) -> np.ndarray:
+        counts = np.diff(offsets)
+        if counts.size == 0:
+            return np.empty(0, dtype=bool)
+        mapped_connectivity = mapped_points[connectivity]
+        return np.logical_and.reduceat(mapped_connectivity >= 0, offsets[:-1])
+
+    @staticmethod
+    def _legacy_cells(
+        offsets: np.ndarray,
+        connectivity: np.ndarray,
+        cell_mask: Optional[np.ndarray] = None,
+        point_mapping: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
+        counts = np.diff(offsets)
+        if cell_mask is None:
+            cell_mask = np.ones(counts.size, dtype=bool)
+        selected_counts = counts[cell_mask]
+        if selected_counts.size == 0:
+            return np.empty(0, dtype=np.int64)
+
+        selected_connectivity = connectivity[np.repeat(cell_mask, counts)]
+        if point_mapping is not None:
+            selected_connectivity = point_mapping[selected_connectivity]
+
+        starts = np.cumsum(np.r_[0, selected_counts[:-1] + 1])
+        legacy = np.empty(int(selected_counts.sum() + selected_counts.size), dtype=np.int64)
+        legacy[starts] = selected_counts
+        connectivity_positions = np.ones(legacy.size, dtype=bool)
+        connectivity_positions[starts] = False
+        legacy[connectivity_positions] = selected_connectivity
+        return legacy
 
 
 def scale_stress_field(field: 'dpf.Field', scale_factor: float) -> 'dpf.Field':

@@ -277,6 +277,7 @@ class ApplicationController(QMainWindow):
 
     def closeEvent(self, event):
         """Clean up temporary files on application close."""
+        self.display_tab.visual_handler.shutdown()
         app = QApplication.instance()
         if app is not None:
             app.removeEventFilter(self._tooltip_filter)

@@ -5,11 +5,39 @@ Visualization updates and rendering helpers for the Display tab.
 import time
 from typing import Optional
 import numpy as np
+import pyvista as pv
 import vtk
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QThread, QTimer, pyqtSignal
+from PyQt5.QtWidgets import QMessageBox
 
 from ui.handlers.display_base_handler import DisplayBaseHandler
+from core.data_models import MeshTopologyData
 from core.visualization import VisualizationManager
+
+
+class _MeshTopologyWorker(QThread):
+    """Run one lazy topology build away from the Qt GUI thread."""
+
+    completed = pyqtSignal(object)
+
+    def __init__(self, provider, node_ids: np.ndarray, include_whole_model: bool):
+        super().__init__()
+        self.provider = provider
+        self.node_ids = np.asarray(node_ids, dtype=np.int64).copy()
+        self.include_whole_model = bool(include_whole_model)
+        self.result = None
+        self.error = None
+
+    def run(self) -> None:
+        try:
+            self.result = self.provider.build_visualization_topology(
+                self.node_ids,
+                include_whole_model=self.include_whole_model,
+            )
+        except Exception as exc:
+            self.error = str(exc)
+        finally:
+            self.completed.emit(self)
 
 
 class DisplayVisualizationHandler(DisplayBaseHandler):
@@ -18,6 +46,255 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
     def __init__(self, tab, state, viz_manager: VisualizationManager):
         super().__init__(tab, state)
         self.viz_manager = viz_manager
+        self._topology_provider = None
+        self._topology_data: Optional[MeshTopologyData] = None
+        self._topology_node_ids = None
+        self._topology_includes_whole = False
+        self._result_surface_mesh = None
+        self._whole_surface_mesh = None
+        self._whole_context_mesh = None
+        self._topology_worker = None
+        self._worker_request = None
+        self._pending_topology_request = False
+        self._payload_generation = 0
+
+    def set_topology_provider(self, provider) -> None:
+        """Replace solver-backed topology source without invoking it."""
+        self._payload_generation += 1
+        self._topology_provider = provider
+        self._topology_data = None
+        self._topology_node_ids = None
+        self._topology_includes_whole = False
+        self._result_surface_mesh = None
+        self._whole_surface_mesh = None
+        self._whole_context_mesh = None
+        self._pending_topology_request = False
+        self.update_mesh_control_state()
+
+    def _mesh_view(self) -> str:
+        value = self.tab.mesh_view_combo.currentData()
+        return value if value in {"points", "contour_mesh", "mesh_points"} else "points"
+
+    def _mesh_scope(self) -> str:
+        return "whole" if self.tab.mesh_scope_combo.currentData() == "whole" else "result"
+
+    def _has_nonzero_deformation(self) -> bool:
+        if self.tab.deformation_result is None:
+            return False
+        try:
+            return float(self.tab.deformation_scale_edit.text()) != 0.0
+        except (TypeError, ValueError):
+            return self.state.last_valid_deformation_scale != 0.0
+
+    def update_mesh_control_state(self) -> None:
+        """Apply provider, view, and deformation availability to mesh controls."""
+        if not hasattr(self.tab, "mesh_view_combo"):
+            return
+
+        available = self._topology_provider is not None
+        if not available and self.tab.mesh_view_combo.currentIndex() != 0:
+            self.tab.mesh_view_combo.blockSignals(True)
+            self.tab.mesh_view_combo.setCurrentIndex(0)
+            self.tab.mesh_view_combo.blockSignals(False)
+        self.tab.mesh_view_combo.setEnabled(available)
+
+        view = self._mesh_view()
+        deformed = self._has_nonzero_deformation()
+        if deformed and self._mesh_scope() == "whole":
+            self.tab.mesh_scope_combo.blockSignals(True)
+            self.tab.mesh_scope_combo.setCurrentIndex(0)
+            self.tab.mesh_scope_combo.blockSignals(False)
+        self.tab.mesh_scope_combo.setEnabled(available and view != "points" and not deformed)
+        self.tab.point_size.setEnabled(view != "contour_mesh")
+
+    def on_mesh_view_changed(self) -> None:
+        self.update_mesh_control_state()
+        if self._mesh_view() != "points":
+            self._request_topology()
+        self.update_visualization()
+
+    def on_mesh_scope_changed(self) -> None:
+        self.update_mesh_control_state()
+        if self._mesh_view() != "points":
+            self._request_topology()
+        self.update_visualization()
+
+    def _topology_matches_current_request(self) -> bool:
+        mesh = self.state.current_mesh or self.tab.current_mesh
+        if (
+            self._topology_data is None
+            or mesh is None
+            or "NodeID" not in mesh.array_names
+            or self._topology_node_ids is None
+        ):
+            return False
+        if not np.array_equal(self._topology_node_ids, np.asarray(mesh["NodeID"])):
+            return False
+        return self._mesh_scope() != "whole" or self._topology_includes_whole
+
+    def _request_topology(self) -> bool:
+        if self._mesh_view() == "points" or self._topology_matches_current_request():
+            return self._topology_matches_current_request()
+
+        mesh = self.state.current_mesh or self.tab.current_mesh
+        if self._topology_provider is None or mesh is None or "NodeID" not in mesh.array_names:
+            return False
+
+        if self._topology_worker is not None:
+            self._pending_topology_request = True
+            return False
+
+        include_whole = self._mesh_scope() == "whole"
+        worker = _MeshTopologyWorker(
+            self._topology_provider,
+            np.asarray(mesh["NodeID"]),
+            include_whole,
+        )
+        self._worker_request = {
+            "payload_generation": self._payload_generation,
+            "provider": self._topology_provider,
+            "node_ids": np.asarray(mesh["NodeID"]).copy(),
+            "include_whole": include_whole,
+        }
+        self._topology_worker = worker
+        worker.completed.connect(self.tab._on_mesh_topology_worker_completed)
+        worker.start()
+        return False
+
+    def on_topology_worker_finished(self, worker) -> None:
+        if worker is not self._topology_worker:
+            return
+        request = self._worker_request
+        self._topology_worker = None
+        self._worker_request = None
+        if worker is None or request is None:
+            return
+
+        mesh = self.state.current_mesh or self.tab.current_mesh
+        current_request = (
+            request["payload_generation"] == self._payload_generation
+            and request["provider"] is self._topology_provider
+            and mesh is not None
+            and "NodeID" in mesh.array_names
+            and np.array_equal(request["node_ids"], np.asarray(mesh["NodeID"]))
+        )
+
+        if worker.error is None and current_request:
+            self._topology_data = worker.result
+            self._topology_node_ids = request["node_ids"]
+            self._topology_includes_whole = request["include_whole"]
+            self._build_topology_meshes()
+        elif (
+            worker.error
+            and current_request
+            and self._mesh_view() != "points"
+            and (self._mesh_scope() != "whole" or request["include_whole"])
+        ):
+            self.tab.mesh_view_combo.blockSignals(True)
+            self.tab.mesh_view_combo.setCurrentIndex(0)
+            self.tab.mesh_view_combo.blockSignals(False)
+            QMessageBox.warning(self.tab, "Mesh Unavailable", worker.error)
+
+        worker.deleteLater()
+        pending = self._pending_topology_request
+        self._pending_topology_request = False
+        self.update_mesh_control_state()
+        if pending and self._mesh_view() != "points" and not self._topology_matches_current_request():
+            self._request_topology()
+        self.update_visualization()
+
+    @staticmethod
+    def _polydata(points, faces=None, lines=None):
+        mesh = pv.PolyData()
+        mesh.points = np.asarray(points, dtype=float)
+        if faces is not None and np.asarray(faces).size:
+            mesh.faces = np.asarray(faces, dtype=np.int64)
+        if lines is not None and np.asarray(lines).size:
+            mesh.lines = np.asarray(lines, dtype=np.int64)
+        return mesh
+
+    def _build_topology_meshes(self) -> None:
+        data = self._topology_data
+        point_mesh = self.state.current_mesh or self.tab.current_mesh
+        if data is None or point_mesh is None:
+            return
+
+        reference_points = self.tab.original_node_coords
+        if reference_points is None:
+            reference_points = point_mesh.points
+        self._result_surface_mesh = self._polydata(
+            reference_points,
+            data.result_faces,
+            data.result_lines,
+        )
+        if data.whole_points_mm is not None:
+            self._whole_surface_mesh = self._polydata(
+                data.whole_points_mm,
+                data.whole_faces,
+                data.whole_lines,
+            )
+            self._whole_context_mesh = self._polydata(
+                data.whole_points_mm,
+                data.context_faces,
+                data.context_lines,
+            )
+
+    def _sync_result_surface_mesh(self, point_mesh) -> None:
+        if self._result_surface_mesh is None:
+            return
+        self._result_surface_mesh.SetPoints(point_mesh.GetPoints())
+        self._result_surface_mesh.GetPointData().ShallowCopy(point_mesh.GetPointData())
+        self._result_surface_mesh.GetFieldData().ShallowCopy(point_mesh.GetFieldData())
+
+    def _add_scalar_actor(self, plotter, mesh, active_scalars, *, points: bool):
+        digits = self.state.scalar_bar_digits
+        kwargs = {
+            "scalars": active_scalars,
+            "show_scalar_bar": True,
+            "cmap": "jet",
+            "below_color": "gray",
+            "above_color": "magenta",
+            "pickable": True,
+            "scalar_bar_args": {
+                "title": self.tab.data_column,
+                "fmt": f"%.{digits}f",
+                "position_x": 0.04,
+                "position_y": 0.35,
+                "width": 0.05,
+                "height": 0.5,
+                "vertical": True,
+                "title_font_size": 14,
+                "label_font_size": 12,
+                "shadow": True,
+                "n_labels": 10,
+                "interactive": False,
+            },
+        }
+        if points:
+            kwargs.update(
+                style="points",
+                point_size=self.tab.point_size.value(),
+                render_points_as_spheres=True,
+            )
+        else:
+            kwargs.update(show_edges=True, edge_color="#4d4d4d", line_width=1)
+        return plotter.add_mesh(mesh, **kwargs)
+
+    @staticmethod
+    def _add_context_actor(plotter, mesh, name: str):
+        if mesh is None or mesh.n_cells == 0:
+            return None
+        return plotter.add_mesh(
+            mesh,
+            name=name,
+            color="#d9d9d9",
+            edge_color="#4d4d4d",
+            show_edges=True,
+            line_width=1,
+            opacity=1.0,
+            show_scalar_bar=False,
+            pickable=False,
+        )
 
     def apply_deformed_coordinates(self, combo_idx: Optional[int] = None) -> bool:
         """
@@ -138,13 +415,9 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
         if mesh is None:
             return
 
-        plotter = self.tab.plotter
-        plotter.clear()
-        
-        # Apply deformed coordinates if deformation results are available
-        deformation_result = self.tab.deformation_result
-        if deformation_result is not None:
+        if self.tab.deformation_result is not None:
             self.apply_deformed_coordinates()
+        self.update_mesh_control_state()
 
         # Use active scalars if set, otherwise fall back to first array (e.g., NodeID)
         active_scalars = mesh.active_scalars_name
@@ -158,34 +431,57 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
             else:
                 self.state.data_column = self.tab.data_column
 
-        # Get scalar bar digit format from state
-        digits = self.state.scalar_bar_digits
-        scalar_bar_fmt = f"%.{digits}f"
-        
-        actor = plotter.add_mesh(
-            mesh,
-            scalars=active_scalars,
-            point_size=self.tab.point_size.value(),
-            render_points_as_spheres=True,
-            show_scalar_bar=True,
-            cmap="jet",
-            below_color="gray",
-            above_color="magenta",
-            scalar_bar_args={
-                "title": self.tab.data_column,
-                "fmt": scalar_bar_fmt,
-                "position_x": 0.04,
-                "position_y": 0.35,
-                "width": 0.05,
-                "height": 0.5,
-                "vertical": True,
-                "title_font_size": 14,
-                "label_font_size": 12,
-                "shadow": True,
-                "n_labels": 10,
-                "interactive": False,
-            },
-        )
+        requested_view = self._mesh_view()
+        loading_topology = False
+        if requested_view != "points" and not self._topology_matches_current_request():
+            loading_topology = not self._request_topology()
+
+        render_view = requested_view if self._topology_matches_current_request() else "points"
+        if render_view != "points" and self._result_surface_mesh is None:
+            self._build_topology_meshes()
+        self._sync_result_surface_mesh(mesh)
+
+        plotter = self.tab.plotter
+        plotter.clear()
+
+        if render_view == "contour_mesh":
+            if self._mesh_scope() == "whole":
+                self._add_context_actor(plotter, self._whole_context_mesh, "whole_mesh_context")
+            actor = self._add_scalar_actor(
+                plotter,
+                self._result_surface_mesh,
+                active_scalars,
+                points=False,
+            )
+        elif render_view == "mesh_points":
+            context_mesh = (
+                self._whole_surface_mesh
+                if self._mesh_scope() == "whole"
+                else self._result_surface_mesh
+            )
+            self._add_context_actor(plotter, context_mesh, "mesh_context")
+            actor = self._add_scalar_actor(
+                plotter,
+                mesh,
+                active_scalars,
+                points=True,
+            )
+        else:
+            actor = self._add_scalar_actor(
+                plotter,
+                mesh,
+                active_scalars,
+                points=True,
+            )
+
+        if loading_topology:
+            plotter.add_text(
+                "Building mesh...",
+                position="upper_left",
+                font_size=10,
+                color="gray",
+                name="mesh_loading",
+            )
 
         self.state.current_actor = actor
         self.tab.current_actor = actor
@@ -268,16 +564,20 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
             if (now - self.state.last_hover_time) < 0.033:  # 30 FPS throttle
                 return
 
-            current_mesh = self.state.current_mesh or self.tab.current_mesh
-            if current_mesh is None:
-                return
-
             iren = obj
             pos = iren.GetEventPosition()
             picker.Pick(pos[0], pos[1], 0, self.tab.plotter.renderer)
             point_id = picker.GetPointId()
+            picked_dataset = picker.GetDataSet()
+            if picked_dataset is None:
+                return
+            current_mesh = pv.wrap(picked_dataset)
 
-            if point_id != -1 and point_id < current_mesh.n_points:
+            if (
+                point_id != -1
+                and point_id < current_mesh.n_points
+                and "NodeID" in current_mesh.array_names
+            ):
                 node_id = current_mesh["NodeID"][point_id]
                 
                 # Build annotation text with enhanced information
@@ -588,11 +888,19 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
 
         self.state.last_valid_deformation_scale = value
         self.tab.last_valid_deformation_scale = value
+        self.update_mesh_control_state()
         
         # If deformation results are available, update the visualization
         deformation_result = self.tab.deformation_result
         if deformation_result is not None:
             self.update_visualization()
+
+    def shutdown(self) -> None:
+        """Wait for an active topology worker before Qt destroys it."""
+        worker = self._topology_worker
+        if worker is not None and worker.isRunning():
+            worker.requestInterruption()
+            worker.wait()
 
     def apply_scalar_field(self, field_name: str, values) -> bool:
         """

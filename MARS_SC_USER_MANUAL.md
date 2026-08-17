@@ -23,7 +23,7 @@ MARS-SC combines results from two static RST analyses using user-defined linear 
 | Two-analysis combination | Combine Analysis 1 (Base) and Analysis 2 (Combine) load-step results |
 | Named-selection scoping | Scope solves to selected named selection nodes |
 | Stress and optional outputs | Stress envelopes with optional forces/deformation workflows |
-| Display workflows | Contour-family selection (`Stress`, `Forces`, `Deformation`) with envelope/single-combination visualization and CSV export |
+| Display workflows | Point, contour-mesh, or mesh-plus-points views with scoped/whole-model context, contour-family selection, and CSV export |
 | Guided UI | Detailed tooltips and global tooltip on/off setting |
 
 [**Image Placeholder**: Main window with Solver and Display tabs]
@@ -138,13 +138,16 @@ Styling:
 
 ## Chapter 7 - Visualization Controls Layout
 
-The `Visualization Controls` group is intentionally split into two rows:
+The `Visualization Controls` group is split into three rows:
 
-- **Row 1 (base rendering controls)**:
+- **Row 1 (geometry controls)**:
+  - View (`Points`, `Contour Mesh`, or `Mesh + Points`)
+  - Scope (`Result Scope` or `Whole Base Model`)
+- **Row 2 (base rendering controls)**:
   - Node Point Size
   - Legend Range (Min/Max)
   - Deformation Scale Factor
-- **Row 2 (result/contour controls)**:
+- **Row 3 (result/contour controls)**:
   - Contour Type
   - Display
   - View Combination
@@ -152,9 +155,10 @@ The `Visualization Controls` group is intentionally split into two rows:
   - Displacement component
   - Export buttons
 
-This layout keeps controls readable at common window widths and avoids overflow.
+Topology is loaded in the background only after a mesh view is requested and is
+cached for later view changes. CSV-only visualization remains point-only.
 
-[**Image Placeholder**: Visualization Controls shown in two rows]
+[**Image Placeholder**: Visualization Controls shown in three rows]
 
 ---
 
@@ -252,6 +256,12 @@ Check `View -> Enable Tooltips` is checked.
 ### Why is `Display` disabled after choosing a specific combination?
 
 In specific-combination mode, contour values come from selected-combination arrays; envelope `Display` toggles do not apply.
+
+### Why is `Whole Base Model` unavailable?
+
+Whole-model context is disabled while a nonzero deformation scale is active because
+MARS-SC only has scoped combined displacement values. Set deformation scale to `0`,
+or use `Result Scope`, to avoid mixing undeformed context with deformed results.
 
 ---
 

@@ -383,6 +383,7 @@ class DisplayInteractionHandler(DisplayBaseHandler):
                 point_size=self.tab.point_size.value() * 2,
                 text_color='purple',
                 always_visible=True,
+                pickable=False,
                 reset_camera=False  # Preserve current camera view before fly_to
             )
 
@@ -453,21 +454,26 @@ class DisplayInteractionHandler(DisplayBaseHandler):
         self.tab.plotter.disable_picking()
         self.tab.plotter.setCursor(Qt.ArrowCursor)
 
-        if not args or len(args) == 0 or not isinstance(args[0], (np.ndarray, list, tuple)):
+        if not args or len(args) < 2 or not isinstance(args[0], (np.ndarray, list, tuple)):
             print("Picking cancelled or missed the mesh.")
             return
 
-        picked_coords = args[0]
-        if len(picked_coords) == 0:
+        picker = args[1]
+        picked_dataset = picker.GetDataSet() if picker is not None else None
+        picked_point_index = picker.GetPointId() if picker is not None else -1
+        if picked_dataset is None or picked_point_index < 0:
             print("Picking cancelled or missed the mesh.")
             return
 
-        picked_point_index = self.tab.current_mesh.find_closest_point(picked_coords)
+        picked_mesh = pv.wrap(picked_dataset)
 
-        if picked_point_index != -1 and picked_point_index < self.tab.current_mesh.n_points:
+        if (
+            picked_point_index < picked_mesh.n_points
+            and "NodeID" in picked_mesh.array_names
+        ):
             try:
-                node_id = self.tab.current_mesh['NodeID'][picked_point_index]
-                point_coords = self.tab.current_mesh.points[picked_point_index]
+                node_id = picked_mesh['NodeID'][picked_point_index]
+                point_coords = picked_mesh.points[picked_point_index]
                 
                 # Add visual indicator for picked node
                 self._show_pick_indicator(point_coords, node_id)
@@ -502,6 +508,7 @@ class DisplayInteractionHandler(DisplayBaseHandler):
                 point_size=self.tab.point_size.value() * 2,
                 text_color='red',
                 always_visible=True,
+                pickable=False,
                 reset_camera=False  # Preserve current camera view
             )
             self.state.pick_indicator_actor = pick_actor
@@ -548,6 +555,7 @@ class DisplayInteractionHandler(DisplayBaseHandler):
                 point_size=self.tab.point_size.value() * 2,
                 render_points_as_spheres=True,
                 opacity=0.3,
+                pickable=False,
                 reset_camera=False,
             )
 
@@ -557,6 +565,7 @@ class DisplayInteractionHandler(DisplayBaseHandler):
                 name="target_node_label",
                 font_size=16, text_color='red',
                 always_visible=True, show_points=False,
+                pickable=False,
                 reset_camera=False,
             )
 

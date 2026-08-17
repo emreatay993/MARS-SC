@@ -68,6 +68,8 @@ class DisplayFileHandler(DisplayBaseHandler):
         self.tab.nodal_forces_result = None
         self.tab.deformation_result = None
         self.tab.output_flags = SolverOutputFlags()
+        self.tab.visual_handler.set_topology_provider(None)
+        self.tab.original_node_coords = coords.copy()
 
         # Check if this is an envelope file and handle accordingly
         is_envelope, result_type = self._detect_envelope_file(filename, df.columns)

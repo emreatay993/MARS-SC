@@ -3,9 +3,12 @@ Typed data objects for solver-to-display communication.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from core.data_models import CombinationResult, DeformationResult, NodalForcesResult
+
+if TYPE_CHECKING:
+    from file_io.dpf_reader import MeshTopologyProvider
 
 
 @dataclass
@@ -32,3 +35,4 @@ class VisualizationData:
     forces_result: Optional[NodalForcesResult] = None
     deformation_result: Optional[DeformationResult] = None
     output_flags: SolverOutputFlags = field(default_factory=SolverOutputFlags)
+    topology_provider: Optional["MeshTopologyProvider"] = None

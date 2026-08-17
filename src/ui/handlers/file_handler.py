@@ -11,7 +11,11 @@ import pandas as pd
 from PyQt5.QtWidgets import QFileDialog, QInputDialog, QMessageBox
 from PyQt5.QtCore import QThread, pyqtSignal
 
-from file_io.dpf_reader import DPFAnalysisReader, DPFNotAvailableError
+from file_io.dpf_reader import (
+    DPFAnalysisReader,
+    DPFNotAvailableError,
+    MeshTopologyProvider,
+)
 from file_io.cdb_reader import CDBNamedSelectionReader
 from file_io.txt_named_selection_reader import TXTNamedSelectionReader
 from file_io.combination_parser import CombinationTableParser, CombinationTableParseError
@@ -76,6 +80,7 @@ class SolverFileHandler:
         # DPF readers (kept for later use in analysis)
         self.base_reader = None
         self.combine_reader = None
+        self.base_topology_provider = None
         self.cdb_reader = None
         self.txt_named_selection_readers = []
 
@@ -152,6 +157,7 @@ class SolverFileHandler:
         
         # Reuse the loader's reader to avoid opening large RST files twice.
         self.base_reader = reader
+        self.base_topology_provider = MeshTopologyProvider(filename)
         
         # Notify the tab
         self.tab.on_base_rst_loaded(analysis_data, filename)

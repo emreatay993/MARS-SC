@@ -114,6 +114,11 @@ class ResultVisualizationBridge:
             forces_result=self.tab.nodal_forces_result,
             deformation_result=self.tab.deformation_result,
             output_flags=self._build_display_output_flags(),
+            topology_provider=getattr(
+                self.tab.file_handler,
+                "base_topology_provider",
+                None,
+            ),
         )
         self.tab.visualization_data_ready.emit(payload)
 

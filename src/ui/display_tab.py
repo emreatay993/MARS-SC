@@ -139,6 +139,8 @@ class DisplayTab(QWidget):
         
         # Visualization controls
         self.plotter = self.components['plotter']
+        self.mesh_view_combo = self.components['mesh_view_combo']
+        self.mesh_scope_combo = self.components['mesh_scope_combo']
         self.point_size = self.components['point_size']
         self.scalar_min_spin = self.components['scalar_min_spin']
         self.scalar_max_spin = self.components['scalar_max_spin']
@@ -213,6 +215,12 @@ class DisplayTab(QWidget):
         self.file_button.clicked.connect(self.load_file)
         
         # Visualization controls
+        self.mesh_view_combo.currentIndexChanged.connect(
+            self._on_mesh_view_changed
+        )
+        self.mesh_scope_combo.currentIndexChanged.connect(
+            self._on_mesh_scope_changed
+        )
         self.point_size.valueChanged.connect(self.update_point_size)
         self.scalar_min_spin.valueChanged.connect(self._update_scalar_range)
         self.scalar_max_spin.valueChanged.connect(self._update_scalar_range)
@@ -256,12 +264,25 @@ class DisplayTab(QWidget):
         self.deformation_scale_edit.editingFinished.connect(
             self._validate_deformation_scale
         )
-        
+
         # Combination/Time point controls
         self.save_time_button.clicked.connect(self.save_time_point_results)
-        
+
         # Context menu
         self.plotter.customContextMenuRequested.connect(self.show_context_menu)
+
+    def _on_mesh_view_changed(self, _index: int) -> None:
+        """Apply the selected geometry rendering mode."""
+        self.visual_handler.on_mesh_view_changed()
+
+    def _on_mesh_scope_changed(self, _index: int) -> None:
+        """Apply the selected mesh context scope."""
+        self.visual_handler.on_mesh_scope_changed()
+
+    @pyqtSlot(object)
+    def _on_mesh_topology_worker_completed(self, worker) -> None:
+        """Return background topology completion to the GUI thread."""
+        self.visual_handler.on_topology_worker_finished(worker)
     
     def _get_stress_type_label(self, result_type: str = None) -> str:
         """
@@ -598,6 +619,7 @@ class DisplayTab(QWidget):
             self.deformation_scale_edit.setVisible(False)
             self.deformation_scale_edit.setEnabled(False)
             self.deformation_scale_edit.setText("0")
+        self.visual_handler.update_mesh_control_state()
     
     @pyqtSlot(bool)
     def load_file(self, checked=False):
@@ -632,6 +654,8 @@ class DisplayTab(QWidget):
         if not isinstance(payload, VisualizationData):
             QMessageBox.warning(self, "Invalid Data", "Display data has an unexpected type.")
             return
+
+        self.visual_handler.set_topology_provider(payload.topology_provider)
 
         self.stress_result = payload.stress_result
         self.all_combo_results = (
@@ -705,9 +729,8 @@ class DisplayTab(QWidget):
             self.stress_result.all_combo_results if self.stress_result is not None else None
         )
 
-        # Store original coordinates for deformation scaling.
-        if self.deformation_result is not None:
-            self.original_node_coords = mesh.points.copy()
+        # Keep one immutable reference-coordinate baseline for all view styles.
+        self.original_node_coords = mesh.points.copy()
         
         # Deformation scale controls depend only on deformation availability
         has_deformation = (
@@ -749,6 +772,8 @@ class DisplayTab(QWidget):
     def __del__(self):
         """Cleanup when widget is destroyed."""
         try:
+            if self.visual_handler:
+                self.visual_handler.shutdown()
             if self.plotter:
                 self.plotter.close()
         except Exception:

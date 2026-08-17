@@ -371,6 +371,21 @@ TOOLTIP_DISPLAY_POINT_SIZE = (
     "Adjust rendered node point size in the 3D view."
 )
 
+TOOLTIP_DISPLAY_MESH_VIEW = (
+    "Choose how solver results are drawn:\n"
+    "- Points: current nodal point-cloud view\n"
+    "- Contour Mesh: scalar-colored exterior element faces and edges\n"
+    "- Mesh + Points: neutral mesh context beneath colored result points\n\n"
+    "Mesh topology is loaded and cached only when requested."
+)
+
+TOOLTIP_DISPLAY_MESH_SCOPE = (
+    "Choose the mesh context extent:\n"
+    "- Result Scope: cells fully covered by the result nodes\n"
+    "- Whole Base Model: Analysis 1 exterior mesh as neutral context\n\n"
+    "Whole Base Model is unavailable while nonzero deformation is displayed."
+)
+
 TOOLTIP_DISPLAY_LEGEND_RANGE = (
     "Set custom legend limits for contour visualization.\n\n"
     "Min and Max define the displayed color range."

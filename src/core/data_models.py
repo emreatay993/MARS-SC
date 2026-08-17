@@ -248,6 +248,23 @@ class CombinationTableData:
         return keys, np.ascontiguousarray(coefficients, dtype=np.float64)
 
 
+@dataclass(frozen=True)
+class MeshTopologyData:
+    """Compact, renderer-ready topology derived from the base RST mesh."""
+
+    result_faces: np.ndarray
+    result_lines: np.ndarray
+    whole_points_mm: Optional[np.ndarray] = None
+    whole_faces: Optional[np.ndarray] = None
+    whole_lines: Optional[np.ndarray] = None
+    context_faces: Optional[np.ndarray] = None
+    context_lines: Optional[np.ndarray] = None
+
+    @property
+    def has_result_cells(self) -> bool:
+        return bool(self.result_faces.size or self.result_lines.size)
+
+
 @dataclass
 class CombinationResult:
     """
