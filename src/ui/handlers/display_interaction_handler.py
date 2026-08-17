@@ -92,9 +92,10 @@ class DisplayInteractionHandler(DisplayBaseHandler):
             self._rotation_pivot = np.asarray(camera.GetFocalPoint(), dtype=float)
         self._mouse_pivot_rotation_active = True
 
-    def _move_mouse_pivot_rotation(self, _style, _event) -> None:
+    def _move_mouse_pivot_rotation(self, style, _event) -> None:
         """Apply one cursor-anchored orbit step and suppress the default step."""
         if not self._mouse_pivot_rotation_active or self._rotation_pivot is None:
+            style.OnMouseMove()
             return
 
         interactor = self.tab.plotter.iren.interactor

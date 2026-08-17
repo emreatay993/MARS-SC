@@ -263,6 +263,23 @@ def test_mouse_pivot_orbit_keeps_the_picked_point_anchored():
     assert not handler._mouse_pivot_rotation_active
     assert plotter.iren.get_interactor_style().GetState() == 0
 
+    position_before_pan = np.asarray(plotter.camera.position)
+    focal_point_before_pan = np.asarray(plotter.camera.focal_point)
+    interactor.SetEventInformation(*mouse_position.astype(int))
+    interactor.InvokeEvent("MiddleButtonPressEvent")
+    interactor.SetEventInformation(
+        int(mouse_position[0] + 30),
+        int(mouse_position[1] - 15),
+    )
+    interactor.InvokeEvent("MouseMoveEvent")
+    interactor.InvokeEvent("MiddleButtonReleaseEvent")
+    pan_translation = np.asarray(plotter.camera.position) - position_before_pan
+    np.testing.assert_allclose(
+        np.asarray(plotter.camera.focal_point) - focal_point_before_pan,
+        pan_translation,
+    )
+    assert np.linalg.norm(pan_translation) > 0.0
+
     fallback_pivot = np.asarray(plotter.camera.focal_point)
     interactor.SetEventInformation(5, 5)
     interactor.InvokeEvent("LeftButtonPressEvent")
