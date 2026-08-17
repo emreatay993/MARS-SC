@@ -10,7 +10,7 @@ Reference: https://dpf.docs.pyansys.com/version/stable/examples/06-plotting/02-s
 from dataclasses import dataclass
 import hashlib
 import threading
-from typing import List, Tuple, Optional, Dict
+from typing import Callable, List, Tuple, Optional, Dict
 import numpy as np
 
 try:
@@ -615,7 +615,11 @@ class DPFAnalysisReader:
                 return [float(sid) for sid in set_ids]
             return [float(i) for i in range(1, n_sets + 1)]
     
-    def get_analysis_data(self, skip_substeps: bool = False) -> AnalysisData:
+    def get_analysis_data(
+        self,
+        skip_substeps: bool = False,
+        progress_callback: Optional[Callable[[str], None]] = None,
+    ) -> AnalysisData:
         """
         Create an AnalysisData object with metadata from this RST file.
         
@@ -623,45 +627,57 @@ class DPFAnalysisReader:
             skip_substeps: If True, only include the last substep of each load step.
                           This reduces the number of result sets when the RST file
                           contains many intermediate substeps.
+            progress_callback: Optional callback for user-visible metadata-read phases.
         
         Returns:
             AnalysisData object containing file metadata including unit information.
         """
-        # Check nodal forces availability once (result is cached)
+        report = progress_callback or (lambda _message: None)
+
+        report("Checking available result types...")
         nodal_forces_available = self.check_nodal_forces_available()
-        
-        # Check displacement availability
         displacement_available = self.check_displacement_available()
-        
-        # Get appropriate set IDs based on skip_substeps option
+
+        report("Reading load-step and time metadata...")
         if skip_substeps:
             load_step_ids = self.get_last_substep_ids()
         else:
             load_step_ids = self.get_load_step_ids()
-        
-        # Get time values for the selected sets
         time_values = self.get_time_values(set_ids=load_step_ids)
-        
+
+        report("Reading named selections...")
+        named_selections = self.get_named_selections()
+        named_selection_locations = self.get_named_selection_locations()
+        named_selection_sources = self.get_named_selection_sources()
+
+        report("Reading result units...")
+        unit_system = self.unit_system
+        stress_unit = self.stress_unit
+        stress_conversion_factor = self.stress_conversion_factor
+        force_unit = self.get_force_unit() if nodal_forces_available else "N"
+        displacement_unit = self.get_displacement_unit() if displacement_available else "mm"
+
+        report("Finalizing RST metadata...")
         return AnalysisData(
             file_path=self.rst_path,
             num_load_steps=len(load_step_ids),
             load_step_ids=load_step_ids,
             time_values=time_values,
-            named_selections=self.get_named_selections(),
-            named_selection_locations=self.get_named_selection_locations(),
-            named_selection_sources=self.get_named_selection_sources(),
+            named_selections=named_selections,
+            named_selection_locations=named_selection_locations,
+            named_selection_sources=named_selection_sources,
             cdb_file_path=(
                 self.cdb_named_selection_reader.cdb_path
                 if self.cdb_named_selection_reader is not None
                 else None
             ),
-            unit_system=self.unit_system,
-            stress_unit=self.stress_unit,
-            stress_conversion_factor=self.stress_conversion_factor,
+            unit_system=unit_system,
+            stress_unit=stress_unit,
+            stress_conversion_factor=stress_conversion_factor,
             nodal_forces_available=nodal_forces_available,
-            force_unit=self.get_force_unit() if nodal_forces_available else "N",
+            force_unit=force_unit,
             displacement_available=displacement_available,
-            displacement_unit=self.get_displacement_unit() if displacement_available else "mm",
+            displacement_unit=displacement_unit,
         )
 
     @staticmethod

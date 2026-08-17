@@ -67,9 +67,11 @@ def test_named_selection_locations_are_carried_from_reader_to_analysis_data():
     data_src = _read(DATA_MODELS_FILE)
 
     assert "def get_named_selection_locations" in reader_src
-    assert "named_selection_locations=self.get_named_selection_locations()" in reader_src
+    assert "named_selection_locations = self.get_named_selection_locations()" in reader_src
+    assert "named_selection_locations=named_selection_locations" in reader_src
     assert "named_selection_locations: Dict[str, str]" in data_src
-    assert "named_selection_sources=self.get_named_selection_sources()" in reader_src
+    assert "named_selection_sources = self.get_named_selection_sources()" in reader_src
+    assert "named_selection_sources=named_selection_sources" in reader_src
     assert "named_selection_sources: Dict[str, str]" in data_src
 
 

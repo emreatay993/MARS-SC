@@ -4,12 +4,13 @@ tables, and updating the tab state/UI.
 """
 
 import os
+import time
 from typing import Optional
 
 import numpy as np
 import pandas as pd
-from PyQt5.QtWidgets import QFileDialog, QInputDialog, QMessageBox
-from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtWidgets import QFileDialog, QInputDialog, QMessageBox, QProgressDialog
+from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
 
 from file_io.dpf_reader import (
     DPFAnalysisReader,
@@ -23,11 +24,15 @@ from file_io.loaders import load_temperature_field
 from core.data_models import AnalysisData, CombinationResult
 
 
+RST_PROGRESS_DIALOG_DELAY_MS = 5000
+
+
 class RSTLoaderThread(QThread):
     """Background thread for loading RST files without freezing the GUI."""
     
     finished = pyqtSignal(object, str, object)  # Emits (AnalysisData, filename, reader)
     error = pyqtSignal(str)  # Emits error message
+    progress = pyqtSignal(str)  # Emits the current DPF metadata-read phase
     
     def __init__(self, rst_path: str, skip_substeps: bool = False):
         """
@@ -44,8 +49,12 @@ class RSTLoaderThread(QThread):
     def run(self):
         """Run the loader in background thread."""
         try:
+            self.progress.emit("Starting DPF and opening the result file...")
             reader = DPFAnalysisReader(self.rst_path)
-            analysis_data = reader.get_analysis_data(skip_substeps=self.skip_substeps)
+            analysis_data = reader.get_analysis_data(
+                skip_substeps=self.skip_substeps,
+                progress_callback=self.progress.emit,
+            )
             self.finished.emit(analysis_data, self.rst_path, reader)
         except DPFNotAvailableError as e:
             self.error.emit(f"DPF not available: {e}")
@@ -76,6 +85,14 @@ class SolverFileHandler:
         # Keep references to loader threads to prevent garbage collection
         self._base_loader_thread = None
         self._combine_loader_thread = None
+        self._active_rst_loader_thread = None
+        self._rst_progress_dialog = None
+        self._rst_progress_timer = None
+        self._rst_progress_started_at = None
+        self._rst_progress_analysis_name = ""
+        self._rst_progress_filename = ""
+        self._rst_progress_size_text = "Unknown"
+        self._rst_progress_phase = "Preparing RST metadata read..."
         
         # DPF readers (kept for later use in analysis)
         self.base_reader = None
@@ -126,6 +143,10 @@ class SolverFileHandler:
         
         # Create and start loader thread
         loader_thread = RSTLoaderThread(filename, skip_substeps=skip_substeps)
+        self._begin_rst_progress(filename, analysis_name, loader_thread)
+        loader_thread.progress.connect(
+            lambda message, thread=loader_thread: self._on_rst_load_progress(message, thread)
+        )
         
         if is_base:
             loader_thread.finished.connect(
@@ -153,6 +174,7 @@ class SolverFileHandler:
         reader: DPFAnalysisReader,
     ):
         """Handle successful base RST file load."""
+        self._finish_rst_progress()
         self.tab.setEnabled(True)
         
         # Reuse the loader's reader to avoid opening large RST files twice.
@@ -169,6 +191,7 @@ class SolverFileHandler:
         reader: DPFAnalysisReader,
     ):
         """Handle successful combine RST file load."""
+        self._finish_rst_progress()
         self.tab.setEnabled(True)
         
         # Reuse the loader's reader to avoid opening large RST files twice.
@@ -179,12 +202,96 @@ class SolverFileHandler:
     
     def _on_rst_load_error(self, error: str, analysis_name: str):
         """Handle RST file load error."""
+        self._finish_rst_progress()
         self.tab.setEnabled(True)
         
         QMessageBox.warning(
             self.tab, "RST Load Error",
             f"Failed to load {analysis_name} RST file.\n\nError: {error}"
         )
+
+    def _begin_rst_progress(self, filename: str, analysis_name: str, loader_thread):
+        """Track one load and show details only if it is still running after five seconds."""
+        self._active_rst_loader_thread = loader_thread
+        self._rst_progress_started_at = time.monotonic()
+        self._rst_progress_analysis_name = analysis_name
+        self._rst_progress_filename = filename
+        self._rst_progress_size_text = "Unknown"
+        self._rst_progress_phase = "Preparing RST metadata read..."
+        QTimer.singleShot(
+            RST_PROGRESS_DIALOG_DELAY_MS,
+            lambda thread=loader_thread: self._show_rst_progress_if_running(thread),
+        )
+
+    def _show_rst_progress_if_running(self, loader_thread):
+        if (
+            self._active_rst_loader_thread is not loader_thread
+            or not loader_thread.isRunning()
+        ):
+            return
+
+        parent = self.tab.window() if hasattr(self.tab, "window") else None
+        dialog = QProgressDialog(parent)
+        dialog.setWindowTitle("Loading RST File")
+        dialog.setRange(0, 0)
+        dialog.setCancelButton(None)
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        dialog.setMinimumWidth(520)
+        dialog.setWindowFlags(dialog.windowFlags() & ~Qt.WindowCloseButtonHint)
+        self._rst_progress_dialog = dialog
+        try:
+            size_mb = os.path.getsize(self._rst_progress_filename) / (1024 ** 2)
+            self._rst_progress_size_text = f"{size_mb:,.1f} MB"
+        except OSError:
+            pass
+
+        timer = QTimer()
+        timer.setInterval(1000)
+        timer.timeout.connect(self._refresh_rst_progress_dialog)
+        self._rst_progress_timer = timer
+
+        self.tab.console_textbox.append(
+            f"RST loading is still running: {self._rst_progress_phase}\n"
+        )
+        self._refresh_rst_progress_dialog()
+        dialog.show()
+        timer.start()
+
+    def _on_rst_load_progress(self, message: str, loader_thread):
+        if self._active_rst_loader_thread is not loader_thread:
+            return
+        self._rst_progress_phase = message
+        if self._rst_progress_dialog is not None:
+            self.tab.console_textbox.append(f"  RST load: {message}\n")
+            self._refresh_rst_progress_dialog()
+
+    def _refresh_rst_progress_dialog(self):
+        if self._rst_progress_dialog is None or self._rst_progress_started_at is None:
+            return
+
+        elapsed = max(0, int(time.monotonic() - self._rst_progress_started_at))
+        elapsed_text = f"{elapsed // 60:02d}:{elapsed % 60:02d}"
+        self._rst_progress_dialog.setLabelText(
+            f"Loading {self._rst_progress_analysis_name} RST\n\n"
+            f"File: {os.path.basename(self._rst_progress_filename)}\n"
+            f"Size: {self._rst_progress_size_text}\n"
+            f"Elapsed: {elapsed_text}\n"
+            f"Current phase: {self._rst_progress_phase}\n\n"
+            "Large or network-hosted files may take several minutes."
+        )
+
+    def _finish_rst_progress(self):
+        if self._rst_progress_timer is not None:
+            self._rst_progress_timer.stop()
+            self._rst_progress_timer.deleteLater()
+            self._rst_progress_timer = None
+        if self._rst_progress_dialog is not None:
+            self._rst_progress_dialog.close()
+            self._rst_progress_dialog.deleteLater()
+            self._rst_progress_dialog = None
+        self._active_rst_loader_thread = None
+        self._rst_progress_started_at = None
 
     def refresh_named_selections(self, checked=False):
         """Refresh the named selections dropdown from loaded RST files."""
