@@ -260,7 +260,7 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
                 "fmt": f"%.{digits}f",
                 "position_x": 0.04,
                 "position_y": 0.35,
-                "width": 0.05,
+                "width": 0.13,
                 "height": 0.5,
                 "vertical": True,
                 "title_font_size": 14,
@@ -278,7 +278,14 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
             )
         else:
             kwargs.update(show_edges=True, edge_color="#4d4d4d", line_width=1)
-        return plotter.add_mesh(mesh, **kwargs)
+        actor = plotter.add_mesh(mesh, **kwargs)
+        scalar_bar = plotter.scalar_bars[self.tab.data_column]
+        scalar_bar.SetBarRatio(0.145)
+        background = scalar_bar.GetBackgroundProperty()
+        background.SetColor(1.0, 1.0, 1.0)
+        background.SetOpacity(0.65)
+        scalar_bar.SetDrawBackground(self.state.legend_background_enabled)
+        return actor
 
     @staticmethod
     def _add_context_actor(plotter, mesh, name: str):
@@ -553,6 +560,11 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
             color="black",
             name="hover_annotation",
         )
+        text_property = annotation.GetTextProperty()
+        text_property.SetBackgroundColor(1.0, 1.0, 1.0)
+        text_property.SetBackgroundOpacity(
+            0.65 if self.state.hover_background_enabled else 0.0
+        )
         self.state.hover_annotation = annotation
         self.tab.hover_annotation = annotation
 
@@ -757,9 +769,9 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
                         else:
                             lines.append(f"{active_name}: {value:.5f}")
                 
-                annotation.SetText(2, "\n".join(lines))
+                annotation.SetText(annotation.UpperRight, "\n".join(lines))
             else:
-                annotation.SetText(2, "")
+                annotation.SetText(annotation.UpperRight, "")
 
             iren.GetRenderWindow().Render()
             self.state.last_hover_time = now

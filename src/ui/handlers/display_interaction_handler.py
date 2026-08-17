@@ -38,6 +38,10 @@ class DisplayInteractionHandler(DisplayBaseHandler):
         if self.tab.current_mesh is None:
             return
         
+        if self._is_click_on_hover_values(position):
+            self._show_hover_context_menu(position)
+            return
+
         # Check if click is on the legend (scalar bar)
         if self._is_click_on_legend(position):
             self._show_legend_context_menu(position)
@@ -604,8 +608,51 @@ class DisplayInteractionHandler(DisplayBaseHandler):
         self.set_state_attr("target_node_id", None)
 
     # ------------------------------------------------------------------
-    # Legend (Scalar Bar) context menu
+    # Overlay context menus
     # ------------------------------------------------------------------
+    def _is_click_on_hover_values(self, position: QPoint) -> bool:
+        """Return whether a click is in the visible upper-right hover area."""
+        try:
+            annotation = self.state.hover_annotation
+            text = annotation.GetText(annotation.UpperRight) if annotation else None
+            width = self.tab.plotter.width()
+            height = self.tab.plotter.height()
+            return bool(
+                text
+                and width > 0
+                and height > 0
+                and position.x() >= width * 0.55
+                and position.y() <= height * 0.35
+            )
+        except Exception:
+            return False
+
+    def _show_hover_context_menu(self, position: QPoint) -> None:
+        """Show options for the upper-right hover values."""
+        context_menu = QMenu(self.tab)
+        context_menu.setStyleSheet(CONTEXT_MENU_STYLE)
+        self._add_section_title(context_menu, "Hover Values Options")
+
+        background_action = QAction("Semi-Transparent Background", self.tab)
+        background_action.setCheckable(True)
+        background_action.setChecked(self.state.hover_background_enabled)
+        background_action.triggered.connect(self._set_hover_background)
+        context_menu.addAction(background_action)
+
+        context_menu.exec_(self.tab.plotter.mapToGlobal(position))
+
+    def _set_hover_background(self, enabled: bool) -> None:
+        """Toggle the hover text background without affecting the legend."""
+        self.state.hover_background_enabled = enabled
+        annotation = self.state.hover_annotation
+        if annotation is None:
+            return
+
+        text_property = annotation.GetTextProperty()
+        text_property.SetBackgroundColor(1.0, 1.0, 1.0)
+        text_property.SetBackgroundOpacity(0.65 if enabled else 0.0)
+        self.tab.plotter.render()
+
     def _is_click_on_legend(self, position: QPoint) -> bool:
         """
         Check if the click position is on the scalar bar (legend).
@@ -613,7 +660,7 @@ class DisplayInteractionHandler(DisplayBaseHandler):
         The scalar bar is positioned at normalized viewport coordinates:
         - position_x: 0.04 (left edge)
         - position_y: 0.35 (bottom edge)
-        - width: 0.05
+        - width: 0.13
         - height: 0.5
         
         We add some padding for easier clicking.
@@ -633,10 +680,10 @@ class DisplayInteractionHandler(DisplayBaseHandler):
             norm_y = 1.0 - (position.y() / height)  # Flip Y axis
             
             # Scalar bar bounds (with padding for easier clicking)
-            # Original: x=0.04, y=0.35, w=0.05, h=0.5
+            # Original: x=0.04, y=0.35, w=0.13, h=0.5
             padding = 0.02
             sb_left = 0.04 - padding
-            sb_right = 0.04 + 0.05 + padding + 0.06  # Extra for labels
+            sb_right = 0.04 + 0.13 + padding
             sb_bottom = 0.35 - padding
             sb_top = 0.35 + 0.5 + padding + 0.05  # Extra for title
             
@@ -652,6 +699,14 @@ class DisplayInteractionHandler(DisplayBaseHandler):
         
         # Section title
         self._add_section_title(context_menu, "Legend Options")
+
+        background_action = QAction("Semi-Transparent Background", self.tab)
+        background_action.setCheckable(True)
+        background_action.setChecked(self.state.legend_background_enabled)
+        background_action.triggered.connect(self._set_legend_background)
+        context_menu.addAction(background_action)
+
+        context_menu.addSeparator()
         
         # Current digits info
         current_digits = self.state.scalar_bar_digits
@@ -676,6 +731,21 @@ class DisplayInteractionHandler(DisplayBaseHandler):
         context_menu.addAction(decrease_action)
         
         context_menu.exec_(self.tab.plotter.mapToGlobal(position))
+
+    def _set_legend_background(self, enabled: bool) -> None:
+        """Toggle the scalar-bar background without affecting hover text."""
+        self.state.legend_background_enabled = enabled
+        plotter = self.tab.plotter
+        data_column = self.state.data_column or self.tab.data_column
+        if not data_column or data_column not in plotter.scalar_bars:
+            return
+
+        scalar_bar = plotter.scalar_bars[data_column]
+        background = scalar_bar.GetBackgroundProperty()
+        background.SetColor(1.0, 1.0, 1.0)
+        background.SetOpacity(0.65)
+        scalar_bar.SetDrawBackground(enabled)
+        plotter.render()
     
     def _increase_scalar_bar_digits(self) -> None:
         """Increase the number of decimal places in the scalar bar."""

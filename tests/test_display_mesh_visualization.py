@@ -4,7 +4,8 @@ from types import SimpleNamespace
 
 import numpy as np
 import pyvista as pv
-from PyQt5.QtCore import QCoreApplication, QObject, pyqtSlot
+import vtk
+from PyQt5.QtCore import QCoreApplication, QObject, QPoint, pyqtSlot
 
 from core.data_models import MeshTopologyData
 from file_io.dpf_reader import DPFAnalysisReader, MeshTopologyProvider, _SurfaceTopology
@@ -69,24 +70,40 @@ class _Plotter:
     def __init__(self):
         self.mesh_calls = []
         self.text_calls = []
+        self.scalar_bars = {}
+        self.renderer = vtk.vtkRenderer()
+        self.iren = SimpleNamespace(
+            add_observer=lambda *_args: 1,
+            remove_observer=lambda *_args: None,
+        )
 
     def clear(self):
         self.mesh_calls.clear()
         self.text_calls.clear()
+        self.scalar_bars.clear()
 
     def add_mesh(self, mesh, **kwargs):
         self.mesh_calls.append((mesh, kwargs))
+        scalar_bar_args = kwargs.get("scalar_bar_args", {})
+        if kwargs.get("show_scalar_bar") and scalar_bar_args.get("title"):
+            self.scalar_bars[scalar_bar_args["title"]] = vtk.vtkScalarBarActor()
         return _Actor()
 
     def add_text(self, text, **kwargs):
         self.text_calls.append((text, kwargs))
-        return object()
+        return pv.CornerAnnotation(kwargs.get("position", "upper_left"), text)
 
     def reset_camera(self):
         pass
 
     def render(self):
         pass
+
+    def width(self):
+        return 800
+
+    def height(self):
+        return 600
 
 
 class _TopologyReceiver(QObject):
@@ -142,6 +159,38 @@ def _topology(include_whole=True):
         context_faces=np.empty(0, dtype=np.int64) if include_whole else None,
         context_lines=np.empty(0, dtype=np.int64) if include_whole else None,
     )
+
+
+def test_overlay_backgrounds_are_independent_and_reapplied():
+    visual_handler, tab = _handler()
+    state = visual_handler.state
+    state.hover_background_enabled = True
+    state.legend_background_enabled = True
+
+    DisplayVisualizationHandler.setup_hover_annotation(visual_handler)
+    hover = state.hover_annotation
+    assert hover.GetTextProperty().GetBackgroundOpacity() == 0.65
+
+    visual_handler._add_scalar_actor(tab.plotter, tab.current_mesh, "Result", points=True)
+    legend = tab.plotter.scalar_bars["Result"]
+    assert legend.GetDrawBackground()
+    assert legend.GetBarRatio() == 0.145
+    assert legend.GetBackgroundProperty().GetOpacity() == 0.65
+
+    hover.SetText(hover.UpperRight, "Node ID: 20")
+    interaction = DisplayInteractionHandler(tab, state, SimpleNamespace())
+    assert interaction._is_click_on_hover_values(QPoint(700, 50))
+    assert not interaction._is_click_on_hover_values(QPoint(200, 300))
+
+    interaction._set_hover_background(False)
+    assert not state.hover_background_enabled
+    assert state.legend_background_enabled
+    assert hover.GetTextProperty().GetBackgroundOpacity() == 0.0
+    assert legend.GetDrawBackground()
+
+    interaction._set_legend_background(False)
+    assert not state.legend_background_enabled
+    assert not legend.GetDrawBackground()
 
 
 def test_points_mode_never_invokes_topology_provider():
