@@ -386,6 +386,10 @@ TOOLTIP_DISPLAY_MESH_SCOPE = (
     "Whole Base Model is unavailable while nonzero deformation is displayed."
 )
 
+TOOLTIP_DISPLAY_MESH_EDGES = (
+    "Show or hide element edges in Contour Mesh and Mesh + Points views."
+)
+
 TOOLTIP_DISPLAY_LEGEND_RANGE = (
     "Set custom legend limits for contour visualization.\n\n"
     "Min and Max define the displayed color range."

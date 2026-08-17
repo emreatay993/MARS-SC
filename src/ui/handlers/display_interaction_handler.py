@@ -29,6 +29,179 @@ class DisplayInteractionHandler(DisplayBaseHandler):
     def __init__(self, tab, state, hotspot_detector: HotspotDetector):
         super().__init__(tab, state)
         self.hotspot_detector = hotspot_detector
+        self._mouse_pivot_rotation_active = False
+        self._rotation_pivot = None
+        self._pivot_rotation_observers = None
+        self._pivot_move_command = None
+
+    # ------------------------------------------------------------------
+    # Camera interaction
+    # ------------------------------------------------------------------
+    def enable_mouse_pivot_rotation(self) -> None:
+        """Orbit around the mesh point beneath an unmodified left drag."""
+        if self._pivot_rotation_observers is not None:
+            return
+
+        interactor = self.tab.plotter.iren.interactor
+        press_id = interactor.AddObserver(
+            "LeftButtonPressEvent",
+            self._begin_mouse_pivot_rotation,
+            0.1,
+        )
+        style = self.tab.plotter.iren.style
+        move_id = style.AddObserver(
+            "MouseMoveEvent",
+            self._move_mouse_pivot_rotation,
+            0.1,
+        )
+        release_id = self.tab.plotter.iren.add_observer(
+            "LeftButtonReleaseEvent",
+            self._end_mouse_pivot_rotation,
+        )
+        self._pivot_rotation_observers = (press_id, move_id, release_id)
+        self._pivot_move_command = style.GetCommand(move_id)
+
+    def _begin_mouse_pivot_rotation(self, interactor, _event) -> None:
+        """Pick a fresh pivot for an unmodified left-button orbit."""
+        self._mouse_pivot_rotation_active = False
+        self._rotation_pivot = None
+        if (
+            interactor.GetShiftKey()
+            or interactor.GetControlKey()
+            or self.tab.current_mesh is None
+            or self.state.is_point_picking_active
+            or getattr(self.tab.plotter, "_picking_left_clicking_observer", None)
+            is not None
+        ):
+            return
+
+        renderer = self.tab.plotter.renderer
+        camera = renderer.GetActiveCamera()
+        picker = vtk.vtkCellPicker()
+        picker.SetTolerance(0.01)
+
+        actor = self.state.current_actor or self.tab.current_actor
+        if actor is not None:
+            picker.PickFromListOn()
+            picker.AddPickList(actor)
+
+        x, y = interactor.GetEventPosition()
+        if picker.Pick(x, y, 0, renderer):
+            self._rotation_pivot = np.asarray(picker.GetPickPosition(), dtype=float)
+        else:
+            self._rotation_pivot = np.asarray(camera.GetFocalPoint(), dtype=float)
+        self._mouse_pivot_rotation_active = True
+
+    def _move_mouse_pivot_rotation(self, _style, _event) -> None:
+        """Apply one cursor-anchored orbit step and suppress the default step."""
+        if not self._mouse_pivot_rotation_active or self._rotation_pivot is None:
+            return
+
+        interactor = self.tab.plotter.iren.interactor
+        x, y = interactor.GetEventPosition()
+        last_x, last_y = interactor.GetLastEventPosition()
+        dx, dy = x - last_x, y - last_y
+        if dx == 0 and dy == 0:
+            return
+
+        renderer = self.tab.plotter.renderer
+        width, height = renderer.GetRenderWindow().GetSize()
+        style = self.tab.plotter.iren.get_interactor_style()
+        if not self._orbit_camera_about_pivot(
+            renderer.GetActiveCamera(),
+            self._rotation_pivot,
+            dx,
+            dy,
+            width,
+            height,
+            style.GetMotionFactor(),
+        ):
+            return
+
+        if style.GetAutoAdjustCameraClippingRange():
+            renderer.ResetCameraClippingRange()
+        if interactor.GetLightFollowCamera():
+            renderer.UpdateLightsGeometryToFollowCamera()
+        style.InvokeEvent(vtk.vtkCommand.InteractionEvent)
+        interactor.Render()
+        self._pivot_move_command.AbortFlagOn()
+
+    def _end_mouse_pivot_rotation(self, _interactor, _event) -> None:
+        """Discard the per-gesture pivot after the left button is released."""
+        self._mouse_pivot_rotation_active = False
+        self._rotation_pivot = None
+
+    @staticmethod
+    def _rotate_camera_frame(position, focal_point, view_up, pivot, axis, angle):
+        """Rotate a complete camera frame around one world-space axis."""
+        axis = np.asarray(axis, dtype=float)
+        axis_norm = np.linalg.norm(axis)
+        if axis_norm == 0:
+            return None
+
+        rotation = vtk.vtkTransform()
+        rotation.RotateWXYZ(angle, *(axis / axis_norm))
+        return (
+            pivot
+            + np.asarray(rotation.TransformVector(position - pivot), dtype=float),
+            pivot
+            + np.asarray(rotation.TransformVector(focal_point - pivot), dtype=float),
+            np.asarray(rotation.TransformVector(view_up), dtype=float),
+        )
+
+    @classmethod
+    def _orbit_camera_about_pivot(
+        cls,
+        camera,
+        pivot,
+        dx: float,
+        dy: float,
+        width: int,
+        height: int,
+        motion_factor: float,
+    ) -> bool:
+        """Rotate the complete camera frame around an arbitrary world point."""
+        if width <= 0 or height <= 0:
+            return False
+
+        pivot = np.asarray(pivot, dtype=float)
+        position = np.asarray(camera.GetPosition(), dtype=float)
+        focal_point = np.asarray(camera.GetFocalPoint(), dtype=float)
+        view_up = np.asarray(camera.GetViewUp(), dtype=float)
+
+        azimuth = dx * (-20.0 / width) * motion_factor
+        elevation = dy * (-20.0 / height) * motion_factor
+
+        camera_frame = cls._rotate_camera_frame(
+            position,
+            focal_point,
+            view_up,
+            pivot,
+            view_up,
+            azimuth,
+        )
+        if camera_frame is None:
+            return False
+        position, focal_point, view_up = camera_frame
+
+        elevation_axis = np.cross(position - focal_point, view_up)
+        camera_frame = cls._rotate_camera_frame(
+            position,
+            focal_point,
+            view_up,
+            pivot,
+            elevation_axis,
+            elevation,
+        )
+        if camera_frame is None:
+            return False
+        position, focal_point, view_up = camera_frame
+
+        camera.SetPosition(*position)
+        camera.SetFocalPoint(*focal_point)
+        camera.SetViewUp(*view_up)
+        camera.OrthogonalizeViewUp()
+        return True
 
     # ------------------------------------------------------------------
     # Context menu handling

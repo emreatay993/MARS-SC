@@ -78,6 +78,9 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
     def _mesh_scope(self) -> str:
         return "whole" if self.tab.mesh_scope_combo.currentData() == "whole" else "result"
 
+    def _mesh_edges_visible(self) -> bool:
+        return self.tab.mesh_edges_checkbox.isChecked()
+
     def _has_nonzero_deformation(self) -> bool:
         if self.tab.deformation_result is None:
             return False
@@ -105,6 +108,7 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
             self.tab.mesh_scope_combo.setCurrentIndex(0)
             self.tab.mesh_scope_combo.blockSignals(False)
         self.tab.mesh_scope_combo.setEnabled(available and view != "points" and not deformed)
+        self.tab.mesh_edges_checkbox.setEnabled(available and view != "points")
         self.tab.point_size.setEnabled(view != "contour_mesh")
 
     def on_mesh_view_changed(self) -> None:
@@ -118,6 +122,20 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
         if self._mesh_view() != "points":
             self._request_topology()
         self.update_visualization()
+
+    def on_mesh_edges_changed(self, visible: bool) -> None:
+        """Update current mesh actors without rebuilding the view."""
+        actors = []
+        if self._mesh_view() == "contour_mesh":
+            actors.append(self.state.current_actor or self.tab.current_actor)
+        actors.extend(
+            self.tab.plotter.actors.get(name)
+            for name in ("mesh_context", "whole_mesh_context")
+        )
+        for actor in actors:
+            if actor is not None:
+                actor.GetProperty().SetEdgeVisibility(visible)
+        self.tab.plotter.render()
 
     def _topology_matches_current_request(self) -> bool:
         mesh = self.state.current_mesh or self.tab.current_mesh
@@ -277,7 +295,11 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
                 render_points_as_spheres=True,
             )
         else:
-            kwargs.update(show_edges=True, edge_color="#4d4d4d", line_width=1)
+            kwargs.update(
+                show_edges=self._mesh_edges_visible(),
+                edge_color="#4d4d4d",
+                line_width=1,
+            )
         actor = plotter.add_mesh(mesh, **kwargs)
         scalar_bar = plotter.scalar_bars[self.tab.data_column]
         scalar_bar.SetBarRatio(0.145)
@@ -287,8 +309,7 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
         scalar_bar.SetDrawBackground(self.state.legend_background_enabled)
         return actor
 
-    @staticmethod
-    def _add_context_actor(plotter, mesh, name: str):
+    def _add_context_actor(self, plotter, mesh, name: str):
         if mesh is None or mesh.n_cells == 0:
             return None
         return plotter.add_mesh(
@@ -296,7 +317,7 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
             name=name,
             color="#d9d9d9",
             edge_color="#4d4d4d",
-            show_edges=True,
+            show_edges=self._mesh_edges_visible(),
             line_width=1,
             opacity=1.0,
             show_scalar_bar=False,

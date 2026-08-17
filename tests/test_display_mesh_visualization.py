@@ -49,6 +49,18 @@ class _ValueWidget:
         self.enabled = bool(enabled)
 
 
+class _CheckBox:
+    def __init__(self, checked=True):
+        self.checked = checked
+        self.enabled = False
+
+    def isChecked(self):
+        return self.checked
+
+    def setEnabled(self, enabled):
+        self.enabled = bool(enabled)
+
+
 class _TextWidget:
     def __init__(self, text):
         self._text = str(text)
@@ -60,7 +72,13 @@ class _TextWidget:
 class _Actor:
     def __init__(self):
         self.mapper = SimpleNamespace(scalar_range=None)
-        self.property = SimpleNamespace(SetPointSize=lambda _value: None)
+        self.edge_visibility = None
+        self.property = SimpleNamespace(
+            SetPointSize=lambda _value: None,
+            SetEdgeVisibility=lambda value: setattr(
+                self, "edge_visibility", bool(value)
+            ),
+        )
 
     def GetProperty(self):
         return self.property
@@ -71,6 +89,7 @@ class _Plotter:
         self.mesh_calls = []
         self.text_calls = []
         self.scalar_bars = {}
+        self.actors = {}
         self.renderer = vtk.vtkRenderer()
         self.iren = SimpleNamespace(
             add_observer=lambda *_args: 1,
@@ -81,13 +100,17 @@ class _Plotter:
         self.mesh_calls.clear()
         self.text_calls.clear()
         self.scalar_bars.clear()
+        self.actors.clear()
 
     def add_mesh(self, mesh, **kwargs):
         self.mesh_calls.append((mesh, kwargs))
         scalar_bar_args = kwargs.get("scalar_bar_args", {})
         if kwargs.get("show_scalar_bar") and scalar_bar_args.get("title"):
             self.scalar_bars[scalar_bar_args["title"]] = vtk.vtkScalarBarActor()
-        return _Actor()
+        actor = _Actor()
+        if kwargs.get("name"):
+            self.actors[kwargs["name"]] = actor
+        return actor
 
     def add_text(self, text, **kwargs):
         self.text_calls.append((text, kwargs))
@@ -127,6 +150,7 @@ def _handler(view="points", scope="result"):
         current_actor=None,
         mesh_view_combo=_Combo(["points", "contour_mesh", "mesh_points"], ["points", "contour_mesh", "mesh_points"].index(view)),
         mesh_scope_combo=_Combo(["result", "whole"], ["result", "whole"].index(scope)),
+        mesh_edges_checkbox=_CheckBox(),
         point_size=_ValueWidget(8),
         scalar_min_spin=_ValueWidget(1.0),
         scalar_max_spin=_ValueWidget(3.0),
@@ -193,6 +217,72 @@ def test_overlay_backgrounds_are_independent_and_reapplied():
     assert not legend.GetDrawBackground()
 
 
+def test_mouse_pivot_orbit_keeps_the_picked_point_anchored():
+    mesh = pv.Sphere(radius=1.0, theta_resolution=60, phi_resolution=60)
+    mesh["Result"] = mesh.points[:, 2]
+    plotter = pv.Plotter(off_screen=True, window_size=(800, 600))
+    actor = plotter.add_mesh(mesh, scalars="Result", pickable=True)
+    plotter.enable_parallel_projection()
+    plotter.camera_position = [(0, 0, 5), (0, 0, 0), (0, 1, 0)]
+    plotter.camera.parallel_scale = 2.0
+    plotter.render()
+
+    state = DisplayState(current_mesh=mesh, current_actor=actor, data_column="Result")
+    tab = SimpleNamespace(plotter=plotter, current_mesh=mesh, current_actor=actor)
+    handler = DisplayInteractionHandler(tab, state, SimpleNamespace())
+    handler.enable_mouse_pivot_rotation()
+
+    expected_pivot = np.array([0.5, 0.0, np.sqrt(0.75)])
+    renderer = plotter.renderer
+    renderer.SetWorldPoint(*expected_pivot, 1.0)
+    renderer.WorldToDisplay()
+    mouse_position = np.asarray(renderer.GetDisplayPoint())[:2]
+    interactor = plotter.iren.interactor
+    interactor.SetEventInformation(*mouse_position.astype(int))
+    interactor.InvokeEvent("LeftButtonPressEvent")
+
+    picked_pivot = np.asarray(handler._rotation_pivot)
+    renderer.SetWorldPoint(*picked_pivot, 1.0)
+    renderer.WorldToDisplay()
+    display_before = np.asarray(renderer.GetDisplayPoint())[:2]
+
+    interactor.SetEventInformation(
+        int(mouse_position[0] + 30),
+        int(mouse_position[1] - 15),
+    )
+    interactor.InvokeEvent("MouseMoveEvent")
+    renderer.SetWorldPoint(*picked_pivot, 1.0)
+    renderer.WorldToDisplay()
+    display_after = np.asarray(renderer.GetDisplayPoint())[:2]
+    camera_position = np.asarray(plotter.camera.position)
+    interactor.InvokeEvent("LeftButtonReleaseEvent")
+
+    np.testing.assert_allclose(picked_pivot, expected_pivot, atol=0.05)
+    np.testing.assert_allclose(display_after, display_before, atol=1e-8)
+    assert np.linalg.norm(camera_position - np.array([0.0, 0.0, 5.0])) > 0.1
+    assert not handler._mouse_pivot_rotation_active
+    assert plotter.iren.get_interactor_style().GetState() == 0
+
+    fallback_pivot = np.asarray(plotter.camera.focal_point)
+    interactor.SetEventInformation(5, 5)
+    interactor.InvokeEvent("LeftButtonPressEvent")
+    np.testing.assert_allclose(handler._rotation_pivot, fallback_pivot)
+    interactor.InvokeEvent("LeftButtonReleaseEvent")
+
+    state.is_point_picking_active = True
+    interactor.SetEventInformation(*mouse_position.astype(int))
+    interactor.InvokeEvent("LeftButtonPressEvent")
+    assert not handler._mouse_pivot_rotation_active
+    interactor.InvokeEvent("LeftButtonReleaseEvent")
+
+    state.is_point_picking_active = False
+    interactor.SetEventInformation(*mouse_position.astype(int), 0, 1)
+    interactor.InvokeEvent("LeftButtonPressEvent")
+    assert not handler._mouse_pivot_rotation_active
+    interactor.InvokeEvent("LeftButtonReleaseEvent")
+    plotter.close()
+
+
 def test_points_mode_never_invokes_topology_provider():
     handler, tab = _handler()
     provider = SimpleNamespace(build_visualization_topology=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("called")))
@@ -237,14 +327,36 @@ def test_render_modes_keep_one_scalar_actor_and_non_pickable_context():
     handler.update_visualization()
     assert len(tab.plotter.mesh_calls) == 2
     assert tab.plotter.mesh_calls[0][1]["pickable"] is False
+    assert tab.plotter.mesh_calls[0][1]["show_edges"] is True
     assert tab.plotter.mesh_calls[1][1]["pickable"] is True
     assert tab.plotter.mesh_calls[1][1]["style"] == "points"
+
+    tab.mesh_edges_checkbox.checked = False
+    handler.update_visualization()
+    assert tab.plotter.mesh_calls[0][1]["show_edges"] is False
 
     tab.mesh_view_combo.index = 1
     handler.update_visualization()
     assert len(tab.plotter.mesh_calls) == 1
     assert tab.plotter.mesh_calls[0][1]["pickable"] is True
-    assert tab.plotter.mesh_calls[0][1]["show_edges"] is True
+    assert tab.plotter.mesh_calls[0][1]["show_edges"] is False
+
+    mesh_calls_before = len(tab.plotter.mesh_calls)
+    handler.on_mesh_edges_changed(True)
+    assert tab.current_actor.edge_visibility is True
+    assert len(tab.plotter.mesh_calls) == mesh_calls_before
+
+
+def test_mesh_edge_control_is_enabled_only_for_mesh_views():
+    handler, tab = _handler(view="points")
+    handler._topology_provider = object()
+
+    handler.update_mesh_control_state()
+    assert tab.mesh_edges_checkbox.enabled is False
+
+    tab.mesh_view_combo.index = 1
+    handler.update_mesh_control_state()
+    assert tab.mesh_edges_checkbox.enabled is True
 
 
 def test_nonzero_deformation_forces_result_scope():

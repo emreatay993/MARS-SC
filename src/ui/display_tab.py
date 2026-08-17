@@ -110,6 +110,7 @@ class DisplayTab(QWidget):
         self._first_show = True
         
         # Connect signals
+        self.interaction_handler.enable_mouse_pivot_rotation()
         self._connect_signals()
         
         # Show initial welcome message on plotter
@@ -141,6 +142,7 @@ class DisplayTab(QWidget):
         self.plotter = self.components['plotter']
         self.mesh_view_combo = self.components['mesh_view_combo']
         self.mesh_scope_combo = self.components['mesh_scope_combo']
+        self.mesh_edges_checkbox = self.components['mesh_edges_checkbox']
         self.point_size = self.components['point_size']
         self.scalar_min_spin = self.components['scalar_min_spin']
         self.scalar_max_spin = self.components['scalar_max_spin']
@@ -221,6 +223,9 @@ class DisplayTab(QWidget):
         self.mesh_scope_combo.currentIndexChanged.connect(
             self._on_mesh_scope_changed
         )
+        self.mesh_edges_checkbox.toggled.connect(
+            self._on_mesh_edges_changed
+        )
         self.point_size.valueChanged.connect(self.update_point_size)
         self.scalar_min_spin.valueChanged.connect(self._update_scalar_range)
         self.scalar_max_spin.valueChanged.connect(self._update_scalar_range)
@@ -278,6 +283,10 @@ class DisplayTab(QWidget):
     def _on_mesh_scope_changed(self, _index: int) -> None:
         """Apply the selected mesh context scope."""
         self.visual_handler.on_mesh_scope_changed()
+
+    def _on_mesh_edges_changed(self, visible: bool) -> None:
+        """Show or hide edges on the current mesh actors."""
+        self.visual_handler.on_mesh_edges_changed(visible)
 
     @pyqtSlot(object)
     def _on_mesh_topology_worker_completed(self, worker) -> None:

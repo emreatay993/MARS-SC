@@ -5,7 +5,7 @@ Builds the Display tab UI: 3D view controls, result dropdowns, export buttons, e
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QDoubleValidator
 from PyQt5.QtWidgets import (
-    QComboBox, QDoubleSpinBox, QGroupBox, QHBoxLayout, QLabel,
+    QCheckBox, QComboBox, QDoubleSpinBox, QGroupBox, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QSpinBox, QVBoxLayout
 )
 from pyvistaqt import QtInteractor
@@ -21,6 +21,7 @@ from utils.tooltips import (
     TOOLTIP_DISPLAY_LOAD_FILE, TOOLTIP_DISPLAY_FILE_PATH,
     TOOLTIP_DISPLAY_VISUALIZATION_CONTROLS, TOOLTIP_DISPLAY_POINT_SIZE,
     TOOLTIP_DISPLAY_MESH_VIEW, TOOLTIP_DISPLAY_MESH_SCOPE,
+    TOOLTIP_DISPLAY_MESH_EDGES,
     TOOLTIP_DISPLAY_LEGEND_RANGE, TOOLTIP_DISPLAY_SCALAR,
     TOOLTIP_DISPLAY_CONTOUR_TYPE,
     TOOLTIP_DISPLAY_VIEW_COMBINATION, TOOLTIP_DISPLAY_FORCE_COMPONENT,
@@ -89,6 +90,11 @@ class DisplayTabUIBuilder:
         mesh_scope_label.setToolTip(TOOLTIP_DISPLAY_MESH_SCOPE)
         mesh_scope_combo.setToolTip(TOOLTIP_DISPLAY_MESH_SCOPE)
         mesh_scope_combo.setEnabled(False)
+
+        mesh_edges_checkbox = QCheckBox("Show Mesh Edges")
+        mesh_edges_checkbox.setChecked(True)
+        mesh_edges_checkbox.setToolTip(TOOLTIP_DISPLAY_MESH_EDGES)
+        mesh_edges_checkbox.setEnabled(False)
 
         # Point size control
         point_size = QSpinBox()
@@ -205,6 +211,7 @@ class DisplayTabUIBuilder:
         graphics_control_row1.addWidget(mesh_view_combo)
         graphics_control_row1.addWidget(mesh_scope_label)
         graphics_control_row1.addWidget(mesh_scope_combo)
+        graphics_control_row1.addWidget(mesh_edges_checkbox)
         graphics_control_row1.addStretch()
 
         # Row 2: base visualization controls
@@ -251,6 +258,7 @@ class DisplayTabUIBuilder:
         self.components['mesh_view_combo'] = mesh_view_combo
         self.components['mesh_scope_label'] = mesh_scope_label
         self.components['mesh_scope_combo'] = mesh_scope_combo
+        self.components['mesh_edges_checkbox'] = mesh_edges_checkbox
         self.components['point_size'] = point_size
         self.components['scalar_min_spin'] = scalar_min_spin
         self.components['scalar_max_spin'] = scalar_max_spin
