@@ -158,9 +158,7 @@ class SolveRunController:
         combo_table_override=None,
     ) -> Optional[CombinationResult]:
         """Run a lightweight single-combination stress recompute for Display on-demand usage."""
-        self.tab.progress_bar.setVisible(True)
-        self.tab.progress_bar.setValue(0)
-        self.tab.progress_bar.setFormat("Recomputing selected combination...")
+        self.lifecycle_handler.begin_progress("Recomputing selected combination...")
 
         try:
             return self.execution_handler.run_stress_single_combination(
@@ -194,7 +192,7 @@ class SolveRunController:
             return None
         finally:
             self.tab.setEnabled(True)
-            self.tab.progress_bar.setVisible(False)
+            self.lifecycle_handler.hide_progress()
 
     def get_combination_engine(self) -> Optional[StressCombinationEngine]:
         """Return the current stress engine instance if one exists."""

@@ -11,8 +11,14 @@ from ui.handlers.solve_run_controller import SolveRunController
 
 
 class _FakeTab:
+    def __init__(self):
+        self.enabled = True
+
     def _build_solver_config(self):
         return SolverConfig()
+
+    def setEnabled(self, enabled):
+        self.enabled = bool(enabled)
 
 
 class _FakeValidator:
@@ -30,6 +36,8 @@ class _FakeLifecycle:
         self.progress_events = []
         self.completed = False
         self.finished_without_results = False
+        self.started_progress = []
+        self.hidden_progress = 0
 
     def begin_solve(self, _config):
         self.begin_calls += 1
@@ -39,6 +47,12 @@ class _FakeLifecycle:
 
     def update_progress(self, current, total, message):
         self.progress_events.append((current, total, message))
+
+    def begin_progress(self, message):
+        self.started_progress.append(message)
+
+    def hide_progress(self):
+        self.hidden_progress += 1
 
     def complete_solve(self, **_kwargs):
         self.completed = True
@@ -93,6 +107,12 @@ class _FakeExecutor:
         progress_callback(100, 100, "done")
         return {"deformation": True}
 
+    def run_stress_single_combination(self, progress_callback, **_kwargs):
+        self.calls.append("recompute")
+        progress_callback(10, 100, "starting")
+        progress_callback(100, 100, "done")
+        return {"stress": True}
+
     def get_stress_engine(self):
         return None
 
@@ -142,3 +162,23 @@ def test_solve_run_controller_ignores_reentrant_solve_request():
     assert lifecycle.begin_calls == 0
     assert lifecycle.stage_messages
     assert "already running" in lifecycle.stage_messages[-1]
+
+
+def test_recompute_uses_shared_progress_lifecycle():
+    tab = _FakeTab()
+    controller = SolveRunController(tab)
+    lifecycle = _FakeLifecycle()
+    controller.lifecycle_handler = lifecycle
+    executor = _FakeExecutor()
+    controller.execution_handler = executor
+
+    result = controller.recompute_stress_combination_for_display(
+        config=SolverConfig(),
+        stress_type="von_mises",
+        combination_index=0,
+    )
+
+    assert result == {"stress": True}
+    assert lifecycle.started_progress == ["Recomputing selected combination..."]
+    assert lifecycle.hidden_progress == 1
+    assert lifecycle.progress_events[-1] == (100, 100, "done")

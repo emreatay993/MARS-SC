@@ -55,18 +55,27 @@ class _FakeProgressBar:
         self.value = 0
         self.format_text = ""
         self.range = (0, 100)
+        self.operations = []
+        self.updates_enabled = True
 
     def setVisible(self, visible):
         self.visible = bool(visible)
 
     def setValue(self, value):
         self.value = int(value)
+        self.operations.append(("value", self.value))
 
     def setFormat(self, text):
         self.format_text = str(text)
+        self.operations.append(("format", self.format_text))
 
     def setRange(self, minimum, maximum):
         self.range = (int(minimum), int(maximum))
+        self.operations.append(("range", self.range))
+
+    def setUpdatesEnabled(self, enabled):
+        self.updates_enabled = bool(enabled)
+        self.operations.append(("updates", self.updates_enabled))
 
 
 class _FakeTab:
@@ -138,3 +147,34 @@ def test_complete_solve_shows_100_and_hides_after_delay(monkeypatch):
 
     assert tab.enabled is True
     assert tab.progress_bar.visible is False
+
+
+def test_progress_state_is_atomic_and_event_pumping_is_throttled(monkeypatch):
+    tab = _FakeTab()
+    handler = SolverRunUiHandler(tab)
+    times = iter((1.0, 1.01, 1.02, 1.11))
+    process_calls = []
+    monkeypatch.setattr(ui_handler_module.time, "monotonic", lambda: next(times))
+    monkeypatch.setattr(
+        ui_handler_module.QApplication,
+        "processEvents",
+        lambda *_args, **_kwargs: process_calls.append(True),
+    )
+
+    handler.begin_solve(SolverConfig())
+    tab.progress_bar.operations.clear()
+    process_calls.clear()
+
+    handler.update_progress(10, 100, "phase one")
+    assert tab.progress_bar.operations == [
+        ("updates", False),
+        ("format", "phase one (10%)"),
+        ("value", 10),
+        ("updates", True),
+    ]
+    assert process_calls == []
+
+    handler.update_progress(20, 100, "phase two")
+    assert process_calls == []
+    handler.update_progress(30, 100, "phase three")
+    assert process_calls == [True]

@@ -64,15 +64,22 @@ class SolverRunUiHandler:
         """Log solve start and initialize the progress UI."""
         self._log_solve_start(config)
         self.tab.setEnabled(False)
+        self.tab.console_textbox.append("Running combination analysis...\n")
+        self.begin_progress("Preparing analysis...")
+
+    def begin_progress(self, message: str) -> None:
+        """Initialize one progress operation and invalidate stale hide timers."""
         self._reset_progress_state()
         self._progress_hide_request_id += 1
 
-        self.tab.progress_bar.setRange(0, 100)
+        formatted = f"{message} (0%)"
+        self._set_progress_state(
+            progress_range=(0, 100),
+            text=formatted,
+            value=0,
+        )
         self.tab.progress_bar.setVisible(True)
-        self.tab.progress_bar.setValue(0)
-        self.tab.progress_bar.setFormat("Preparing analysis... (0%)")
-        self.tab.console_textbox.append("Running combination analysis...\n")
-        self._last_message = "Preparing analysis... (0%)"
+        self._last_message = formatted
         self._process_events(force=True)
 
     def announce_stage(self, message: str) -> None:
@@ -89,33 +96,43 @@ class SolverRunUiHandler:
             percent = min(100, max(0, raw_percent))
             percent = max(percent, self._last_percent)
 
+            progress_range = None
             if self._progress_indeterminate:
-                self.tab.progress_bar.setRange(0, 100)
+                progress_range = (0, 100)
                 self._progress_indeterminate = False
 
             percent_changed = percent != self._last_percent
             formatted = f"{text} ({percent}%)"
             message_changed = formatted != self._last_message
 
+            if progress_range or percent_changed or message_changed:
+                self._set_progress_state(
+                    progress_range=progress_range,
+                    text=formatted if message_changed else None,
+                    value=percent if percent_changed else None,
+                )
             if percent_changed:
-                self.tab.progress_bar.setValue(percent)
                 self._last_percent = percent
             if message_changed:
-                self.tab.progress_bar.setFormat(formatted)
                 self._last_message = formatted
 
-            self._process_events(force=(percent_changed or message_changed))
+            self._process_events(force=(progress_range is not None or percent == 100))
         else:
+            progress_range = None
             if not self._progress_indeterminate:
-                self.tab.progress_bar.setRange(0, 0)
+                progress_range = (0, 0)
                 self._progress_indeterminate = True
 
             message_changed = text != self._last_message
+            if progress_range or message_changed:
+                self._set_progress_state(
+                    progress_range=progress_range,
+                    text=text if message_changed else None,
+                )
             if message_changed:
-                self.tab.progress_bar.setFormat(text)
                 self._last_message = text
 
-            self._process_events(force=message_changed)
+            self._process_events(force=(progress_range is not None))
 
     def complete_solve(
         self,
@@ -171,13 +188,13 @@ class SolverRunUiHandler:
     def finish_without_results(self) -> None:
         """Reset run-state UI when solve exits without producing any results."""
         self.tab.setEnabled(True)
-        self._hide_progress_bar_immediately()
+        self.hide_progress()
         self.tab._history_popup_requested = False
 
     def fail_solve(self, error_msg: str) -> None:
         """Handle unexpected solve failure."""
         self.tab.setEnabled(True)
-        self._hide_progress_bar_immediately()
+        self.hide_progress()
         self.tab._history_popup_requested = False
         self.tab.console_textbox.append(f"\nSolver Error:\n{error_msg}\n")
         QMessageBox.critical(
@@ -197,7 +214,7 @@ class SolverRunUiHandler:
     def handle_nodal_forces_unavailable(self, error: NodalForcesNotAvailableError) -> None:
         """Report nodal-forces output unavailability."""
         self.tab.setEnabled(True)
-        self._hide_progress_bar_immediately()
+        self.hide_progress()
         error_msg = (
             f"Nodal Forces Not Available\n\n"
             f"{str(error)}\n\n"
@@ -208,7 +225,7 @@ class SolverRunUiHandler:
     def handle_displacement_unavailable(self, error: DisplacementNotAvailableError) -> None:
         """Report displacement output unavailability."""
         self.tab.setEnabled(True)
-        self._hide_progress_bar_immediately()
+        self.hide_progress()
         error_msg = (
             f"Displacement Results Not Available\n\n"
             f"{str(error)}\n\n"
@@ -219,14 +236,14 @@ class SolverRunUiHandler:
     def handle_cylindrical_cs_error(self, error: CylindricalCSNotFoundError) -> None:
         """Report invalid/missing cylindrical coordinate system."""
         self.tab.setEnabled(True)
-        self._hide_progress_bar_immediately()
+        self.hide_progress()
         error_msg = f"Cylindrical Coordinate System Error\n\n{str(error)}"
         QMessageBox.critical(self.tab, "Coordinate System Error", error_msg)
 
     def handle_memory_error(self, error: MemoryError) -> None:
         """Report out-of-memory failure with practical guidance."""
         self.tab.setEnabled(True)
-        self._hide_progress_bar_immediately()
+        self.hide_progress()
         error_msg = (
             f"Out of Memory Error\n\n"
             f"The analysis requires more RAM than available.\n\n"
@@ -239,23 +256,26 @@ class SolverRunUiHandler:
 
     def _show_completion(self, message: str) -> None:
         """Render a final determinate completion state before hide."""
+        progress_range = None
         if self._progress_indeterminate:
-            self.tab.progress_bar.setRange(0, 100)
+            progress_range = (0, 100)
             self._progress_indeterminate = False
-        self.tab.progress_bar.setValue(100)
         formatted = f"{message} (100%)"
-        self.tab.progress_bar.setFormat(formatted)
+        self._set_progress_state(
+            progress_range=progress_range,
+            text=formatted,
+            value=100,
+        )
         self._last_percent = 100
         self._last_message = formatted
         self._process_events(force=True)
 
-    def _hide_progress_bar_immediately(self) -> None:
+    def hide_progress(self) -> None:
         """Hide the progress bar and clear internal state now."""
         self._progress_hide_request_id += 1
+        self.tab.progress_bar.setVisible(False)
         if self._progress_indeterminate:
             self.tab.progress_bar.setRange(0, 100)
-            self._progress_indeterminate = False
-        self.tab.progress_bar.setVisible(False)
         self._reset_progress_state()
 
     def _schedule_progress_hide(self, delay_ms: int) -> None:
@@ -267,8 +287,27 @@ class SolverRunUiHandler:
         """Hide only if this request is still current (ignore stale timers)."""
         if request_id != self._progress_hide_request_id:
             return
-        self.tab.progress_bar.setVisible(False)
-        self._reset_progress_state()
+        self.hide_progress()
+
+    def _set_progress_state(
+        self,
+        *,
+        progress_range=None,
+        text: Optional[str] = None,
+        value: Optional[int] = None,
+    ) -> None:
+        """Apply one coalescible progress state without intermediate paints."""
+        bar = self.tab.progress_bar
+        bar.setUpdatesEnabled(False)
+        try:
+            if progress_range is not None:
+                bar.setRange(*progress_range)
+            if text is not None:
+                bar.setFormat(text)
+            if value is not None:
+                bar.setValue(value)
+        finally:
+            bar.setUpdatesEnabled(True)
 
     def _reset_progress_state(self) -> None:
         """Reset tracked progress metadata for next solve run."""
