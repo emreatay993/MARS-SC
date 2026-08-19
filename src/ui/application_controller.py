@@ -250,20 +250,18 @@ class ApplicationController(QMainWindow):
         self._trigger_node_history(node_id, popup=True)
 
     def _trigger_node_history(self, node_id: int, popup: bool) -> None:
-        """Trigger combination-history solve for a selected node."""
-        # Update the node ID in solver tab for combination history mode
-        self.solver_tab.node_line_edit.setText(str(node_id))
-        self.solver_tab.console_textbox.append(f"Selected Node: {node_id}")
-        
-        # Enable combination history mode if not already
-        if not self.solver_tab.combination_history_checkbox.isChecked():
-            self.solver_tab.combination_history_checkbox.setChecked(True)
-        
-        # Trigger the combination history solve automatically
-        # This mimics the behavior of original MARS plot_history_for_node
+        """Plot history for the selected node and active Display contour."""
+        result_family = self.display_tab.current_contour_type
+        source_result = {
+            "Stress": self.display_tab.stress_result,
+            "Forces": self.display_tab.nodal_forces_result,
+            "Deformation": self.display_tab.deformation_result,
+        }.get(result_family)
         self.solver_tab.plot_combination_history_for_node(
             node_id,
             open_popup=popup,
+            result_family=result_family,
+            source_result=source_result,
         )
 
     @pyqtSlot(bool)

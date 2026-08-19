@@ -15,6 +15,7 @@ from ui.application_controller import ApplicationController
 from ui.handlers.display_interaction_handler import DisplayInteractionHandler
 from ui.handlers.display_state import DisplayState
 from ui.handlers.display_visualization_handler import DisplayVisualizationHandler
+from ui.solver_tab import SolverTab
 from ui.widgets.dialogs import HotspotDialog
 
 
@@ -558,6 +559,58 @@ def test_history_picker_uses_picked_dataset_node_id_not_nearest_coordinate():
     handler.on_point_picked_for_history(np.array([0.0, 0.0, 0.0]), picker)
 
     assert emitted == [20]
+
+
+def test_controller_routes_history_to_active_display_result():
+    source = object()
+    calls = []
+    controller = SimpleNamespace(
+        display_tab=SimpleNamespace(
+            current_contour_type="Forces",
+            stress_result=None,
+            nodal_forces_result=source,
+            deformation_result=None,
+        ),
+        solver_tab=SimpleNamespace(
+            plot_combination_history_for_node=lambda *args, **kwargs: calls.append((args, kwargs))
+        ),
+    )
+
+    ApplicationController._trigger_node_history(controller, 42, popup=True)
+
+    assert calls == [
+        ((42,), {"open_popup": True, "result_family": "Forces", "source_result": source})
+    ]
+
+
+def test_solver_tab_cache_hit_does_not_start_solve_or_toggle_history_mode():
+    class _Controller:
+        def show_cached_history(self, *_args):
+            return True
+
+        def solve(self, _config):
+            raise AssertionError("cache hit must not start Solve")
+
+    line_values = []
+    console_values = []
+    tab = SimpleNamespace(
+        node_line_edit=SimpleNamespace(setText=line_values.append),
+        _history_popup_requested=False,
+        solve_run_controller=_Controller(),
+        console_textbox=SimpleNamespace(append=console_values.append),
+    )
+
+    SolverTab.plot_combination_history_for_node(
+        tab,
+        42,
+        open_popup=True,
+        result_family="Stress",
+        source_result=object(),
+    )
+
+    assert line_values == ["42"]
+    assert tab._history_popup_requested is False
+    assert any("already-computed" in message for message in console_values)
 
 
 def test_real_rst_topology_is_nonempty_and_cached():

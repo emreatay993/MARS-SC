@@ -2,7 +2,12 @@ import os
 
 import numpy as np
 
-from core.data_models import CombinationResult, SolverConfig
+from core.data_models import (
+    CombinationResult,
+    DeformationResult,
+    NodalForcesResult,
+    SolverConfig,
+)
 from ui.handlers.solver_result_summary_handler import SolverResultSummaryHandler
 
 
@@ -191,6 +196,68 @@ def test_handle_stress_history_result_calls_popup_when_requested():
     call = tab.popup_calls[0]
     assert call["node_id"] == 42
     assert call["stress_type"] == "von_mises"
+
+
+def test_cached_stress_history_uses_exact_node_column():
+    tab = _FakeSolverTab()
+    handler = SolverResultSummaryHandler(tab)
+    values = np.array([[1.0, 10.0], [2.0, 20.0]])
+    source = CombinationResult(
+        node_ids=np.array([11, 22]),
+        node_coords=np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
+        result_type="von_mises",
+        all_combo_results=values,
+    )
+
+    assert handler.handle_cached_history_result("Stress", source, 22) is True
+
+    args, kwargs = tab.plot_combo_history_tab.calls[-1]
+    np.testing.assert_array_equal(args[1], values[:, 1])
+    assert kwargs["node_id"] == 22
+    np.testing.assert_array_equal(source.all_combo_results, values)
+
+
+def test_cached_force_history_plots_components_and_popup():
+    tab = _FakeSolverTab()
+    tab._history_popup_requested = True
+    handler = SolverResultSummaryHandler(tab)
+    source = NodalForcesResult(
+        node_ids=np.array([11, 22]),
+        node_coords=np.zeros((2, 3)),
+        all_combo_fx=np.array([[1.0, 3.0], [2.0, 4.0]]),
+        all_combo_fy=np.array([[5.0, 7.0], [6.0, 8.0]]),
+        all_combo_fz=np.array([[9.0, 11.0], [10.0, 12.0]]),
+        force_unit="N",
+    )
+
+    assert handler.handle_cached_history_result("Forces", source, 11) is True
+
+    _, kwargs = tab.plot_combo_history_tab.calls[-1]
+    np.testing.assert_array_equal(kwargs["force_data"]["fx"], [1.0, 2.0])
+    np.testing.assert_allclose(
+        kwargs["force_data"]["magnitude"],
+        np.sqrt(np.array([1.0, 2.0])**2 + np.array([5.0, 6.0])**2 + np.array([9.0, 10.0])**2),
+    )
+    assert tab.popup_calls[-1]["force_unit"] == "N"
+
+
+def test_cached_deformation_history_uses_exact_node_column():
+    tab = _FakeSolverTab()
+    handler = SolverResultSummaryHandler(tab)
+    source = DeformationResult(
+        node_ids=np.array([11, 22]),
+        node_coords=np.zeros((2, 3)),
+        all_combo_ux=np.array([[1.0, 3.0], [2.0, 4.0]]),
+        all_combo_uy=np.array([[5.0, 7.0], [6.0, 8.0]]),
+        all_combo_uz=np.array([[9.0, 11.0], [10.0, 12.0]]),
+        displacement_unit="mm",
+    )
+
+    assert handler.handle_cached_history_result("Deformation", source, 22) is True
+
+    _, kwargs = tab.plot_combo_history_tab.calls[-1]
+    np.testing.assert_array_equal(kwargs["deformation_data"]["ux"], [3.0, 4.0])
+    assert kwargs["displacement_unit"] == "mm"
 
 
 def test_export_stress_envelope_csv_splits_elastic_and_corrected(monkeypatch, tmp_path):

@@ -64,6 +64,8 @@ class MatplotlibWidget(QWidget):
         self.model = QStandardItemModel(self)
         self.model.setHorizontalHeaderLabels(["Time [s]", "Value"])
         self.table.setModel(self.model)
+        # ponytail: sample 50 rows; raise this if later rows routinely need wider columns.
+        self.table.horizontalHeader().setResizeContentsPrecision(50)
         
         # Ctrl+C to copy the selected block
         copy_sc = QShortcut(QKeySequence.Copy, self.table)
@@ -461,6 +463,7 @@ class MatplotlibWidget(QWidget):
     def update_combination_history_plot(self, combination_indices, stress_values, node_id=None,
                                         combination_names=None, stress_type="von_mises",
                                         plasticity_overlay=None,
+                                        force_data=None, force_unit="N",
                                         deformation_data=None, displacement_unit="mm"):
         """
         Update the plot with combination history data (stress vs combination number).
@@ -474,19 +477,39 @@ class MatplotlibWidget(QWidget):
             combination_names: Optional list of combination names for x-axis labels
             stress_type: Type of stress ("von_mises", "max_principal", "min_principal")
             plasticity_overlay: Optional dict with corrected values
+            force_data: Optional dict with 'fx', 'fy', 'fz', 'magnitude' arrays
+            force_unit: Unit string for force (e.g., "N")
             deformation_data: Optional dict with 'ux', 'uy', 'uz', 'u_mag' arrays for deformation plotting
             displacement_unit: Unit string for displacement (e.g., "mm")
 
         Note:
             Combination indices are 0-based internally and displayed as 1-based in the UI.
         """
-        # Check if this is a deformation-only plot
-        if stress_values is None and deformation_data is not None:
-            self._update_deformation_history_plot(
-                combination_indices, deformation_data, node_id,
-                combination_names, displacement_unit
-            )
-            return
+        if stress_values is None:
+            if force_data is not None:
+                self._update_vector_history_plot(
+                    combination_indices,
+                    force_data,
+                    ("fx", "fy", "fz", "magnitude"),
+                    ("FX", "FY", "FZ", "|F|"),
+                    "Force",
+                    force_unit,
+                    node_id,
+                    combination_names,
+                )
+                return
+            if deformation_data is not None:
+                self._update_vector_history_plot(
+                    combination_indices,
+                    deformation_data,
+                    ("ux", "uy", "uz", "u_mag"),
+                    ("UX", "UY", "UZ", "U_mag"),
+                    "Deformation",
+                    displacement_unit,
+                    node_id,
+                    combination_names,
+                )
+                return
         # Reset state
         self.figure.clear()
         self.plotted_lines.clear()
@@ -609,19 +632,18 @@ class MatplotlibWidget(QWidget):
         self.canvas.draw()
         QTimer.singleShot(0, self.adjust_splitter_size)
     
-    def _update_deformation_history_plot(self, combination_indices, deformation_data, 
-                                          node_id=None, combination_names=None, 
-                                          displacement_unit="mm"):
-        """
-        Internal method to plot deformation history (UX, UY, UZ, U_mag vs combination).
-        
-        Args:
-            combination_indices: Array of combination indices (0, 1, 2, ...)
-            deformation_data: Dict with 'ux', 'uy', 'uz', 'u_mag' arrays
-            node_id: Optional node ID for the title
-            combination_names: Optional list of combination names
-            displacement_unit: Unit string for displacement (e.g., "mm")
-        """
+    def _update_vector_history_plot(
+        self,
+        combination_indices,
+        vector_data,
+        data_keys,
+        labels,
+        quantity,
+        unit,
+        node_id=None,
+        combination_names=None,
+    ):
+        """Plot vector components and magnitude across combinations."""
         # Reset state
         self.figure.clear()
         self.plotted_lines.clear()
@@ -630,39 +652,39 @@ class MatplotlibWidget(QWidget):
         self.ax = self.figure.add_subplot(1, 1, 1)
         
         x = np.asarray(combination_indices)
-        ux = np.asarray(deformation_data.get('ux', []))
-        uy = np.asarray(deformation_data.get('uy', []))
-        uz = np.asarray(deformation_data.get('uz', []))
-        u_mag = np.asarray(deformation_data.get('u_mag', []))
+        x_values, y_values, z_values, magnitude = (
+            np.asarray(vector_data.get(key, [])) for key in data_keys
+        )
+        x_label, y_label, z_label, magnitude_label = labels
         
         # Plot all 4 traces with distinct styling
-        if len(u_mag) > 0:
-            line_mag, = self.ax.plot(x, u_mag, label='U_mag', color='black', 
+        if len(magnitude) > 0:
+            line_mag, = self.ax.plot(x, magnitude, label=magnitude_label, color='black',
                                      linewidth=2, marker='o', markersize=4)
             self.plotted_lines.append(line_mag)
         
-        if len(ux) > 0:
-            line_ux, = self.ax.plot(x, ux, label='UX', color='red', 
+        if len(x_values) > 0:
+            line_x, = self.ax.plot(x, x_values, label=x_label, color='red',
                                     linestyle='--', linewidth=1, marker='s', markersize=3)
-            self.plotted_lines.append(line_ux)
+            self.plotted_lines.append(line_x)
         
-        if len(uy) > 0:
-            line_uy, = self.ax.plot(x, uy, label='UY', color='green', 
+        if len(y_values) > 0:
+            line_y, = self.ax.plot(x, y_values, label=y_label, color='green',
                                     linestyle='--', linewidth=1, marker='^', markersize=3)
-            self.plotted_lines.append(line_uy)
+            self.plotted_lines.append(line_y)
         
-        if len(uz) > 0:
-            line_uz, = self.ax.plot(x, uz, label='UZ', color='blue', 
+        if len(z_values) > 0:
+            line_z, = self.ax.plot(x, z_values, label=z_label, color='blue',
                                     linestyle='--', linewidth=1, marker='v', markersize=3)
-            self.plotted_lines.append(line_uz)
+            self.plotted_lines.append(line_z)
         
         # Title and labels
-        title = "Deformation vs Combination"
+        title = f"{quantity} vs Combination"
         if node_id is not None:
-            title = f"Deformation (Node ID: {node_id})"
+            title = f"{quantity} (Node ID: {node_id})"
         self.ax.set_title(title, fontsize=8)
         self.ax.set_xlabel('Combination #', fontsize=8)
-        self.ax.set_ylabel(f'Displacement [{displacement_unit}]', fontsize=8)
+        self.ax.set_ylabel(f'{quantity} [{unit}]', fontsize=8)
         self.ax.set_xlim(np.min(x) - 0.5, np.max(x) + 0.5)
         self.ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         self.ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
@@ -682,10 +704,10 @@ class MatplotlibWidget(QWidget):
                 self.legend_map[legtext] = origline
         
         # Max annotation
-        if len(u_mag) > 0:
-            max_mag = np.max(u_mag)
-            combo_of_max = x[np.argmax(u_mag)]
-            textstr = f'Max U_mag: {max_mag:.4f} {displacement_unit}\nAt Combination: {int(combo_of_max) + 1}'
+        if len(magnitude) > 0:
+            max_mag = np.max(magnitude)
+            combo_of_max = x[np.argmax(magnitude)]
+            textstr = f'Max {magnitude_label}: {max_mag:.4f} {unit}\nAt Combination: {int(combo_of_max) + 1}'
             self.ax.text(0.05, 0.95, textstr, transform=self.ax.transAxes, fontsize=8,
                         verticalalignment='top', horizontalalignment='left',
                         bbox=dict(facecolor='white', alpha=0.5, boxstyle='round,pad=0.2'))
@@ -699,8 +721,14 @@ class MatplotlibWidget(QWidget):
         
         # Populate table
         self.model.clear()
-        headers = ["Combo #", "Name", f"U_mag [{displacement_unit}]", 
-                   f"UX [{displacement_unit}]", f"UY [{displacement_unit}]", f"UZ [{displacement_unit}]"]
+        headers = [
+            "Combo #",
+            "Name",
+            f"{magnitude_label} [{unit}]",
+            f"{x_label} [{unit}]",
+            f"{y_label} [{unit}]",
+            f"{z_label} [{unit}]",
+        ]
         self.model.setHorizontalHeaderLabels(headers)
         
         for idx in range(len(x)):
@@ -708,10 +736,10 @@ class MatplotlibWidget(QWidget):
             row_items = [
                 QStandardItem(f"{int(x[idx]) + 1}"),  # 1-based
                 QStandardItem(name),
-                QStandardItem(f"{u_mag[idx]:.5f}" if idx < len(u_mag) else ""),
-                QStandardItem(f"{ux[idx]:.5f}" if idx < len(ux) else ""),
-                QStandardItem(f"{uy[idx]:.5f}" if idx < len(uy) else ""),
-                QStandardItem(f"{uz[idx]:.5f}" if idx < len(uz) else "")
+                QStandardItem(f"{magnitude[idx]:.5f}" if idx < len(magnitude) else ""),
+                QStandardItem(f"{x_values[idx]:.5f}" if idx < len(x_values) else ""),
+                QStandardItem(f"{y_values[idx]:.5f}" if idx < len(y_values) else ""),
+                QStandardItem(f"{z_values[idx]:.5f}" if idx < len(z_values) else "")
             ]
             self.model.appendRow(row_items)
         

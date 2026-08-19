@@ -506,8 +506,6 @@ class StressCombinationEngine:
         single_stress_cache: Dict[Tuple[int, int], Tuple] = {}
         
         active_a1_steps, active_a2_steps = self.table.get_active_step_ids()
-        active_a1_set = set(active_a1_steps)
-        active_a2_set = set(active_a2_steps)
         total_steps = len(active_a1_steps) + len(active_a2_steps)
         if total_steps <= 0:
             raise ValueError("No active load steps found. All coefficients are zero.")
@@ -539,78 +537,29 @@ class StressCombinationEngine:
         if progress_callback:
             progress_callback(50, 100, f"Computing combinations for node {node_id}...")
         
-        # Compute combinations for single node
         num_combos = self.table.num_combinations
         if num_combos <= 0:
             raise ValueError("No combinations defined.")
-        stress_values = np.zeros(num_combos)
-        
-        # Keep full step ID lists for correct coefficient indexing
-        all_a1_steps = self.table.analysis1_step_ids
-        all_a2_steps = self.table.analysis2_step_ids
-        
-        for combo_idx in range(num_combos):
-            a1_coeffs, a2_coeffs = self.table.get_coeffs_for_combination(combo_idx)
-            
-            # Initialize combined stress components (single node = scalar)
-            sx, sy, sz = 0.0, 0.0, 0.0
-            sxy, syz, sxz = 0.0, 0.0, 0.0
-            
-            # Add contributions from Analysis 1 (iterate over all for correct indexing)
-            for i, step_id in enumerate(all_a1_steps):
-                coeff = a1_coeffs[i]
-                if coeff != 0.0 and step_id in active_a1_set:
-                    _, s_sx, s_sy, s_sz, s_sxy, s_syz, s_sxz = single_stress_cache[(1, step_id)]
-                    sx += coeff * s_sx[0]
-                    sy += coeff * s_sy[0]
-                    sz += coeff * s_sz[0]
-                    sxy += coeff * s_sxy[0]
-                    syz += coeff * s_syz[0]
-                    sxz += coeff * s_sxz[0]
-            
-            # Add contributions from Analysis 2 (iterate over all for correct indexing)
-            for i, step_id in enumerate(all_a2_steps):
-                coeff = a2_coeffs[i]
-                if coeff != 0.0 and step_id in active_a2_set:
-                    _, s_sx, s_sy, s_sz, s_sxy, s_syz, s_sxz = single_stress_cache[(2, step_id)]
-                    sx += coeff * s_sx[0]
-                    sy += coeff * s_sy[0]
-                    sz += coeff * s_sz[0]
-                    sxy += coeff * s_sxy[0]
-                    syz += coeff * s_syz[0]
-                    sxz += coeff * s_sxz[0]
-            
-            # Compute stress invariant for this combination
-            if stress_type == "von_mises":
-                stress_values[combo_idx] = np.sqrt(
-                    0.5 * (
-                        (sx - sy)**2 + (sy - sz)**2 + (sz - sx)**2 +
-                        6 * (sxy**2 + syz**2 + sxz**2)
-                    )
-                )
-            elif stress_type == "max_principal":
-                # Build tensor and compute eigenvalues for single point
-                tensor = np.array([
-                    [sx, sxy, sxz],
-                    [sxy, sy, syz],
-                    [sxz, syz, sz]
-                ])
-                eigenvalues = np.linalg.eigvalsh(tensor)
-                stress_values[combo_idx] = np.max(eigenvalues)  # S1
-            elif stress_type == "min_principal":
-                tensor = np.array([
-                    [sx, sxy, sxz],
-                    [sxy, sy, syz],
-                    [sxz, syz, sz]
-                ])
-                eigenvalues = np.linalg.eigvalsh(tensor)
-                stress_values[combo_idx] = np.min(eigenvalues)  # S3
-            else:
-                raise ValueError(f"Unknown stress type: {stress_type}")
-            
-            if progress_callback:
-                progress = 50 + int((combo_idx + 1) / num_combos * 50)  # 50-100% for combinations
-                progress_callback(progress, 100, f"Computing combination {combo_idx + 1}/{num_combos}...")
+
+        packed = np.ascontiguousarray(
+            np.stack(
+                [np.stack(single_stress_cache[key][1:7], axis=0) for key in self._active_step_keys],
+                axis=0,
+            )
+        )
+        compute_progress = None
+        if progress_callback:
+            compute_progress = lambda current, total, message: progress_callback(
+                50 + int(current / total * 50),
+                100,
+                message,
+            )
+        stress_values = self._compute_packed_stress_results(
+            self._active_coefficients,
+            packed,
+            stress_type,
+            compute_progress,
+        )[:, 0]
         
         if progress_callback:
             progress_callback(100, 100, "Complete")

@@ -63,6 +63,104 @@ class SolverResultSummaryHandler:
         if tab_index >= 0:
             tab_widget.removeTab(tab_index)
 
+    def handle_cached_history_result(self, result_family: str, source_result, node_id: int) -> bool:
+        """Slice and present history already retained by the displayed result."""
+        if source_result is None or result_family not in {"Stress", "Forces", "Deformation"}:
+            return False
+        if result_family == "Stress" and (getattr(source_result, "metadata", None) or {}).get("plasticity"):
+            return False
+
+        matches = np.flatnonzero(np.asarray(source_result.node_ids) == int(node_id))
+        if matches.size != 1:
+            return False
+        node_index = int(matches[0])
+        node_ids = np.array([int(node_id)])
+        node_coords = np.asarray(source_result.node_coords)[node_index:node_index + 1].copy()
+        config = SolverConfig(combination_history_mode=True, selected_node_id=int(node_id))
+
+        if result_family == "Stress":
+            values = source_result.all_combo_results
+            if values is None or np.ndim(values) != 2 or node_index >= values.shape[1]:
+                return False
+            stress_values = np.asarray(values)[:, node_index].copy()
+            history = CombinationResult(
+                node_ids=node_ids,
+                node_coords=node_coords,
+                result_type=source_result.result_type,
+                all_combo_results=stress_values.reshape(-1, 1),
+            )
+            history.metadata = {
+                "mode": "history",
+                "source": "cached",
+                "node_id": int(node_id),
+                "combination_indices": np.arange(stress_values.size),
+                "stress_values": stress_values,
+            }
+            self.handle_stress_history_result(history, config)
+            return True
+
+        if result_family == "Forces":
+            arrays = (
+                source_result.all_combo_fx,
+                source_result.all_combo_fy,
+                source_result.all_combo_fz,
+            )
+            if any(values is None or np.ndim(values) != 2 or node_index >= values.shape[1] for values in arrays):
+                return False
+            fx, fy, fz = (np.asarray(values)[:, node_index].copy() for values in arrays)
+            magnitude = np.sqrt(fx**2 + fy**2 + fz**2)
+            history = NodalForcesResult(
+                node_ids=node_ids,
+                node_coords=node_coords,
+                all_combo_fx=fx.reshape(-1, 1),
+                all_combo_fy=fy.reshape(-1, 1),
+                all_combo_fz=fz.reshape(-1, 1),
+                force_unit=source_result.force_unit,
+                coordinate_system=source_result.coordinate_system,
+            )
+            history.metadata = {
+                "mode": "history",
+                "source": "cached",
+                "node_id": int(node_id),
+                "combination_indices": np.arange(fx.size),
+                "fx": fx,
+                "fy": fy,
+                "fz": fz,
+                "magnitude": magnitude,
+            }
+            self.handle_forces_history_result(history, config)
+            return True
+
+        arrays = (
+            source_result.all_combo_ux,
+            source_result.all_combo_uy,
+            source_result.all_combo_uz,
+        )
+        if any(values is None or np.ndim(values) != 2 or node_index >= values.shape[1] for values in arrays):
+            return False
+        ux, uy, uz = (np.asarray(values)[:, node_index].copy() for values in arrays)
+        magnitude = np.sqrt(ux**2 + uy**2 + uz**2)
+        history = DeformationResult(
+            node_ids=node_ids,
+            node_coords=node_coords,
+            all_combo_ux=ux.reshape(-1, 1),
+            all_combo_uy=uy.reshape(-1, 1),
+            all_combo_uz=uz.reshape(-1, 1),
+            displacement_unit=source_result.displacement_unit,
+        )
+        history.metadata = {
+            "mode": "history",
+            "source": "cached",
+            "node_id": int(node_id),
+            "combination_indices": np.arange(ux.size),
+            "ux": ux,
+            "uy": uy,
+            "uz": uz,
+            "magnitude": magnitude,
+        }
+        self.handle_deformation_history_result(history, config)
+        return True
+
     def handle_stress_history_result(self, result: CombinationResult, config: SolverConfig) -> None:
         """Handle stress history mode result (single node)."""
         metadata = result.metadata or {}
@@ -232,6 +330,37 @@ class SolverResultSummaryHandler:
         fy = metadata.get("fy", result.all_combo_fy[:, 0] if result.all_combo_fy is not None else np.array([]))
         fz = metadata.get("fz", result.all_combo_fz[:, 0] if result.all_combo_fz is not None else np.array([]))
         magnitude = metadata.get("magnitude", np.sqrt(fx**2 + fy**2 + fz**2))
+
+        combo_names = self.tab.combination_table.combination_names if self.tab.combination_table else None
+        force_data = {
+            "fx": fx,
+            "fy": fy,
+            "fz": fz,
+            "magnitude": magnitude,
+        }
+        self.tab.plot_combo_history_tab.update_combination_history_plot(
+            combo_indices,
+            stress_values=None,
+            node_id=node_id,
+            combination_names=combo_names,
+            force_data=force_data,
+            force_unit=result.force_unit,
+        )
+        self._show_result_tab(
+            self.tab.plot_combo_history_tab,
+            "Plot (Combo History)",
+            make_current=True,
+        )
+
+        if self.tab._history_popup_requested:
+            self.tab._show_history_popup(
+                combination_indices=combo_indices,
+                stress_values=None,
+                node_id=node_id,
+                combination_names=combo_names,
+                force_data=force_data,
+                force_unit=result.force_unit,
+            )
 
         self.tab.console_textbox.append(
             f"\nNodal forces history computed for Node {node_id}\n"

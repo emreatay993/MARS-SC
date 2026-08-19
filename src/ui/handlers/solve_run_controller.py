@@ -198,6 +198,14 @@ class SolveRunController:
         """Return the current stress engine instance if one exists."""
         return self.execution_handler.get_stress_engine()
 
+    def show_cached_history(self, result_family: str, source_result, node_id: int) -> bool:
+        """Present a node-history slice from an already-computed Display result."""
+        return self.lifecycle_handler.results_handler.handle_cached_history_result(
+            result_family,
+            source_result,
+            node_id,
+        )
+
     def _build_progress_coordinator(
         self,
         config: SolverConfig,

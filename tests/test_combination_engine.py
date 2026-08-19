@@ -484,6 +484,50 @@ class TestEdgeCases:
         
         assert len(vm) == 1
         assert len(s1) == 1
+
+    def test_fast_single_node_history_uses_packed_combination_math(self):
+        class _Reader:
+            def __init__(self, stress_by_step):
+                self.stress_by_step = stress_by_step
+
+            @staticmethod
+            def create_single_node_scoping(node_id, _full_scoping):
+                return type("Scoping", (), {"ids": [node_id]})()
+
+            def read_stress_tensor_for_loadsteps(self, steps, _scoping):
+                zero = np.array([0.0])
+                return {
+                    step: (
+                        np.array([42]),
+                        np.array([self.stress_by_step[step]]),
+                        zero,
+                        zero,
+                        zero,
+                        zero,
+                        zero,
+                    )
+                    for step in steps
+                }
+
+        table = CombinationTableData(
+            combination_names=["A", "B", "C"],
+            combination_types=["Linear"] * 3,
+            analysis1_coeffs=np.array([[1.0, 0.0], [0.0, 1.0], [1.0, -1.0]]),
+            analysis2_coeffs=np.array([[0.0], [1.0], [2.0]]),
+            analysis1_step_ids=[1, 2],
+            analysis2_step_ids=[1],
+        )
+        engine = StressCombinationEngine(
+            _Reader({1: 10.0, 2: 20.0}),
+            _Reader({1: 5.0}),
+            type("Scoping", (), {"ids": [42]})(),
+            table,
+        )
+
+        indices, values = engine.compute_single_node_history_fast(42, "von_mises")
+
+        np.testing.assert_array_equal(indices, [0, 1, 2])
+        np.testing.assert_allclose(values, [10.0, 25.0, 0.0])
     
     def test_single_combination(self):
         """Test envelope with single combination."""

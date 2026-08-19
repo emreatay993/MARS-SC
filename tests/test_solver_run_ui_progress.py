@@ -149,6 +149,30 @@ def test_complete_solve_shows_100_and_hides_after_delay(monkeypatch):
     assert tab.progress_bar.visible is False
 
 
+def test_history_completion_preserves_full_display_results(monkeypatch):
+    tab = _FakeTab()
+    full_stress = object()
+    full_forces = object()
+    full_deformation = object()
+    tab.combination_result = full_stress
+    tab.nodal_forces_result = full_forces
+    tab.deformation_result = full_deformation
+    handler = SolverRunUiHandler(tab)
+    monkeypatch.setattr(handler.results_handler, "handle_stress_history_result", lambda *_: None)
+    monkeypatch.setattr(handler, "_show_completion", lambda *_: None)
+    monkeypatch.setattr(handler, "_log_solve_complete", lambda: None)
+    monkeypatch.setattr(handler, "_schedule_progress_hide", lambda **_: None)
+
+    handler.complete_solve(
+        stress_result=object(),
+        config=SolverConfig(combination_history_mode=True, selected_node_id=42),
+    )
+
+    assert tab.combination_result is full_stress
+    assert tab.nodal_forces_result is full_forces
+    assert tab.deformation_result is full_deformation
+
+
 def test_progress_state_is_atomic_and_event_pumping_is_throttled(monkeypatch):
     tab = _FakeTab()
     handler = SolverRunUiHandler(tab)

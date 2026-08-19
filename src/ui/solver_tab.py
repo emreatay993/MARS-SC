@@ -744,6 +744,8 @@ class SolverTab(QWidget):
         combination_names=None,
         stress_type="von_mises",
         plasticity_overlay=None,
+        force_data=None,
+        force_unit="N",
         deformation_data=None,
         displacement_unit="mm",
     ) -> None:
@@ -771,6 +773,8 @@ class SolverTab(QWidget):
             combination_names=combination_names,
             stress_type=stress_type,
             plasticity_overlay=plasticity_overlay,
+            force_data=force_data,
+            force_unit=force_unit,
             deformation_data=deformation_data,
             displacement_unit=displacement_unit,
         )
@@ -778,7 +782,13 @@ class SolverTab(QWidget):
         self.plot_dialog.raise_()
         self.plot_dialog.activateWindow()
 
-    def plot_combination_history_for_node(self, node_id: int, open_popup: bool = False):
+    def plot_combination_history_for_node(
+        self,
+        node_id: int,
+        open_popup: bool = False,
+        result_family: Optional[str] = None,
+        source_result=None,
+    ):
         """
         Trigger combination history analysis for a specific node.
         
@@ -789,24 +799,60 @@ class SolverTab(QWidget):
         Args:
             node_id: The node ID to compute combination history for.
             open_popup: If True, also show history results in a separate popup window.
+            result_family: Active Display contour family.
+            source_result: Result object currently shown in Display.
         """
-        # Update node ID in the UI
         self.node_line_edit.setText(str(node_id))
         self._history_popup_requested = bool(open_popup)
-        
-        # Enable combination history mode
+
+        if self.solve_run_controller.show_cached_history(
+            result_family,
+            source_result,
+            node_id,
+        ):
+            self.console_textbox.append("  Used already-computed combination values.\n")
+            self._history_popup_requested = False
+            return
+
         if not self.combination_history_checkbox.isChecked():
             self.combination_history_checkbox.setChecked(True)
-        
-        # Log and trigger solve
+
         self.console_textbox.append(
             f"\n{'='*60}\n"
             f"Computing Combination History for Node {node_id}\n"
+            f"Cached values unavailable; using scoped RST extraction.\n"
             f"{'='*60}"
         )
-        
-        # Trigger the solve (this calls _on_solve_clicked internally)
-        self._on_solve_clicked()
+
+        config = (
+            deepcopy(self._last_solve_config)
+            if self._last_solve_config is not None
+            else self._build_solver_config()
+        )
+        config.combination_history_mode = True
+        config.selected_node_id = int(node_id)
+
+        if result_family in {"Stress", "Forces", "Deformation"}:
+            config.calculate_von_mises = False
+            config.calculate_max_principal_stress = False
+            config.calculate_min_principal_stress = False
+            config.calculate_nodal_forces = False
+            config.calculate_deformation = False
+
+            if result_family == "Stress":
+                stress_type = getattr(source_result, "result_type", "von_mises")
+                config.calculate_von_mises = stress_type == "von_mises"
+                config.calculate_max_principal_stress = stress_type == "max_principal"
+                config.calculate_min_principal_stress = stress_type == "min_principal"
+            elif result_family == "Forces":
+                config.calculate_nodal_forces = True
+                config.nodal_forces_rotate_to_global = (
+                    getattr(source_result, "coordinate_system", "Global") == "Global"
+                )
+            else:
+                config.calculate_deformation = True
+
+        self.solve_run_controller.solve(config)
     
     # ========== Plasticity Dialog ==========
     

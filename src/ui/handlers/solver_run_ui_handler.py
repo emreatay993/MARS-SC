@@ -145,9 +145,10 @@ class SolverRunUiHandler:
         self.tab.setEnabled(True)
         self._show_completion("Complete")
 
-        self.tab.combination_result = stress_result
-        self.tab.nodal_forces_result = forces_result
-        self.tab.deformation_result = deformation_result
+        if not config.combination_history_mode:
+            self.tab.combination_result = stress_result
+            self.tab.nodal_forces_result = forces_result
+            self.tab.deformation_result = deformation_result
 
         if stress_result is not None:
             if config.combination_history_mode:
