@@ -90,6 +90,7 @@ class _Plotter:
         self.text_calls = []
         self.scalar_bars = {}
         self.actors = {}
+        self.reset_camera_calls = 0
         self.renderer = vtk.vtkRenderer()
         self.iren = SimpleNamespace(
             add_observer=lambda *_args: 1,
@@ -117,7 +118,7 @@ class _Plotter:
         return pv.CornerAnnotation(kwargs.get("position", "upper_left"), text)
 
     def reset_camera(self):
-        pass
+        self.reset_camera_calls += 1
 
     def render(self):
         pass
@@ -362,6 +363,21 @@ def test_render_modes_keep_one_scalar_actor_and_non_pickable_context():
     handler.on_mesh_edges_changed(True)
     assert tab.current_actor.edge_visibility is True
     assert len(tab.plotter.mesh_calls) == mesh_calls_before
+
+
+def test_view_mode_change_does_not_reset_camera():
+    handler, tab = _handler(view="points")
+    handler._topology_provider = object()
+    handler._topology_data = _topology()
+    handler._topology_node_ids = np.asarray(tab.current_mesh["NodeID"]).copy()
+    handler._topology_includes_whole = True
+    handler._build_topology_meshes()
+
+    tab.mesh_view_combo.index = 1
+    handler.on_mesh_view_changed()
+
+    assert tab.plotter.reset_camera_calls == 0
+    assert all(call[1]["reset_camera"] is False for call in tab.plotter.mesh_calls)
 
 
 def test_mesh_edge_control_is_enabled_only_for_mesh_views():

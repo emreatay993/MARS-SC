@@ -273,6 +273,7 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
             "below_color": "gray",
             "above_color": "magenta",
             "pickable": True,
+            "reset_camera": False,
             "scalar_bar_args": {
                 "title": self.tab.data_column,
                 "fmt": f"%.{digits}f",
@@ -322,6 +323,7 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
             opacity=1.0,
             show_scalar_bar=False,
             pickable=False,
+            reset_camera=False,
         )
 
     def apply_deformed_coordinates(self, combo_idx: Optional[int] = None) -> bool:
@@ -522,8 +524,6 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
 
         self.setup_hover_annotation()
 
-        plotter.reset_camera()
-        
         # Clear old camera widget if it exists
         self._clear_camera_widget()
         
