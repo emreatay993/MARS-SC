@@ -72,6 +72,8 @@ class HotspotDialog(QDialog):
                 # Keep Rank and NodeID as integers
                 if col_name in ['Rank', 'NodeID']:
                     items.append(QStandardItem(str(int(float(val)))))
+                elif isinstance(val, str):
+                    items.append(QStandardItem(val))
                 # Format all other columns as floats with 4 decimal places
                 else:
                     items.append(QStandardItem(f"{val:.4f}"))

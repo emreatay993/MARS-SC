@@ -6,13 +6,16 @@ import numpy as np
 import pyvista as pv
 import vtk
 from PyQt5.QtCore import QCoreApplication, QObject, QPoint, pyqtSlot
+from PyQt5.QtWidgets import QApplication
 
 from core.data_models import MeshTopologyData
+from core.visualization import HotspotDetector
 from file_io.dpf_reader import DPFAnalysisReader, MeshTopologyProvider, _SurfaceTopology
 from ui.application_controller import ApplicationController
 from ui.handlers.display_interaction_handler import DisplayInteractionHandler
 from ui.handlers.display_state import DisplayState
 from ui.handlers.display_visualization_handler import DisplayVisualizationHandler
+from ui.widgets.dialogs import HotspotDialog
 
 
 class _Combo:
@@ -378,6 +381,78 @@ def test_view_mode_change_does_not_reset_camera():
 
     assert tab.plotter.reset_camera_calls == 0
     assert all(call[1]["reset_camera"] is False for call in tab.plotter.mesh_calls)
+
+
+def test_hotspot_table_shows_the_combination_for_each_envelope_value():
+    visual_handler, tab = _handler()
+    tab.combination_names = ["Landing", "Thermal", "Burst"]
+    mesh = tab.current_mesh
+    mesh["Max_Stress"] = np.array([30.0, 10.0, 20.0])
+    mesh["Combo_of_Max"] = np.array([1, 0, 2])
+    mesh.set_active_scalars("Max_Stress")
+
+    interaction = DisplayInteractionHandler(tab, visual_handler.state, HotspotDetector())
+    hotspots = HotspotDetector.detect_hotspots(
+        mesh["Max_Stress"],
+        mesh["NodeID"],
+        node_coords=mesh.points,
+        top_n=3,
+    ).rename(columns={"Value": "Max_Stress"})
+
+    interaction._add_hotspot_combination_column(hotspots, mesh, "Max_Stress")
+
+    assert list(hotspots.columns[:4]) == [
+        "Rank", "NodeID", "Max_Stress", "Combo of Max"
+    ]
+    assert hotspots["Combo of Max"].tolist() == [
+        "#2 — Thermal", "#3 — Burst", "#1 — Landing"
+    ]
+
+    app = QApplication.instance() or QApplication([])
+    dialog = HotspotDialog(hotspots)
+    assert dialog.model.item(0, 1).text() == "10"
+    assert dialog.model.item(0, 2).text() == "30.0000"
+    assert dialog.model.item(0, 3).text() == "#2 — Thermal"
+    selected_nodes = []
+    dialog.node_selected.connect(selected_nodes.append)
+    dialog._on_row_clicked(dialog.model.index(0, 3))
+    assert selected_nodes == [10]
+    dialog.close()
+    assert app is not None
+
+
+def test_hotspot_combo_field_tracks_the_active_envelope_family():
+    expected = {
+        "Max_Stress": ("Combo of Max", "Combo_of_Max"),
+        "Min_Force_Magnitude": ("Combo of Min", "Combo_of_Min"),
+        "Max_FX": ("Combo of Max", "Combo_of_Max_FX"),
+        "Min_Shear_XY": ("Combo of Min", "Combo_of_Min_Shear_XY"),
+        "Def_Max_U_mag": ("Combo of Max", "Def_Combo_of_Max_U_mag"),
+        "Def_Min_UZ": ("Combo of Min", "Def_Combo_of_Min_UZ"),
+        "Combo_2_Stress": (None, None),
+    }
+
+    for active_name, combo_column in expected.items():
+        assert DisplayInteractionHandler._combo_column_for_scalar(active_name) == combo_column
+
+
+def test_hotspot_combo_column_falls_back_to_number_and_skips_missing_metadata():
+    visual_handler, tab = _handler()
+    tab.combination_names = []
+    mesh = tab.current_mesh
+    mesh["Min_FX"] = np.array([3.0, 1.0, 2.0])
+    mesh["Combo_of_Min_FX"] = np.array([2, 0, 1])
+    interaction = DisplayInteractionHandler(tab, visual_handler.state, HotspotDetector())
+    hotspots = HotspotDetector.detect_hotspots(
+        mesh["Min_FX"], mesh["NodeID"], top_n=3
+    ).rename(columns={"Value": "Min_FX"})
+
+    interaction._add_hotspot_combination_column(hotspots, mesh, "Min_FX")
+    assert hotspots["Combo of Min"].tolist() == ["#3", "#2", "#1"]
+
+    without_metadata = hotspots.drop(columns="Combo of Min")
+    interaction._add_hotspot_combination_column(without_metadata, mesh, "Max_FY")
+    assert list(without_metadata.columns) == ["Rank", "NodeID", "Min_FX"]
 
 
 def test_mesh_edge_control_is_enabled_only_for_mesh_views():

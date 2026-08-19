@@ -377,6 +377,51 @@ class DisplayInteractionHandler(DisplayBaseHandler):
     # ------------------------------------------------------------------
     # Hotspot analysis
     # ------------------------------------------------------------------
+    @staticmethod
+    def _combo_column_for_scalar(active_name: str):
+        """Return the hotspot column label and mesh field for an envelope scalar."""
+        if active_name in {"Max_Stress", "Max_Force_Magnitude", "Max_U_mag"}:
+            return "Combo of Max", "Combo_of_Max"
+        if active_name in {"Min_Stress", "Min_Force_Magnitude", "Min_U_mag"}:
+            return "Combo of Min", "Combo_of_Min"
+        if active_name.startswith("Def_Max_"):
+            return "Combo of Max", active_name.replace("Def_Max_", "Def_Combo_of_Max_", 1)
+        if active_name.startswith("Def_Min_"):
+            return "Combo of Min", active_name.replace("Def_Min_", "Def_Combo_of_Min_", 1)
+        if active_name.startswith("Max_"):
+            return "Combo of Max", f"Combo_of_{active_name}"
+        if active_name.startswith("Min_"):
+            return "Combo of Min", f"Combo_of_{active_name}"
+        return None, None
+
+    def _add_hotspot_combination_column(self, df, mesh, active_name: str) -> None:
+        """Add the combination responsible for each displayed envelope value."""
+        column_name, field_name = self._combo_column_for_scalar(active_name)
+        if field_name is None or field_name not in mesh.array_names:
+            return
+
+        node_ids = np.asarray(mesh["NodeID"]).reshape(-1)
+        combo_indices = np.asarray(mesh[field_name]).reshape(-1)
+        if node_ids.shape != combo_indices.shape:
+            return
+
+        combo_by_node = {
+            int(node_id): int(combo_index)
+            for node_id, combo_index in zip(node_ids, combo_indices)
+        }
+        combo_names = getattr(self.tab, "combination_names", [])
+        display_values = []
+        for node_id in df["NodeID"]:
+            combo_index = combo_by_node.get(int(node_id), -1)
+            if combo_index < 0:
+                display_values.append("N/A")
+                continue
+            number = f"#{combo_index + 1}"
+            name = combo_names[combo_index] if combo_index < len(combo_names) else ""
+            display_values.append(f"{number} — {name}" if name else number)
+
+        df.insert(df.columns.get_loc(active_name) + 1, column_name, display_values)
+
     def find_hotspots_on_view(self, checked: bool = False) -> None:
         """Identify hotspots among the currently visible nodes."""
         if not self.tab.current_mesh:
@@ -512,6 +557,11 @@ class DisplayInteractionHandler(DisplayBaseHandler):
 
             scalar_name = mesh_to_analyze.active_scalars_name or "Result"
             df_hotspots = df_hotspots.rename(columns={"Value": scalar_name})
+            self._add_hotspot_combination_column(
+                df_hotspots,
+                mesh_to_analyze,
+                scalar_name,
+            )
 
             if self.state.hotspot_dialog is not None:
                 self.state.hotspot_dialog.close()
