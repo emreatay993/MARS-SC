@@ -67,7 +67,7 @@ from utils.tooltips import (
 )
 from ui.styles.style_constants import (
     BUTTON_STYLE, GROUP_BOX_STYLE, TAB_STYLE, READONLY_INPUT_STYLE,
-    CHECKBOX_STYLE, CONSOLE_STYLE, PROGRESS_BAR_STYLE
+    CHECKBOX_STYLE, CONSOLE_STYLE
 )
 from ui.widgets.plotting import MatplotlibWidget, PlotlyMaxWidget
 from ui.widgets.collapsible_group import CollapsibleGroupBoxStyled
@@ -658,7 +658,7 @@ class SolverTabUIBuilder:
             QProgressBar: Progress bar widget.
         """
         progress_bar = QProgressBar()
-        progress_bar.setStyleSheet(PROGRESS_BAR_STYLE)
+        # Native painting keeps the label legible across filled and unfilled regions.
         progress_bar.setValue(0)
         progress_bar.setAlignment(Qt.AlignCenter)
         progress_bar.setTextVisible(True)

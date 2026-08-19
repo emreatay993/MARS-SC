@@ -105,9 +105,6 @@ QCheckBox:hover {
 # Use no inner border so the tab pane's 1px border defines the outline
 CONSOLE_STYLE = "background-color: #ffffff; border: 0px;"
 
-# Progress bar styles
-PROGRESS_BAR_STYLE = "border: 1px solid #5b9bd5; padding: 10px; background-color: #ffffff;"
-
 # Navigator/Dock widget styles (matching legacy)
 NAVIGATOR_TITLE_STYLE = """
     QDockWidget::title {
