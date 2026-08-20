@@ -835,24 +835,24 @@ class DisplayInteractionHandler(DisplayBaseHandler):
     # Overlay context menus
     # ------------------------------------------------------------------
     def _is_click_on_hover_values(self, position: QPoint) -> bool:
-        """Return whether a click is in the visible upper-right hover area."""
+        """Return whether a click is in the visible upper-left hover area."""
         try:
             annotation = self.state.hover_annotation
-            text = annotation.GetText(annotation.UpperRight) if annotation else None
+            text = annotation.GetText(annotation.UpperLeft) if annotation else None
             width = self.tab.plotter.width()
             height = self.tab.plotter.height()
             return bool(
                 text
                 and width > 0
                 and height > 0
-                and position.x() >= width * 0.55
+                and position.x() <= width * 0.45
                 and position.y() <= height * 0.35
             )
         except Exception:
             return False
 
     def _show_hover_context_menu(self, position: QPoint) -> None:
-        """Show options for the upper-right hover values."""
+        """Show options for the upper-left hover values."""
         context_menu = QMenu(self.tab)
         context_menu.setStyleSheet(CONTEXT_MENU_STYLE)
         self._add_section_title(context_menu, "Hover Values Options")

@@ -198,6 +198,7 @@ def test_overlay_backgrounds_are_independent_and_reapplied():
 
     DisplayVisualizationHandler.setup_hover_annotation(visual_handler)
     hover = state.hover_annotation
+    assert tab.plotter.text_calls[-1][1]["position"] == "upper_left"
     assert hover.GetTextProperty().GetBackgroundOpacity() == 0.65
 
     visual_handler._add_scalar_actor(tab.plotter, tab.current_mesh, "Result", points=True)
@@ -206,10 +207,10 @@ def test_overlay_backgrounds_are_independent_and_reapplied():
     assert legend.GetBarRatio() == 0.145
     assert legend.GetBackgroundProperty().GetOpacity() == 0.65
 
-    hover.SetText(hover.UpperRight, "Node ID: 20")
+    hover.SetText(hover.UpperLeft, "Node ID: 20")
     interaction = DisplayInteractionHandler(tab, state, SimpleNamespace())
-    assert interaction._is_click_on_hover_values(QPoint(700, 50))
-    assert not interaction._is_click_on_hover_values(QPoint(200, 300))
+    assert interaction._is_click_on_hover_values(QPoint(100, 50))
+    assert not interaction._is_click_on_hover_values(QPoint(700, 50))
 
     interaction._set_hover_background(False)
     assert not state.hover_background_enabled

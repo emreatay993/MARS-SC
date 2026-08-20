@@ -576,7 +576,7 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
 
         annotation = self.tab.plotter.add_text(
             "",
-            position="upper_right",
+            position="upper_left",
             font_size=8,
             color="black",
             name="hover_annotation",
@@ -790,9 +790,9 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
                         else:
                             lines.append(f"{active_name}: {value:.5f}")
                 
-                annotation.SetText(annotation.UpperRight, "\n".join(lines))
+                annotation.SetText(annotation.UpperLeft, "\n".join(lines))
             else:
-                annotation.SetText(annotation.UpperRight, "")
+                annotation.SetText(annotation.UpperLeft, "")
 
             iren.GetRenderWindow().Render()
             self.state.last_hover_time = now
