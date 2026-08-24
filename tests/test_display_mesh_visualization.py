@@ -223,6 +223,26 @@ def test_overlay_backgrounds_are_independent_and_reapplied():
     assert not legend.GetDrawBackground()
 
 
+def test_stress_hover_follows_the_displayed_scalar():
+    handler, tab = _handler()
+    mesh = tab.current_mesh
+    tab.combination_names = ["Landing", "Thermal", "Burst"]
+    mesh["Max_Stress"] = np.array([10.0, 20.0, 30.0])
+    mesh["Combo_of_Max"] = np.array([2, 0, 1])
+    mesh["Combo_1_Stress"] = np.array([11.0, 21.0, 31.0])
+
+    expected = {
+        "Combo_of_Max": "Combo of Max: Combo #1 — Landing",
+        "Max_Stress": "Max: 20.00000 MPa (Combo #1 — Landing)",
+        "Combo_1_Stress": "Combo #2 — Thermal: 21.00000 MPa",
+    }
+    for active_name, expected_line in expected.items():
+        mesh.set_active_scalars(active_name)
+        lines = []
+        handler._append_stress_hover_line(lines, mesh, 1)
+        assert lines == [expected_line]
+
+
 def test_mouse_pivot_orbit_keeps_the_picked_point_anchored():
     mesh = pv.Sphere(radius=1.0, theta_resolution=60, phi_resolution=60)
     mesh["Result"] = mesh.points[:, 2]

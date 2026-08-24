@@ -619,8 +619,6 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
                 # Check if this is batch solve result with envelope data
                 has_max_stress = "Max_Stress" in current_mesh.array_names
                 has_min_stress = "Min_Stress" in current_mesh.array_names
-                has_combo_of_max = "Combo_of_Max" in current_mesh.array_names
-                has_combo_of_min = "Combo_of_Min" in current_mesh.array_names
                 has_force_envelope = "Max_Force_Magnitude" in current_mesh.array_names
                 active_contour_type = (
                     self.state.current_contour_type
@@ -645,38 +643,7 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
                 if handled_deformation:
                     pass
                 elif show_stress_block:
-                    # This is batch solve result - show enhanced information
-                    
-                    # Get combination names if available
-                    combo_names = self.tab.combination_names
-                    result_type = self.tab.current_result_type
-                    
-                    stress_unit = "MPa"
-                    # Show max value with combination info
-                    if has_max_stress:
-                        max_val = current_mesh["Max_Stress"][point_id]
-                        if has_combo_of_max and combo_names:
-                            combo_idx = int(current_mesh["Combo_of_Max"][point_id])
-                            combo_name = combo_names[combo_idx] if combo_idx < len(combo_names) else f"#{combo_idx + 1}"
-                            lines.append(f"Max: {max_val:.5f} {stress_unit} ({combo_name})")
-                        elif has_combo_of_max:
-                            combo_idx = int(current_mesh["Combo_of_Max"][point_id])
-                            lines.append(f"Max: {max_val:.5f} {stress_unit} (Combo #{combo_idx + 1})")
-                        else:
-                            lines.append(f"Max: {max_val:.5f} {stress_unit}")
-                    
-                    # Show min value with combination info (only for min_principal stress)
-                    if has_min_stress and result_type == "min_principal":
-                        min_val = current_mesh["Min_Stress"][point_id]
-                        if has_combo_of_min and combo_names:
-                            combo_idx = int(current_mesh["Combo_of_Min"][point_id])
-                            combo_name = combo_names[combo_idx] if combo_idx < len(combo_names) else f"#{combo_idx + 1}"
-                            lines.append(f"Min: {min_val:.5f} {stress_unit} ({combo_name})")
-                        elif has_combo_of_min:
-                            combo_idx = int(current_mesh["Combo_of_Min"][point_id])
-                            lines.append(f"Min: {min_val:.5f} {stress_unit} (Combo #{combo_idx + 1})")
-                        else:
-                            lines.append(f"Min: {min_val:.5f} {stress_unit}")
+                    self._append_stress_hover_line(lines, current_mesh, point_id)
                 elif show_force_block:
                     # Force envelope visualization - show current scalar and combo info if available
                     combo_names = self.tab.combination_names
@@ -803,6 +770,37 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
         )
         self.state.hover_observer = observer_id
         self.tab.hover_observer = observer_id
+
+    def _append_stress_hover_line(self, lines, mesh, point_id: int) -> None:
+        """Append the stress scalar that is currently displayed."""
+        active_name = mesh.active_scalars_name or self.tab.data_column
+        if active_name not in mesh.array_names:
+            return
+
+        combo_names = self.tab.combination_names
+
+        def combo_text(combo_idx: int) -> str:
+            text = f"Combo #{combo_idx + 1}"
+            if combo_names and 0 <= combo_idx < len(combo_names):
+                text += f" — {combo_names[combo_idx]}"
+            return text
+
+        value = mesh[active_name][point_id]
+        if active_name in {"Combo_of_Max", "Combo_of_Min"}:
+            lines.append(f"{active_name.replace('_', ' ')}: {combo_text(int(value))}")
+            return
+
+        if active_name.startswith("Combo_") and active_name.endswith("_Stress"):
+            combo_idx = int(active_name.split("_", 2)[1])
+            lines.append(f"{combo_text(combo_idx)}: {value:.5f} MPa")
+            return
+
+        label = {"Max_Stress": "Max", "Min_Stress": "Min"}.get(active_name, active_name)
+        text = f"{label}: {value:.5f} MPa"
+        combo_field = {"Max_Stress": "Combo_of_Max", "Min_Stress": "Combo_of_Min"}.get(active_name)
+        if combo_field in mesh.array_names:
+            text += f" ({combo_text(int(mesh[combo_field][point_id]))})"
+        lines.append(text)
 
     def _append_deformation_hover_lines(self, lines, mesh, point_id: int) -> bool:
         """Append deformation-family hover text. Returns True when handled."""
