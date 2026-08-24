@@ -385,6 +385,35 @@ def test_view_mode_change_does_not_reset_camera():
     assert all(call[1]["reset_camera"] is False for call in tab.plotter.mesh_calls)
 
 
+def test_current_view_hotspots_exclude_occluded_and_offscreen_points():
+    mesh = pv.PolyData(np.array([
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, -1.0],
+        [10.0, 0.0, 0.0],
+        [0.4, 0.4, 0.0],
+    ]))
+    mesh["NodeID"] = np.array([1, 2, 3, 4])
+    mesh["Result"] = np.arange(4.0)
+    mesh.set_active_scalars("Result")
+    plotter = pv.Plotter(off_screen=True, window_size=(400, 400))
+    actor = plotter.add_mesh(
+        mesh, style="points", point_size=20, render_points_as_spheres=True
+    )
+    plotter.camera_position = [(0, 0, 5), (0, 0, 0), (0, 1, 0)]
+    plotter.show(auto_close=False)
+    state = DisplayState(current_mesh=mesh, current_actor=actor)
+    tab = SimpleNamespace(current_mesh=mesh, current_actor=actor, plotter=plotter)
+    interaction = DisplayInteractionHandler(tab, state, HotspotDetector())
+    analyzed = []
+    interaction._find_and_show_hotspots = analyzed.append
+
+    try:
+        interaction.find_hotspots_on_view()
+        assert analyzed[0]["NodeID"].tolist() == [1, 4]
+    finally:
+        plotter.close()
+
+
 def test_hotspot_table_shows_the_combination_for_each_envelope_value():
     visual_handler, tab = _handler()
     tab.combination_names = ["Landing", "Thermal", "Burst"]

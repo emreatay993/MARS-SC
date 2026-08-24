@@ -445,33 +445,28 @@ class DisplayInteractionHandler(DisplayBaseHandler):
                 )
                 return
 
-        # Try using vtkSelectVisiblePoints for visibility filtering
-        selector = vtk.vtkSelectVisiblePoints()
-        selector.SetInputData(self.tab.current_mesh)
+        self.tab.plotter.render()
+        selector = vtk.vtkHardwareSelector()
         selector.SetRenderer(self.tab.plotter.renderer)
-        selector.SetTolerance(0.01)  # Add tolerance for point selection
-        selector.Update()
+        selector.SetFieldAssociation(vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS)
+        width, height = self.tab.plotter.renderer.GetRenderWindow().GetSize()
+        selector.SetArea(0, 0, width - 1, height - 1)
+        selection = selector.Select()
+        actor = self.state.current_actor or self.tab.current_actor
+        point_ids = []
+        for index in range(selection.GetNumberOfNodes()):
+            node = selection.GetNode(index)
+            if node.GetProperties().Get(vtk.vtkSelectionNode.PROP()) is not actor:
+                continue
+            selected_ids = node.GetSelectionList()
+            point_ids.extend(
+                selected_ids.GetValue(i) for i in range(selected_ids.GetNumberOfValues())
+            )
 
-        visible_mesh = pv.wrap(selector.GetOutput())
-        
-        # If vtkSelectVisiblePoints returns empty but we have a mesh with points,
-        # fall back to using the camera frustum to filter visible points
-        if visible_mesh.n_points == 0 and self.tab.current_mesh.n_points > 0:
-            # Fallback: Use all points in the current mesh
-            # This happens when the mesh is a point cloud without cell topology
-            # The user can still see contour points, so we use the full mesh
-            visible_mesh = self.tab.current_mesh.copy()
-            
-            # Optional: Filter by camera frustum bounds for very large meshes
-            camera = self.tab.plotter.camera
-            if camera is not None:
-                try:
-                    # Get the clipping range and frustum - for now just use full mesh
-                    # as frustum clipping is complex and the mesh is usually small enough
-                    pass
-                except Exception:
-                    pass
-        
+        visible_mesh = self.tab.current_mesh.extract_points(
+            point_ids, include_cells=False
+        ) if point_ids else pv.PolyData()
+
         if visible_mesh.n_points == 0:
             QMessageBox.information(
                 self.tab, "No Visible Points",
