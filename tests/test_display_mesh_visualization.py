@@ -213,6 +213,7 @@ def test_overlay_backgrounds_are_independent_and_reapplied():
     assert legend.GetDrawBackground()
     assert legend.GetBarRatio() == 0.145
     assert legend.GetBackgroundProperty().GetOpacity() == 0.65
+    assert legend.GetTitleTextProperty().GetBackgroundOpacity() == 0.65
 
     hover.SetText(hover.UpperLeft, "Node ID: 20")
     interaction = DisplayInteractionHandler(tab, state, SimpleNamespace())
@@ -228,6 +229,7 @@ def test_overlay_backgrounds_are_independent_and_reapplied():
     interaction._set_legend_background(False)
     assert not state.legend_background_enabled
     assert not legend.GetDrawBackground()
+    assert legend.GetTitleTextProperty().GetBackgroundOpacity() == 0.0
 
 
 def test_hover_can_lock_to_goto_node_selection():

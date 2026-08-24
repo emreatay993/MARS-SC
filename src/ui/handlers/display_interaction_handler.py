@@ -1016,6 +1016,9 @@ class DisplayInteractionHandler(DisplayBaseHandler):
         background.SetColor(1.0, 1.0, 1.0)
         background.SetOpacity(0.65)
         scalar_bar.SetDrawBackground(enabled)
+        title = scalar_bar.GetTitleTextProperty()
+        title.SetBackgroundColor(1.0, 1.0, 1.0)
+        title.SetBackgroundOpacity(0.65 if enabled else 0.0)
         plotter.render()
     
     def _increase_scalar_bar_digits(self) -> None:

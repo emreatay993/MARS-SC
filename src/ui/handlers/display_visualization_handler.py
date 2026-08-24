@@ -309,6 +309,9 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
         background.SetColor(1.0, 1.0, 1.0)
         background.SetOpacity(0.65)
         scalar_bar.SetDrawBackground(self.state.legend_background_enabled)
+        title = scalar_bar.GetTitleTextProperty()
+        title.SetBackgroundColor(1.0, 1.0, 1.0)
+        title.SetBackgroundOpacity(0.65 if self.state.legend_background_enabled else 0.0)
         return actor
 
     def _add_context_actor(self, plotter, mesh, name: str):
