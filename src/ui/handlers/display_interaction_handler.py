@@ -805,6 +805,33 @@ class DisplayInteractionHandler(DisplayBaseHandler):
         except Exception as exc:
             QMessageBox.critical(self.tab, "Error", f"Could not go to node {node_id}: {exc}")
 
+    def restore_goto_node_markers(self) -> None:
+        """Restore the selected-node actors after a plotter redraw."""
+        node_id = self.state.target_node_id
+        if node_id is None:
+            return
+
+        marker_actor = self.state.target_node_marker_actor
+        label_actor = self.state.target_node_label_actor
+        marker_poly = self.state.marker_poly
+        label_point_data = self.state.label_point_data
+        if any(item is None for item in (marker_actor, label_actor, marker_poly, label_point_data)):
+            self.clear_goto_node_markers()
+            return
+
+        node_indices = np.where(self.tab.current_mesh['NodeID'] == node_id)[0]
+        if not node_indices.size:
+            self.clear_goto_node_markers()
+            return
+
+        point_index = node_indices[0]
+        point_coords = self.tab.current_mesh.points[point_index]
+        marker_poly.points = np.asarray([point_coords])
+        label_point_data.points = np.asarray([point_coords])
+        self.tab.plotter.add_actor(marker_actor, reset_camera=False)
+        self.tab.plotter.add_actor(label_actor, reset_camera=False)
+        self.set_state_attr("target_node_index", int(point_index))
+
     def clear_goto_node_markers(self) -> None:
         """Remove node markers and reset tracking state."""
         if self.state.target_node_marker_actor:

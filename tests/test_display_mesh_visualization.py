@@ -121,6 +121,9 @@ class _Plotter:
         self.text_calls.append((text, kwargs))
         return pv.CornerAnnotation(kwargs.get("position", "upper_left"), text)
 
+    def add_actor(self, actor, **_kwargs):
+        self.actors[f"actor_{len(self.actors)}"] = actor
+
     def reset_camera(self):
         self.reset_camera_calls += 1
 
@@ -403,6 +406,33 @@ def test_view_mode_change_does_not_reset_camera():
 
     assert tab.plotter.reset_camera_calls == 0
     assert all(call[1]["reset_camera"] is False for call in tab.plotter.mesh_calls)
+
+
+def test_view_mode_change_preserves_goto_node_selection():
+    handler, tab = _handler(view="points")
+    handler._topology_provider = object()
+    handler._topology_data = _topology()
+    handler._topology_node_ids = np.asarray(tab.current_mesh["NodeID"]).copy()
+    handler._topology_includes_whole = True
+    handler._build_topology_meshes()
+    interaction = DisplayInteractionHandler(tab, handler.state, HotspotDetector())
+    tab.interaction_handler = interaction
+    marker_actor = _Actor()
+    label_actor = _Actor()
+    handler.state.target_node_id = 20
+    handler.state.target_node_index = 1
+    handler.state.target_node_marker_actor = marker_actor
+    handler.state.target_node_label_actor = label_actor
+    handler.state.marker_poly = pv.PolyData([[9.0, 9.0, 9.0]])
+    handler.state.label_point_data = pv.PolyData([[9.0, 9.0, 9.0]])
+
+    tab.mesh_view_combo.index = 1
+    handler.on_mesh_view_changed()
+
+    assert handler.state.target_node_id == 20
+    assert marker_actor in tab.plotter.actors.values()
+    assert label_actor in tab.plotter.actors.values()
+    np.testing.assert_allclose(handler.state.marker_poly.points[0], [1.0, 0.0, 0.0])
 
 
 def test_current_view_hotspots_exclude_occluded_and_offscreen_points():

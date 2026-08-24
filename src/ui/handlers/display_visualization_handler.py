@@ -523,6 +523,9 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
             )
 
         self.setup_hover_annotation()
+        interaction_handler = getattr(self.tab, "interaction_handler", None)
+        if interaction_handler is not None:
+            interaction_handler.restore_goto_node_markers()
 
         # Clear old camera widget if it exists
         self._clear_camera_widget()
