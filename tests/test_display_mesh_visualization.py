@@ -96,7 +96,10 @@ class _Plotter:
         self.actors = {}
         self.reset_camera_calls = 0
         self.renderer = vtk.vtkRenderer()
+        render_window = SimpleNamespace(Render=lambda: None)
+        interactor = SimpleNamespace(GetRenderWindow=lambda: render_window)
         self.iren = SimpleNamespace(
+            interactor=interactor,
             add_observer=lambda *_args: 1,
             remove_observer=lambda *_args: None,
         )
@@ -156,6 +159,7 @@ def _handler(view="points", scope="result"):
     tab = SimpleNamespace(
         current_mesh=point_mesh,
         current_actor=None,
+        current_contour_type=None,
         mesh_view_combo=_Combo(["points", "contour_mesh", "mesh_points"], ["points", "contour_mesh", "mesh_points"].index(view)),
         mesh_scope_combo=_Combo(["result", "whole"], ["result", "whole"].index(scope)),
         mesh_edges_checkbox=_CheckBox(),
@@ -224,6 +228,25 @@ def test_overlay_backgrounds_are_independent_and_reapplied():
     interaction._set_legend_background(False)
     assert not state.legend_background_enabled
     assert not legend.GetDrawBackground()
+
+
+def test_hover_can_lock_to_goto_node_selection():
+    visual_handler, tab = _handler()
+    tab.visual_handler = visual_handler
+    state = visual_handler.state
+    state.target_node_id = 20
+    DisplayVisualizationHandler.setup_hover_annotation(visual_handler)
+    interaction = DisplayInteractionHandler(tab, state, SimpleNamespace())
+
+    interaction._set_hover_node_lock(True)
+
+    hover = state.hover_annotation
+    assert state.locked_hover_node_id == 20
+    assert hover.GetText(hover.UpperLeft) == "Node ID: 20\nResult: 2.00000"
+
+    interaction._set_hover_node_lock(False)
+    assert state.locked_hover_node_id is None
+    assert hover.GetText(hover.UpperLeft) == ""
 
 
 def test_stress_hover_follows_the_displayed_scalar():

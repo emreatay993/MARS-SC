@@ -43,4 +43,5 @@ class DisplayState:
     current_contour_type: Optional[str] = None
     scalar_bar_digits: int = 4  # Number of decimal places for legend labels
     hover_background_enabled: bool = False
+    locked_hover_node_id: Optional[int] = None
     legend_background_enabled: bool = False

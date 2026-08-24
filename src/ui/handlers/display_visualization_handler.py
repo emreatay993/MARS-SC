@@ -57,6 +57,7 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
         self._worker_request = None
         self._pending_topology_request = False
         self._payload_generation = 0
+        self._hover_callback = None
 
     def set_topology_provider(self, provider) -> None:
         """Replace solver-backed topology source without invoking it."""
@@ -595,19 +596,30 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
         picker = vtk.vtkPointPicker()
         picker.SetTolerance(0.025)  # 2.5% of window diagonal for better zoom-in tolerance
 
-        def hover_callback(obj, _event):
+        def hover_callback(obj, _event, force=False):
             now = time.time()
-            if (now - self.state.last_hover_time) < 0.033:  # 30 FPS throttle
+            if not force and (now - self.state.last_hover_time) < 0.033:  # 30 FPS throttle
                 return
 
             iren = obj
-            pos = iren.GetEventPosition()
-            picker.Pick(pos[0], pos[1], 0, self.tab.plotter.renderer)
-            point_id = picker.GetPointId()
-            picked_dataset = picker.GetDataSet()
-            if picked_dataset is None:
-                return
-            current_mesh = pv.wrap(picked_dataset)
+            locked_node_id = self.state.locked_hover_node_id
+            if locked_node_id is not None:
+                current_mesh = self.state.current_mesh or self.tab.current_mesh
+                node_indices = np.where(current_mesh["NodeID"] == locked_node_id)[0]
+                if not node_indices.size:
+                    self.state.locked_hover_node_id = None
+                    annotation.SetText(annotation.UpperLeft, "")
+                    iren.GetRenderWindow().Render()
+                    return
+                point_id = int(node_indices[0])
+            else:
+                pos = iren.GetEventPosition()
+                picker.Pick(pos[0], pos[1], 0, self.tab.plotter.renderer)
+                point_id = picker.GetPointId()
+                picked_dataset = picker.GetDataSet()
+                if picked_dataset is None:
+                    return
+                current_mesh = pv.wrap(picked_dataset)
 
             if (
                 point_id != -1
@@ -771,8 +783,17 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
         observer_id = self.tab.plotter.iren.add_observer(
             "MouseMoveEvent", hover_callback
         )
+        self._hover_callback = hover_callback
         self.state.hover_observer = observer_id
         self.tab.hover_observer = observer_id
+        if self.state.locked_hover_node_id is not None:
+            self.refresh_hover_annotation()
+
+    def refresh_hover_annotation(self) -> None:
+        """Refresh a locked hover annotation immediately."""
+        interactor = getattr(self.tab.plotter.iren, "interactor", None)
+        if self._hover_callback is not None and interactor is not None:
+            self._hover_callback(interactor, None, True)
 
     def _append_stress_hover_line(self, lines, mesh, point_id: int) -> None:
         """Append the stress scalar that is currently displayed."""
@@ -885,6 +906,7 @@ class DisplayVisualizationHandler(DisplayBaseHandler):
                 pass
             self.state.hover_observer = None
             self.tab.hover_observer = None
+        self._hover_callback = None
 
     def update_point_size(self) -> None:
         """Adjust point size and refresh hover annotations."""

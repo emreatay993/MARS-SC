@@ -885,6 +885,16 @@ class DisplayInteractionHandler(DisplayBaseHandler):
         background_action.triggered.connect(self._set_hover_background)
         context_menu.addAction(background_action)
 
+        lock_action = QAction("Lock Hover to Selected Node", self.tab)
+        lock_action.setCheckable(True)
+        lock_action.setChecked(self.state.locked_hover_node_id is not None)
+        lock_action.setEnabled(
+            self.state.target_node_id is not None
+            or self.state.locked_hover_node_id is not None
+        )
+        lock_action.triggered.connect(self._set_hover_node_lock)
+        context_menu.addAction(lock_action)
+
         context_menu.exec_(self.tab.plotter.mapToGlobal(position))
 
     def _set_hover_background(self, enabled: bool) -> None:
@@ -898,6 +908,21 @@ class DisplayInteractionHandler(DisplayBaseHandler):
         text_property.SetBackgroundColor(1.0, 1.0, 1.0)
         text_property.SetBackgroundOpacity(0.65 if enabled else 0.0)
         self.tab.plotter.render()
+
+    def _set_hover_node_lock(self, enabled: bool) -> None:
+        """Pin hover values to the currently selected Go to Node target."""
+        if enabled:
+            if self.state.target_node_id is None:
+                return
+            self.state.locked_hover_node_id = int(self.state.target_node_id)
+            self.tab.visual_handler.refresh_hover_annotation()
+            return
+
+        self.state.locked_hover_node_id = None
+        annotation = self.state.hover_annotation
+        if annotation is not None:
+            annotation.SetText(annotation.UpperLeft, "")
+            self.tab.plotter.render()
 
     def _is_click_on_legend(self, position: QPoint) -> bool:
         """
