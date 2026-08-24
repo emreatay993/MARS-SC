@@ -4,7 +4,9 @@ selecting project directories and opening files.
 """
 
 import subprocess
-from PyQt5.QtWidgets import QFileDialog
+from PyQt5.QtCore import QUrl
+from PyQt5.QtGui import QDesktopServices
+from PyQt5.QtWidgets import QFileDialog, QMenu
 
 
 class NavigatorHandler:
@@ -48,8 +50,46 @@ class NavigatorHandler:
             return
 
         file_path = self.file_model.filePath(index)
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(file_path)):
+            print(f"Error opening file '{file_path}'.")
 
+    def show_navigator_context_menu(self, position):
+        """Show native file actions for the clicked navigator file."""
+        index = self.tree_view.indexAt(position)
+        if not index.isValid() or self.file_model.isDir(index):
+            return
+
+        menu = QMenu(self.tree_view)
+        show_action = menu.addAction("Show in File Explorer")
+        show_action.triggered.connect(
+            lambda _checked=False: self.show_in_file_explorer(index)
+        )
+        open_action = menu.addAction("Open")
+        open_action.triggered.connect(
+            lambda _checked=False: self.open_navigator_file(index)
+        )
+        open_with_action = menu.addAction("Open With...")
+        open_with_action.triggered.connect(
+            lambda _checked=False: self.open_with(index)
+        )
+        menu.exec_(self.tree_view.viewport().mapToGlobal(position))
+
+    def show_in_file_explorer(self, index):
+        """Select the navigator file in Windows File Explorer."""
+        file_path = self.file_model.filePath(index)
         try:
-            subprocess.run(['cmd', '/c', 'start', '/max', '', file_path], shell=True)
-        except Exception as e:
-            print(f"Error opening file '{file_path}': {e}")
+            subprocess.Popen(["explorer.exe", f"/select,{file_path}"])
+        except OSError as error:
+            print(f"Error showing file '{file_path}' in File Explorer: {error}")
+
+    def open_with(self, index):
+        """Show the Windows Open With dialog for the navigator file."""
+        file_path = self.file_model.filePath(index)
+        try:
+            subprocess.Popen([
+                "rundll32.exe",
+                "shell32.dll,OpenAs_RunDLL",
+                file_path,
+            ])
+        except OSError as error:
+            print(f"Error opening Open With for '{file_path}': {error}")

@@ -182,6 +182,7 @@ class ApplicationController(QMainWindow):
         self.tree_view.setDropIndicatorShown(True)
         self.tree_view.setSelectionMode(QTreeView.SingleSelection)
         self.tree_view.setDragDropMode(QTreeView.DragDrop)
+        self.tree_view.setContextMenuPolicy(Qt.CustomContextMenu)
         
         # Set widget
         self.navigator_dock.setWidget(self.tree_view)
@@ -190,6 +191,9 @@ class ApplicationController(QMainWindow):
         # Create handler and connect the signal to the handler
         self.navigator_handler = NavigatorHandler(self.file_model, self.tree_view, self.solver_tab)
         self.tree_view.doubleClicked.connect(self.navigator_handler.open_navigator_file)
+        self.tree_view.customContextMenuRequested.connect(
+            self.navigator_handler.show_navigator_context_menu
+        )
     
     def _apply_navigator_styles(self):
         """Apply styles to navigator components (matching legacy approach)."""
